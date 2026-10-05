@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<style>
+  :root{--bg:#fff;--ink:#161a21;--muted:#5b6370;--line:#d9dde4;--accent:#efa91c;--soft:#eff1f4;--bad:#b0352a;--ok:#1d7f48}
+  @media (prefers-color-scheme:dark){:root{--bg:#1a1d24;--ink:#e8eaee;--muted:#9aa2ae;--line:#2b3039;--accent:#f2b42f;--soft:#14171d;--bad:#f07b6f;--ok:#56c788;color-scheme:dark}}
+  body{margin:0;width:320px;background:var(--bg);color:var(--ink);font:13.5px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+  .h{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line);font-weight:600;font-size:15px}
+  .h i{width:24px;height:24px;border-radius:6px;background:var(--accent);color:#1b1400;display:grid;place-items:center;font-style:normal;font-weight:700}
+  .b{padding:14px;display:flex;flex-direction:column;gap:10px}
+  label{font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+  input[type=text],input[type=url]{font:inherit;color:inherit;background:var(--soft);border:1px solid var(--line);border-radius:7px;padding:7px 9px;text-transform:none;letter-spacing:0}
+  #code{font-family:ui-monospace,Menlo,monospace;letter-spacing:.2em;text-transform:uppercase}
+  button{font:inherit;color:inherit;border:1px solid var(--line);background:var(--bg);border-radius:7px;padding:7px 11px;cursor:pointer}
+  button.p{background:var(--accent);border-color:var(--accent);color:#1b1400;font-weight:600}
+  .row{display:flex;gap:8px;flex-wrap:wrap}
+  .muted{color:var(--muted)}.err{color:var(--bad)}.ok{color:var(--ok)}
+  .card{background:var(--soft);border-radius:8px;padding:9px 11px}
+  .sw{display:flex;align-items:center;gap:8px;font-weight:500}
+  [hidden]{display:none!important}
+</style>
+</head>
+<body>
+  <div class="h"><i>G</i>GiroAuto</div>
+  <div class="b" id="pairView" hidden>
+    <span class="muted">Pareie a extensão com o painel da sua loja.</span>
+    <label>Endereço do painel<input type="url" id="url" placeholder="https://painel.sualoja.com.br"></label>
+    <label>Código de pareamento<input type="text" id="code" maxlength="6" placeholder="ABC123"></label>
+    <span class="muted">O código é gerado em Configurações &gt; Extensão do Chrome.</span>
+    <span class="err" id="pairErr"></span>
+    <button class="p" id="pairBtn">Parear</button>
+  </div>
+  <div class="b" id="mainView" hidden>
+    <div><b id="storeName"></b><div class="muted" id="panel"></div></div>
+    <label class="sw" style="text-transform:none;letter-spacing:0;font-size:13.5px;color:inherit;flex-direction:row"><input type="checkbox" id="auto"> Buscar tarefas automaticamente</label>
+    <div class="card" id="state"></div>
+    <span class="err" id="err"></span>
+    <div class="row">
+      <button class="p" id="poll">Buscar tarefa agora</button>
+      <button id="cancel" hidden>Cancelar tarefa</button>
+    </div>
+    <button id="unpair" style="align-self:flex-start" class="muted">Desparear</button>
+  </div>
+<script src="popup.js"></script>
+</body>
+</html>

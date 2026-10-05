@@ -1,0 +1,28 @@
+<!doctype html><html><head><meta charset="utf-8"></head><body><div role="main">
+<!-- Imitação simplificada da estrutura do formulário do Marketplace (rótulos em span dentro de label, combobox com listbox) -->
+<label role="combobox" tabindex="0" aria-haspopup="listbox" id="tipo"><span>Tipo de veículo</span><span class="val"></span></label>
+<input type="file" accept="image/*,image/heif,image/heic" multiple id="fotos">
+<label role="combobox" tabindex="0" aria-haspopup="listbox" id="ano"><span>Ano</span><span class="val"></span></label>
+<label><span>Marca</span><input type="text" id="marca"></label>
+<label><span>Modelo</span><input type="text" id="modelo"></label>
+<label><span>Quilometragem</span><input type="text" id="km"></label>
+<label><span>Preço</span><input type="text" id="preco"></label>
+<label role="combobox" tabindex="0" aria-haspopup="listbox" id="carroceria"><span>Estilo da carroceria</span><span class="val"></span></label>
+<label role="combobox" tabindex="0" aria-haspopup="listbox" id="cor"><span>Cor externa</span><span class="val"></span></label>
+<label role="combobox" tabindex="0" aria-haspopup="listbox" id="cond"><span>Condição do veículo</span><span class="val"></span></label>
+<label role="combobox" tabindex="0" aria-haspopup="listbox" id="comb"><span>Tipo de combustível</span><span class="val"></span></label>
+<label role="combobox" tabindex="0" aria-haspopup="listbox" id="trans"><span>Transmissão</span><span class="val"></span></label>
+<label><span>Descrição</span><textarea id="desc"></textarea></label>
+</div>
+<script>
+const OPTS={tipo:['Carro/picape','Motocicleta','Barco'],ano:Array.from({length:40},(_,i)=>String(2026-i)),carroceria:['Cupê','Picape','Sedã','Hatchback','SUV','Conversível','Perua','Minivan','Outro'],
+cor:['Preto','Azul','Marrom','Ouro','Verde','Cinza','Rosa','Roxo','Vermelho','Prata','Laranja','Branco','Amarelo','Outro'],cond:['Excelente','Muito bom','Bom','Razoável','Ruim'],
+comb:['Diesel','Elétrico','Gasolina','Flex','Híbrido','Outro'],trans:['Transmissão manual','Transmissão automática']};
+document.querySelectorAll('[role=combobox]').forEach(cb=>cb.addEventListener('click',()=>{
+  document.querySelectorAll('[role=listbox]').forEach(x=>x.remove());
+  const lb=document.createElement('div');lb.setAttribute('role','listbox');lb.style.cssText='max-height:120px;overflow:auto';
+  OPTS[cb.id].forEach(t=>{const o=document.createElement('div');o.setAttribute('role','option');o.innerHTML='<span>'+t+'</span>';o.onclick=()=>{cb.querySelector('.val').textContent=t;lb.remove();};lb.appendChild(o);});
+  document.body.appendChild(lb);
+}));
+window.results=()=>Object.fromEntries([...document.querySelectorAll('[role=combobox]')].map(c=>[c.id,c.querySelector('.val').textContent]).concat([...document.querySelectorAll('input[type=text],textarea')].map(i=>[i.id,i.value])).concat([['fotos',document.getElementById('fotos').files.length]]));
+</script></body></html>

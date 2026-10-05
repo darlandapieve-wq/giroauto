@@ -1,0 +1,26 @@
+# Blueprint do Render (render.com): New > Blueprint > escolha o repositório.
+services:
+  - type: web
+    name: giroauto
+    runtime: docker
+    plan: starter            # o plano gratuito não tem disco; sem disco os dados somem a cada reinício
+    healthCheckPath: /health
+    disk:
+      name: giroauto-data
+      mountPath: /data
+      sizeGB: 5
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATA_DIR
+        value: /data
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: META_APP_ID
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      - key: META_API_VERSION
+        value: v25.0
+      # PUBLIC_URL é detectado automaticamente (RENDER_EXTERNAL_URL).
+      # Ao usar domínio próprio, defina PUBLIC_URL=https://painel.seudominio.com.br

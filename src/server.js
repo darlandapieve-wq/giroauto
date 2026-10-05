@@ -1,0 +1,537 @@
+const path = require('node:path');
+const crypto = require('node:crypto');
+const express = require('express');
+const multer = require('multer');
+const config = require('./config');
+const { all, get, run, tx, logEvent } = require('./db');
+const { hashPassword, verifyPassword, randomToken, sha256 } = require('./crypto');
+const auth = require('./auth');
+const V = require('./vehicles');
+const feed = require('./feed');
+const meta = require('./meta/service');
+const { MetaError } = require('./meta/graph');
+const pages = require('./pages');
+
+const app = express();
+app.disable('x-powered-by');
+app.set('trust proxy', true);
+app.use(express.json({ limit: '1mb' }));
+app.use(auth.loadUser);
+
+const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+const fail = (status, message) => Object.assign(new Error(message), { status });
+
+/* ------------------------------------------------------------------ */
+/* Arquivos públicos                                                  */
+/* ------------------------------------------------------------------ */
+
+// Fotos: nomes aleatórios, públicas (a Meta e a extensão precisam baixá-las).
+app.use('/media', (req, res, next) => { res.setHeader('Access-Control-Allow-Origin', '*'); next(); },
+  express.static(path.join(config.dataDir, 'media'), { maxAge: '7d', fallthrough: false }));
+
+app.use(express.static(path.join(__dirname, '..', 'public'), { index: false }));
+
+app.get('/health', (req, res) => res.json({ ok: true }));
+
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'app.html')));
+
+// Feed do catálogo de veículos (lido pela Meta a cada hora).
+app.get('/feed/:slug.csv', (req, res) => {
+  const store = get('SELECT * FROM stores WHERE slug = ?', req.params.slug);
+  if (!store || req.query.k !== store.feed_key) return res.status(404).send('Feed não encontrado');
+  res.type('text/csv; charset=utf-8').send(feed.buildCsv(store));
+});
+
+// Vitrine pública e página do veículo (destino dos anúncios de catálogo).
+app.get('/v/:slug', (req, res) => {
+  const store = get('SELECT * FROM stores WHERE slug = ?', req.params.slug);
+  if (!store) return res.status(404).send(pages.notFound());
+  const vs = all(`SELECT * FROM vehicles WHERE store_id = ? AND status IN ('pronto','publicado') ORDER BY updated_at DESC`, store.id).map(V.serialize);
+  res.send(pages.storefront(store, vs));
+});
+app.get('/v/:slug/:id', (req, res) => {
+  const store = get('SELECT * FROM stores WHERE slug = ?', req.params.slug);
+  const v = store && V.serialize(V.findVehicle(store.id, req.params.id));
+  if (!v || v.status === 'rascunho') return res.status(404).send(pages.notFound());
+  res.send(pages.vehiclePage(store, v));
+});
+
+/* ------------------------------------------------------------------ */
+/* Conta                                                              */
+/* ------------------------------------------------------------------ */
+
+function slugify(s) {
+  const base = String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'loja';
+  let slug = base; let i = 2;
+  while (get('SELECT 1 FROM stores WHERE slug = ?', slug)) slug = `${base}-${i++}`;
+  return slug;
+}
+
+app.post('/api/auth/register', (req, res) => {
+  const { loja, nome, email, senha } = req.body || {};
+  const em = String(email || '').trim().toLowerCase();
+  if (!loja || !nome || !/^\S+@\S+\.\S+$/.test(em)) throw fail(400, 'Preencha o nome da loja, seu nome e um e-mail válido.');
+  if (String(senha || '').length < 8) throw fail(400, 'A senha precisa ter ao menos 8 caracteres.');
+  if (get('SELECT 1 FROM users WHERE email = ?', em)) throw fail(409, 'Já existe uma conta com este e-mail.');
+  const userId = tx(() => {
+    const s = run('INSERT INTO stores (name, slug, feed_key) VALUES (?, ?, ?)', String(loja).trim(), slugify(loja), randomToken(12));
+    const u = run('INSERT INTO users (store_id, name, email, pass_hash) VALUES (?, ?, ?, ?)', s.lastInsertRowid, String(nome).trim(), em, hashPassword(senha));
+    return u.lastInsertRowid;
+  });
+  auth.createSession(res, userId);
+  res.json({ ok: true });
+});
+
+app.post('/api/auth/login', (req, res) => {
+  const em = String(req.body?.email || '').trim().toLowerCase();
+  const u = get('SELECT * FROM users WHERE email = ?', em);
+  if (!u || !verifyPassword(String(req.body?.senha || ''), u.pass_hash)) throw fail(401, 'E-mail ou senha incorretos.');
+  auth.createSession(res, u.id);
+  res.json({ ok: true });
+});
+
+app.post('/api/auth/logout', (req, res) => { auth.destroySession(req, res); res.json({ ok: true }); });
+
+app.get('/api/me', auth.requireUser, (req, res) => {
+  const store = get('SELECT id, name, slug, phone, whatsapp, address, city, state, postal_code, pub_mode FROM stores WHERE id = ?', req.user.storeId);
+  res.json({
+    user: req.user, store,
+    vitrine_url: `${config.publicUrl}/v/${store.slug}`,
+    options: { cambios: V.CAMBIOS, combustiveis: V.COMBUSTIVEIS, carrocerias: V.CARROCERIAS, cores: V.CORES },
+    republish_days: config.republishDays,
+  });
+});
+
+app.put('/api/store', auth.requireUser, (req, res) => {
+  const b = req.body || {};
+  const s = (x, n = 120) => String(x ?? '').trim().slice(0, n);
+  if (!s(b.name)) throw fail(400, 'Informe o nome da loja.');
+  run(`UPDATE stores SET name=?, phone=?, whatsapp=?, address=?, city=?, state=?, postal_code=? WHERE id=?`,
+    s(b.name), s(b.phone, 20), s(b.whatsapp, 20).replace(/\D/g, ''), s(b.address, 160), s(b.city, 80), s(b.state, 2).toUpperCase(), s(b.postal_code, 9), req.user.storeId);
+  res.json({ ok: true });
+});
+
+app.put('/api/store/pub-mode', auth.requireUser, (req, res) => {
+  const mode = req.body?.mode;
+  if (!['manual', 'extensao'].includes(mode)) throw fail(400, 'Modo inválido.');
+  run('UPDATE stores SET pub_mode = ? WHERE id = ?', mode, req.user.storeId);
+  if (mode === 'manual') {
+    run(`UPDATE ext_jobs SET status='cancelado', updated_at=datetime('now') WHERE store_id=? AND status IN ('pendente','em_andamento')`, req.user.storeId);
+  }
+  res.json({ ok: true, mode });
+});
+
+/* ------------------------------------------------------------------ */
+/* Veículos                                                           */
+/* ------------------------------------------------------------------ */
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: path.join(config.dataDir, 'media'),
+    filename: (_req, file, cb) => {
+      const ext = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp' }[file.mimetype] || '.jpg';
+      cb(null, crypto.randomBytes(16).toString('hex') + ext);
+    },
+  }),
+  limits: { fileSize: 12 * 1024 * 1024, files: 20 },
+  fileFilter: (_req, file, cb) => cb(null, ['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)),
+});
+
+const own = (req) => {
+  const v = V.findVehicle(req.user.storeId, req.params.id);
+  if (!v) throw fail(404, 'Veículo não encontrado.');
+  return v;
+};
+
+app.get('/api/vehicles', auth.requireUser, (req, res) => res.json(V.listVehicles(req.user.storeId)));
+
+app.get('/api/vehicles/:id', auth.requireUser, (req, res) => res.json(V.serialize(own(req))));
+
+app.post('/api/vehicles', auth.requireUser, (req, res) => {
+  const d = V.cleanInput(req.body);
+  if (!d.marca || !d.modelo) throw fail(400, 'Informe ao menos marca e modelo.');
+  const cols = Object.keys(d);
+  const r = run(`INSERT INTO vehicles (store_id, ${cols.join(',')}) VALUES (?, ${cols.map(() => '?').join(',')})`,
+    req.user.storeId, ...cols.map((k) => d[k]));
+  logEvent(req.user.storeId, `${d.marca} ${d.modelo} cadastrado`);
+  res.status(201).json(V.serialize(V.findVehicle(req.user.storeId, r.lastInsertRowid)));
+});
+
+app.put('/api/vehicles/:id', auth.requireUser, (req, res) => {
+  const v = own(req);
+  const d = V.cleanInput(req.body);
+  if (!d.marca || !d.modelo) throw fail(400, 'Informe ao menos marca e modelo.');
+  const cols = Object.keys(d);
+  run(`UPDATE vehicles SET ${cols.map((k) => `${k}=?`).join(',')}, updated_at=datetime('now') WHERE id=?`, ...cols.map((k) => d[k]), v.id);
+  res.json(V.serialize(V.findVehicle(req.user.storeId, v.id)));
+});
+
+app.delete('/api/vehicles/:id', auth.requireUser, (req, res) => {
+  const v = own(req);
+  if (v.status === 'publicado') throw fail(409, 'Este veículo está publicado. Marque como vendido para retirar o anúncio.');
+  run('DELETE FROM vehicles WHERE id = ?', v.id);
+  res.json({ ok: true });
+});
+
+// Marca como "pronto para publicar" quando o cadastro está completo.
+app.post('/api/vehicles/:id/ready', auth.requireUser, (req, res) => {
+  const v = own(req);
+  const faltam = V.missingForPublish(v, V.photosOf(v.id).length);
+  if (faltam.length) throw fail(400, `Para publicar, preencha: ${faltam.join(', ')}.`);
+  if (v.status === 'rascunho') run(`UPDATE vehicles SET status='pronto', updated_at=datetime('now') WHERE id=?`, v.id);
+  res.json(V.serialize(V.findVehicle(req.user.storeId, v.id)));
+});
+
+app.post('/api/vehicles/:id/photos', auth.requireUser, upload.array('fotos', 20), (req, res) => {
+  const v = own(req);
+  const files = req.files || [];
+  if (!files.length) throw fail(400, 'Envie fotos em JPG, PNG ou WEBP de até 12 MB.');
+  const count = get('SELECT COUNT(*) n FROM photos WHERE vehicle_id = ?', v.id).n;
+  if (count + files.length > 20) throw fail(400, `Limite de 20 fotos. Este veículo já tem ${count}.`);
+  let pos = (get('SELECT MAX(position) m FROM photos WHERE vehicle_id = ?', v.id).m ?? -1) + 1;
+  for (const f of files) run('INSERT INTO photos (vehicle_id, filename, mime, position) VALUES (?, ?, ?, ?)', v.id, f.filename, f.mimetype, pos++);
+  run(`UPDATE vehicles SET updated_at=datetime('now') WHERE id=?`, v.id);
+  res.json(V.serialize(V.findVehicle(req.user.storeId, v.id)));
+});
+
+app.put('/api/vehicles/:id/photos/order', auth.requireUser, (req, res) => {
+  const v = own(req);
+  const ids = (req.body?.ids || []).map(Number);
+  const existing = new Set(V.photosOf(v.id).map((p) => p.id));
+  if (ids.length !== existing.size || !ids.every((i) => existing.has(i))) throw fail(400, 'Lista de fotos inválida.');
+  tx(() => ids.forEach((pid, i) => run('UPDATE photos SET position = ? WHERE id = ?', i, pid)));
+  res.json(V.serialize(V.findVehicle(req.user.storeId, v.id)));
+});
+
+app.delete('/api/vehicles/:id/photos/:pid', auth.requireUser, (req, res) => {
+  const v = own(req);
+  const p = get('SELECT * FROM photos WHERE id = ? AND vehicle_id = ?', Number(req.params.pid), v.id);
+  if (!p) throw fail(404, 'Foto não encontrada.');
+  run('DELETE FROM photos WHERE id = ?', p.id);
+  require('node:fs').rm(path.join(config.dataDir, 'media', p.filename), () => {});
+  res.json(V.serialize(V.findVehicle(req.user.storeId, v.id)));
+});
+
+// Todas as fotos do veículo num .zip (publicação assistida sem extensão).
+app.get('/api/vehicles/:id/photos.zip', auth.requireUser, (req, res) => {
+  const v = own(req);
+  const photos = V.photosOf(v.id);
+  if (!photos.length) throw fail(404, 'Este veículo não tem fotos.');
+  const fs = require('node:fs');
+  const files = photos.map((p, i) => ({
+    name: `${String(i + 1).padStart(2, '0')}${path.extname(p.filename)}`,
+    data: fs.readFileSync(path.join(config.dataDir, 'media', p.filename)),
+  }));
+  const base = `${v.marca}-${v.modelo}-${v.ano_modelo || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="fotos-${base || v.id}.zip"`);
+  res.send(require('./zip').buildZip(files));
+});
+
+// Publicação assistida: a pessoa publicou no Facebook e registra aqui.
+app.post('/api/vehicles/:id/mark-published', auth.requireUser, (req, res) => {
+  const v = own(req);
+  if (v.status === 'vendido') throw fail(409, 'Veículo vendido não pode ser publicado.');
+  const url = String(req.body?.listing_url || '').trim();
+  if (url && !/^https:\/\/(www\.|web\.|m\.)?facebook\.com\/\S+$/.test(url)) throw fail(400, 'Cole o link do anúncio do Facebook (começa com https://www.facebook.com/).');
+  const republicado = v.status === 'publicado';
+  run(`UPDATE vehicles SET status='publicado', publicado_em=datetime('now'), fb_listing_url=?, updated_at=datetime('now') WHERE id=?`,
+    url ? url.split('?')[0] : (republicado ? '' : v.fb_listing_url || ''), v.id);
+  run(`UPDATE ext_jobs SET status='cancelado', updated_at=datetime('now') WHERE vehicle_id=? AND status IN ('pendente','em_andamento')`, v.id);
+  const nome = `${v.marca} ${v.modelo} ${v.versao}`.trim();
+  logEvent(req.user.storeId, republicado ? `${nome} republicado no Marketplace` : `${nome} publicado no Marketplace`);
+  res.json(V.serialize(V.findVehicle(req.user.storeId, v.id)));
+});
+
+/* ------------------------------------------------------------------ */
+/* Publicação orgânica (fila da extensão)                             */
+/* ------------------------------------------------------------------ */
+
+function enqueue(storeId, vehicleId, type) {
+  const pending = get(`SELECT id FROM ext_jobs WHERE vehicle_id = ? AND status IN ('pendente','em_andamento')`, vehicleId);
+  if (pending) throw fail(409, 'Já existe uma tarefa da extensão em andamento para este veículo.');
+  run('INSERT INTO ext_jobs (store_id, vehicle_id, type) VALUES (?, ?, ?)', storeId, vehicleId, type);
+}
+
+app.post('/api/vehicles/:id/publish', auth.requireUser, (req, res) => {
+  const v = own(req);
+  if (v.status === 'vendido') throw fail(409, 'Veículo vendido não pode ser publicado.');
+  if (v.status === 'publicado') throw fail(409, 'Este veículo já está publicado. Use Republicar.');
+  const faltam = V.missingForPublish(v, V.photosOf(v.id).length);
+  if (faltam.length) throw fail(400, `Para publicar, preencha: ${faltam.join(', ')}.`);
+  if (v.status === 'rascunho') run(`UPDATE vehicles SET status='pronto' WHERE id=?`, v.id);
+  enqueue(req.user.storeId, v.id, 'publicar');
+  res.json({ ok: true, message: 'Enviado para a extensão. Abra o Chrome com a extensão ativa para concluir.' });
+});
+
+app.post('/api/vehicles/:id/republish', auth.requireUser, (req, res) => {
+  const v = V.serialize(own(req));
+  if (v.status !== 'publicado') throw fail(409, 'Só é possível republicar um anúncio publicado.');
+  if (!v.pode_republicar && !req.body?.force) {
+    throw fail(409, `Publicado há ${v.dias_publicado} dia(s). Republicar antes de ${config.republishDays} dias aumenta o risco de bloqueio da conta.`);
+  }
+  enqueue(req.user.storeId, v.id, 'republicar');
+  res.json({ ok: true });
+});
+
+app.post('/api/vehicles/:id/sold', auth.requireUser, (req, res) => {
+  const v = own(req);
+  if (v.status === 'vendido') return res.json({ ok: true });
+  const wasPublished = v.status === 'publicado';
+  const pubMode = get('SELECT pub_mode FROM stores WHERE id = ?', req.user.storeId).pub_mode;
+  run(`UPDATE vehicles SET status='vendido', vendido_em=datetime('now'), updated_at=datetime('now') WHERE id=?`, v.id);
+  run(`UPDATE ext_jobs SET status='cancelado', updated_at=datetime('now') WHERE vehicle_id=? AND status='pendente'`, v.id);
+  if (wasPublished && pubMode === 'extensao') run('INSERT INTO ext_jobs (store_id, vehicle_id, type) VALUES (?, ?, ?)', req.user.storeId, v.id, 'excluir');
+  logEvent(req.user.storeId, `${v.marca} ${v.modelo} ${v.versao} marcado como vendido`);
+  const campanhas = all(`SELECT c.id, c.name FROM campaigns c JOIN campaign_vehicles cv ON cv.campaign_id = c.id
+    WHERE cv.vehicle_id = ? AND c.status IN ('ativa','analise')`, v.id);
+  res.json({ ok: true, campanhas_ativas: campanhas, excluir_manual: wasPublished && pubMode !== 'extensao', listing_url: v.fb_listing_url || '' });
+});
+
+app.get('/api/jobs', auth.requireUser, (req, res) => {
+  res.json(all(`SELECT j.*, v.marca, v.modelo, v.versao FROM ext_jobs j JOIN vehicles v ON v.id = j.vehicle_id
+    WHERE j.store_id = ? ORDER BY j.id DESC LIMIT 50`, req.user.storeId));
+});
+
+app.post('/api/jobs/:id/cancel', auth.requireUser, (req, res) => {
+  run(`UPDATE ext_jobs SET status='cancelado', updated_at=datetime('now') WHERE id=? AND store_id=? AND status IN ('pendente','em_andamento')`,
+    Number(req.params.id), req.user.storeId);
+  res.json({ ok: true });
+});
+
+app.get('/api/events', auth.requireUser, (req, res) => {
+  res.json(all('SELECT message, created_at FROM events WHERE store_id = ? ORDER BY id DESC LIMIT 30', req.user.storeId));
+});
+
+/* ---- Pareamento e API da extensão ---- */
+
+app.post('/api/extension/pair-code', auth.requireUser, (req, res) => {
+  const code = Array.from(crypto.randomBytes(6), (b) => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[b % 32]).join('');
+  run('DELETE FROM pair_codes WHERE expires_at < ?', Date.now());
+  run('INSERT INTO pair_codes (code, store_id, expires_at) VALUES (?, ?, ?)', code, req.user.storeId, Date.now() + 10 * 60e3);
+  res.json({ code, expires_in: 600 });
+});
+
+app.get('/api/extension/status', auth.requireUser, (req, res) => {
+  res.json(all('SELECT label, created_at, last_seen FROM ext_tokens WHERE store_id = ? ORDER BY last_seen DESC', req.user.storeId));
+});
+
+const extRouter = express.Router();
+extRouter.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
+extRouter.post('/pair', (req, res) => {
+  const code = String(req.body?.code || '').trim().toUpperCase();
+  const row = get('SELECT * FROM pair_codes WHERE code = ? AND expires_at > ?', code, Date.now());
+  if (!row) throw fail(400, 'Código inválido ou expirado. Gere outro no painel.');
+  run('DELETE FROM pair_codes WHERE code = ?', code);
+  const token = randomToken();
+  run('INSERT INTO ext_tokens (token_hash, store_id, label, last_seen) VALUES (?, ?, ?, datetime(\'now\'))', sha256(token), row.store_id, String(req.body?.label || 'Chrome').slice(0, 60));
+  const store = get('SELECT name FROM stores WHERE id = ?', row.store_id);
+  res.json({ token, store: store.name });
+});
+
+extRouter.get('/next', auth.requireExtension, (req, res) => {
+  // Tarefas "em andamento" há mais de 30 min voltam para a fila.
+  run(`UPDATE ext_jobs SET status='pendente' WHERE store_id=? AND status='em_andamento' AND updated_at < datetime('now','-30 minutes')`, req.ext.storeId);
+  const job = get(`SELECT * FROM ext_jobs WHERE store_id = ? AND status = 'pendente' ORDER BY id LIMIT 1`, req.ext.storeId);
+  const pendentes = get(`SELECT COUNT(*) n FROM ext_jobs WHERE store_id = ? AND status = 'pendente'`, req.ext.storeId).n;
+  if (!job) return res.json({ job: null, pendentes: 0 });
+  run(`UPDATE ext_jobs SET status='em_andamento', updated_at=datetime('now') WHERE id=?`, job.id);
+  const v = V.serialize(V.findVehicle(req.ext.storeId, job.vehicle_id));
+  const store = get('SELECT name, city, state FROM stores WHERE id = ?', req.ext.storeId);
+  res.json({ job: { id: job.id, type: job.type }, vehicle: v, store, pendentes });
+});
+
+extRouter.post('/jobs/:id', auth.requireExtension, (req, res) => {
+  const job = get('SELECT * FROM ext_jobs WHERE id = ? AND store_id = ?', Number(req.params.id), req.ext.storeId);
+  if (!job) throw fail(404, 'Tarefa não encontrada.');
+  const status = String(req.body?.status || '');
+  if (!['concluido', 'falhou', 'cancelado'].includes(status)) throw fail(400, 'Status inválido.');
+  const v = V.findVehicle(req.ext.storeId, job.vehicle_id);
+  run(`UPDATE ext_jobs SET status=?, error=?, updated_at=datetime('now') WHERE id=?`, status, String(req.body?.error || '').slice(0, 500), job.id);
+  const nome = `${v.marca} ${v.modelo} ${v.versao}`.trim();
+  if (status === 'concluido' && (job.type === 'publicar' || job.type === 'republicar')) {
+    const url = String(req.body?.listing_url || '');
+    run(`UPDATE vehicles SET status='publicado', publicado_em=datetime('now'), fb_listing_url=?, updated_at=datetime('now') WHERE id=?`,
+      /^https:\/\/(www\.|web\.|m\.)?facebook\.com\//.test(url) ? url : v.fb_listing_url || '', v.id);
+    logEvent(req.ext.storeId, job.type === 'publicar' ? `${nome} publicado no Marketplace` : `${nome} republicado (anúncio antigo excluído)`);
+  } else if (status === 'concluido' && job.type === 'excluir') {
+    run(`UPDATE vehicles SET fb_listing_url='' WHERE id=?`, v.id);
+    logEvent(req.ext.storeId, `Anúncio de ${nome} excluído do Marketplace`);
+  } else if (status === 'falhou') {
+    logEvent(req.ext.storeId, `Extensão não concluiu (${job.type}) ${nome}: ${req.body?.error || 'sem detalhes'}`);
+  }
+  res.json({ ok: true });
+});
+
+app.use('/api/ext', express.json(), extRouter);
+
+/* ------------------------------------------------------------------ */
+/* Meta: conexão, catálogo e campanhas                                */
+/* ------------------------------------------------------------------ */
+
+app.get('/api/meta/status', auth.requireUser, (req, res) => {
+  const st = meta.publicStatus(req.user.storeId);
+  const store = get('SELECT * FROM stores WHERE id = ?', req.user.storeId);
+  res.json({ ...st, feed_url: feed.feedUrl(store), feed_items: feed.feedRows(store).length });
+});
+
+app.get('/api/meta/connect', auth.requireUser, (req, res) => {
+  if (!meta.isConfigured()) throw fail(500, 'Configure META_APP_ID e META_APP_SECRET no .env do servidor.');
+  const state = randomToken(16);
+  run('INSERT INTO oauth_states (state, store_id, expires_at) VALUES (?, ?, ?)', state, req.user.storeId, Date.now() + 15 * 60e3);
+  res.redirect(meta.connectUrl(state));
+});
+
+app.get('/api/meta/callback', wrap(async (req, res) => {
+  const st = get('SELECT * FROM oauth_states WHERE state = ? AND expires_at > ?', String(req.query.state || ''), Date.now());
+  if (!st) return res.redirect('/#config?meta=erro_estado');
+  run('DELETE FROM oauth_states WHERE state = ?', st.state);
+  if (req.query.error || !req.query.code) return res.redirect('/#config?meta=cancelado');
+  try {
+    const conn = await meta.exchangeCode(String(req.query.code));
+    meta.saveConnection(st.store_id, conn);
+    res.redirect('/#config?meta=ok');
+  } catch (e) {
+    console.error('Meta OAuth:', e.message);
+    res.redirect('/#config?meta=erro&msg=' + encodeURIComponent(e.message.slice(0, 200)));
+  }
+}));
+
+app.post('/api/meta/disconnect', auth.requireUser, (req, res) => {
+  run('DELETE FROM meta_connections WHERE store_id = ?', req.user.storeId);
+  logEvent(req.user.storeId, 'Conta do Facebook desconectada');
+  res.json({ ok: true });
+});
+
+app.get('/api/meta/assets', auth.requireUser, wrap(async (req, res) => res.json(await meta.listAssets(req.user.storeId))));
+app.put('/api/meta/settings', auth.requireUser, wrap(async (req, res) => res.json(await meta.saveSettings(req.user.storeId, req.body || {}))));
+app.get('/api/meta/cities', auth.requireUser, wrap(async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  res.json(q.length < 2 ? [] : await meta.searchCities(req.user.storeId, q));
+}));
+app.post('/api/meta/catalog/setup', auth.requireUser, wrap(async (req, res) => res.json(await meta.setupCatalog(req.user.storeId))));
+app.post('/api/meta/catalog/sync', auth.requireUser, wrap(async (req, res) => res.json(await meta.syncCatalog(req.user.storeId))));
+
+function campaignOut(c) {
+  return {
+    ...c,
+    daily_budget: c.daily_budget_cents / 100,
+    stats: c.stats_json ? JSON.parse(c.stats_json) : null,
+    vehicle_ids: all('SELECT vehicle_id FROM campaign_vehicles WHERE campaign_id = ?', c.id).map((r) => r.vehicle_id),
+    ads_manager_url: c.meta_campaign_id
+      ? `https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${(meta.publicStatus(c.store_id).ad_account_id || '').replace('act_', '')}&selected_campaign_ids=${c.meta_campaign_id}`
+      : '',
+  };
+}
+
+app.get('/api/campaigns', auth.requireUser, wrap(async (req, res) => {
+  const list = all('SELECT * FROM campaigns WHERE store_id = ? ORDER BY id DESC', req.user.storeId);
+  if (req.query.refresh) {
+    for (const c of list.filter((x) => x.meta_campaign_id && !['encerrada', 'erro'].includes(x.status))) {
+      await meta.refreshStats(req.user.storeId, c.id).catch((e) => console.warn('insights', c.id, e.message));
+    }
+  }
+  res.json(all('SELECT * FROM campaigns WHERE store_id = ? ORDER BY id DESC', req.user.storeId).map(campaignOut));
+}));
+
+app.post('/api/campaigns', auth.requireUser, wrap(async (req, res) => {
+  const b = req.body || {};
+  const storeId = req.user.storeId;
+  const name = String(b.name || '').trim().slice(0, 120);
+  const mode = String(b.mode || '');
+  const daily = Number(String(b.daily_budget ?? '').replace(',', '.'));
+  const days = parseInt(b.days, 10);
+  const radius = parseInt(b.radius_km, 10);
+  const ageMin = Math.min(65, Math.max(18, parseInt(b.age_min ?? 18, 10) || 18));
+  const ageMax = Math.min(65, Math.max(ageMin, parseInt(b.age_max ?? 65, 10) || 65));
+  if (!name) throw fail(400, 'Dê um nome à campanha.');
+  if (!meta.MODES[mode]) throw fail(400, 'Escolha o tipo de campanha.');
+  if (!(daily >= 6)) throw fail(400, 'O orçamento diário mínimo é R$ 6.');
+  if (!(days >= 1 && days <= 90)) throw fail(400, 'A duração deve ser de 1 a 90 dias.');
+  if (!(radius >= 17 && radius <= 80)) throw fail(400, 'O raio em torno da cidade deve ficar entre 17 e 80 km (limite da Meta).');
+  if (!b.city_key || !b.city_name) throw fail(400, 'Escolha a cidade da campanha.');
+  const ids = [...new Set((b.vehicle_ids || []).map(Number))];
+  if (!ids.length) throw fail(400, 'Escolha ao menos um veículo.');
+  if (mode !== 'catalogo' && ids.length > 10) throw fail(400, 'Campanhas de conversa aceitam até 10 veículos (carrossel).');
+  const vs = ids.map((id) => V.findVehicle(storeId, id));
+  if (vs.some((v) => !v || v.status === 'vendido' || v.status === 'rascunho')) throw fail(400, 'Há veículos vendidos, em rascunho ou inexistentes na seleção.');
+  if (mode === 'catalogo' && vs.some((v) => !v.catalogo)) throw fail(400, 'No modo Catálogo dinâmico, todos os veículos precisam estar marcados para o catálogo.');
+
+  const start = new Date(Date.now() + 5 * 60e3);
+  const end = new Date(start.getTime() + days * 864e5);
+  const c = tx(() => {
+    const r = run(`INSERT INTO campaigns (store_id, name, mode, daily_budget_cents, days, city_key, city_name, radius_km, age_min, age_max, message, start_time, end_time)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    storeId, name, mode, Math.round(daily * 100), days, String(b.city_key), String(b.city_name).slice(0, 120), radius, ageMin, ageMax,
+    String(b.message || '').trim().slice(0, 600), start.toISOString(), end.toISOString());
+    ids.forEach((id) => run('INSERT INTO campaign_vehicles (campaign_id, vehicle_id) VALUES (?, ?)', r.lastInsertRowid, id));
+    return r.lastInsertRowid;
+  });
+  try {
+    const out = await meta.launchCampaign(storeId, Number(c), { activate: !!b.activate });
+    res.status(201).json(campaignOut(out));
+  } catch (e) {
+    e.campaign = campaignOut(get('SELECT * FROM campaigns WHERE id = ?', Number(c)));
+    throw e;
+  }
+}));
+
+app.post('/api/campaigns/:id/retry', auth.requireUser, wrap(async (req, res) => {
+  const c = get('SELECT * FROM campaigns WHERE id = ? AND store_id = ?', Number(req.params.id), req.user.storeId);
+  if (!c || c.status !== 'erro') throw fail(409, 'Só campanhas com erro podem ser reenviadas.');
+  const start = new Date(Date.now() + 5 * 60e3);
+  run(`UPDATE campaigns SET start_time=?, end_time=?, status='criando', error='' WHERE id=?`, start.toISOString(), new Date(start.getTime() + c.days * 864e5).toISOString(), c.id);
+  res.json(campaignOut(await meta.launchCampaign(req.user.storeId, c.id, { activate: !!req.body?.activate })));
+}));
+
+for (const [action, status] of [['activate', 'ACTIVE'], ['pause', 'PAUSED'], ['end', 'ARCHIVED']]) {
+  app.post(`/api/campaigns/:id/${action}`, auth.requireUser, wrap(async (req, res) => {
+    res.json(campaignOut(await meta.setCampaignStatus(req.user.storeId, Number(req.params.id), status)));
+  }));
+}
+
+app.delete('/api/campaigns/:id', auth.requireUser, (req, res) => {
+  const c = get('SELECT * FROM campaigns WHERE id = ? AND store_id = ?', Number(req.params.id), req.user.storeId);
+  if (!c) throw fail(404, 'Campanha não encontrada.');
+  if (c.meta_campaign_id) throw fail(409, 'Esta campanha existe na Meta. Use Encerrar.');
+  run('DELETE FROM campaigns WHERE id = ?', c.id);
+  res.json({ ok: true });
+});
+
+/* ------------------------------------------------------------------ */
+/* Erros                                                              */
+/* ------------------------------------------------------------------ */
+
+app.use('/api', (req, res) => res.status(404).json({ error: 'Rota não encontrada.' }));
+
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, _next) => {
+  if (err instanceof multer.MulterError) {
+    return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'Cada foto pode ter no máximo 12 MB.' : 'Envio de fotos inválido.' });
+  }
+  const isMeta = err instanceof MetaError;
+  const status = isMeta ? 502 : err.status || 500;
+  if (status >= 500 && !isMeta) console.error(err);
+  res.status(status).json({
+    error: isMeta ? `A Meta recusou o pedido: ${err.title ? err.title + ' — ' : ''}${err.message}` : (status >= 500 ? 'Erro interno no servidor.' : err.message),
+    ...(isMeta ? { meta: { code: err.code, subcode: err.subcode, fbtrace_id: err.fbtraceId } } : {}),
+    ...(err.campaign ? { campaign: err.campaign } : {}),
+  });
+});
+
+if (require.main === module) {
+  app.listen(config.port, () => {
+    console.log(`GiroAuto rodando em ${config.publicUrl} (porta ${config.port})`);
+    if (!meta.isConfigured()) console.log('Aviso: META_APP_ID/META_APP_SECRET não configurados. Campanhas ficam indisponíveis.');
+  });
+}
+
+module.exports = app;
