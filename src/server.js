@@ -164,6 +164,8 @@ function metaAppInfo() {
     deletion_url: `${config.publicUrl}/exclusao-de-dados`,
     terms_url: `${config.publicUrl}/termos`,
     https: config.publicUrl.startsWith('https://'),
+    scopes: config.meta.scopes,
+    optional_scopes: Object.entries(config.meta.optionalScopes).map(([key, label]) => ({ key, label, enabled: config.meta.extraScopes.includes(key) })),
   };
 }
 
@@ -193,6 +195,11 @@ app.post('/api/admin/storage/backup', requireAdmin, wrap(async (req, res) => {
   if (st.last_error) throw fail(502, `A cópia falhou: ${st.last_error}`);
   res.json(st);
 }));
+
+app.put('/api/admin/meta-app/scopes', requireAdmin, (req, res) => {
+  settings.saveExtraScopes(Array.isArray(req.body?.scopes) ? req.body.scopes.map(String) : []);
+  res.json(metaAppInfo());
+});
 
 app.delete('/api/admin/meta-app', requireAdmin, (req, res) => { settings.clearMetaApp(); res.json(metaAppInfo()); });
 

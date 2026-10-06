@@ -22,6 +22,17 @@ function applyMetaApp() {
   config.meta.source = id && secret ? 'painel' : (ENV_APP_ID && ENV_APP_SECRET ? 'env' : '');
 }
 
+function applyScopes() {
+  const v = read('meta_extra_scopes') || '';
+  config.meta.extraScopes = v.split(',').filter((x) => x && config.meta.optionalScopes[x]);
+}
+
+function saveExtraScopes(list) {
+  const clean = [...new Set((list || []).filter((x) => config.meta.optionalScopes[x]))];
+  write('meta_extra_scopes', clean.join(','));
+  applyScopes();
+}
+
 function saveMetaApp(appId, appSecret) {
   write('meta_app_id', appId);
   write('meta_app_secret_enc', encrypt(appSecret));
@@ -34,5 +45,6 @@ function clearMetaApp() {
 }
 
 applyMetaApp();
+applyScopes();
 
-module.exports = { applyMetaApp, saveMetaApp, clearMetaApp };
+module.exports = { applyMetaApp, saveMetaApp, clearMetaApp, saveExtraScopes, applyScopes };

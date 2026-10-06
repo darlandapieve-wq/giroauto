@@ -20,16 +20,20 @@ const config = {
     apiVersion: env.META_API_VERSION || 'v25.0',
     graphUrl: (env.META_GRAPH_URL || 'https://graph.facebook.com').replace(/\/+$/, ''),
     dialogUrl: (env.META_DIALOG_URL || 'https://www.facebook.com').replace(/\/+$/, ''),
+    // Permissões aceitas por um app com o caso de uso "Criar e gerenciar anúncios com a API de Marketing".
     scopes: [
       'ads_management',
       'ads_read',
       'business_management',
-      'catalog_management',
       'pages_show_list',
       'pages_read_engagement',
-      'pages_manage_ads',
-      'instagram_basic',
     ],
+    // Permissões opcionais: só pedidas se o administrador ligar no painel (exigem outro caso de uso no app).
+    optionalScopes: {
+      catalog_management: 'Catálogo de veículos (caso de uso "Gerenciar catálogos" no app da Meta)',
+      instagram_basic: 'Nome do perfil do Instagram (caso de uso "Instagram" no app da Meta)',
+    },
+    extraScopes: [],
   },
   republishDays: Number(env.REPUBLISH_DAYS || 7),
 };

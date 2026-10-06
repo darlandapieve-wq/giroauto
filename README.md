@@ -94,7 +94,7 @@ Crie a conta da loja na tela inicial ("Criar conta"). Os dados ficam na pasta `d
 2. Adicione o produto **Login do Facebook para Empresas**. Em "URIs de redirecionamento do OAuth válidos", cadastre:
    `PUBLIC_URL/api/meta/callback` (por exemplo `http://localhost:3333/api/meta/callback` no teste local).
 3. Copie o **ID do app** e a **Chave secreta do app** (Configurações > Básico) para `META_APP_ID` e `META_APP_SECRET` no `.env`.
-4. Permissões pedidas no login: `ads_management`, `ads_read`, `business_management`, `catalog_management`, `pages_show_list`, `pages_read_engagement`, `pages_manage_ads`, `instagram_basic`.
+4. Permissões pedidas no login: `ads_management`, `ads_read`, `business_management`, `pages_show_list`, `pages_read_engagement` (aceitas pelo caso de uso "API de Marketing"). Opcionais, ligadas pelo administrador em Configurações > App da Meta depois de adicionar o caso de uso correspondente: `catalog_management` (catálogo dinâmico) e `instagram_basic` (nome do perfil do Instagram).
    Se preferir uma "configuração" do Login para Empresas, informe o ID em `META_LOGIN_CONFIG_ID`.
 
 **Modo de desenvolvimento:** enquanto o app estiver em desenvolvimento, só contas com função no app (administrador, desenvolvedor ou testador) conseguem conectar. Para testar com a sua própria loja isso basta. Para vender o GiroAuto para outras lojas, a Meta exige verificação da empresa e análise do app (acesso avançado a `ads_management` e às demais permissões).

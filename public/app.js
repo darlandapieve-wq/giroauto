@@ -1125,6 +1125,10 @@
       <p class="note">A chave fica guardada criptografada no servidor. Ao salvar, o GiroAuto confere as credenciais na Meta.</p>
       <div class="err" id="maErr" hidden></div>
       <div class="form-foot">${a.source === 'painel' ? '<button class="btn ghost danger" id="maClear" type="button">Remover</button>' : ''}<button class="btn primary" id="maSave" type="button">${ok ? 'Atualizar credenciais' : 'Salvar e testar'}</button></div>
+      <h3 style="margin:18px 0 6px;font-size:15px">Permissões extras (opcional)</h3>
+      <p class="note">O GiroAuto pede ao Facebook só as permissões de anúncios, que o caso de uso "API de Marketing" aceita. Ligue uma opção abaixo <b>somente depois</b> de adicionar o caso de uso correspondente no app da Meta; senão o Facebook mostra "Invalid Scopes" ao conectar. Depois de mudar, cada loja precisa clicar em Conectar Facebook de novo.</p>
+      <div style="display:flex;flex-direction:column;gap:6px;margin:6px 0 10px">${(a.optional_scopes || []).map((o) => `<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-scope="${esc(o.key)}" ${o.enabled ? 'checked' : ''}> ${esc(o.label)}</label>`).join('')}</div>
+      <div class="form-foot"><button class="btn" id="maScopes" type="button">Salvar permissões</button></div>
       <p class="note">Enquanto o app estiver em <b>modo de desenvolvimento</b>, só quem tem função no app (você) consegue conectar. Para outras lojas usarem, a Meta exige verificação da empresa e análise do app, com acesso avançado às permissões de anúncios.</p>
     </div>`;
   }
@@ -1213,6 +1217,13 @@
           toast('App da Meta configurado. Agora clique em Conectar Facebook.', 5000);
           render();
         } catch (e) { $('#maErr').textContent = e.message; $('#maErr').hidden = false; mas.disabled = false; mas.textContent = 'Salvar e testar'; }
+      };
+      const msc = $('#maScopes');
+      if (msc) msc.onclick = async () => {
+        try {
+          S.metaApp = await api('PUT', '/api/admin/meta-app/scopes', { scopes: $$('[data-scope]').filter((c) => c.checked).map((c) => c.dataset.scope) });
+          toast('Permissões salvas. Clique em Conectar Facebook de novo para aplicar.', 5000);
+        } catch (e) { toast(e.message); }
       };
       const mac = $('#maClear');
       if (mac) mac.onclick = () => confirmBox('Remover credenciais do app?', 'As lojas não vão conseguir criar campanhas até o app ser configurado de novo.', 'Remover', async () => { await api('DELETE', '/api/admin/meta-app'); render(); }, true);

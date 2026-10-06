@@ -14,6 +14,10 @@ function isConfigured() {
   return !!(config.meta.appId && config.meta.appSecret);
 }
 
+function scopeList() {
+  return [...config.meta.scopes, ...(config.meta.extraScopes || [])];
+}
+
 function connectUrl(state) {
   const u = new URL(`${config.meta.dialogUrl}/${config.meta.apiVersion}/dialog/oauth`);
   u.searchParams.set('client_id', config.meta.appId);
@@ -21,7 +25,7 @@ function connectUrl(state) {
   u.searchParams.set('state', state);
   u.searchParams.set('response_type', 'code');
   if (config.meta.loginConfigId) u.searchParams.set('config_id', config.meta.loginConfigId);
-  else u.searchParams.set('scope', config.meta.scopes.join(','));
+  else u.searchParams.set('scope', scopeList().join(','));
   return u.toString();
 }
 
@@ -105,7 +109,10 @@ async function listAssets(storeId) {
   const { token } = tokenFor(storeId);
   const [adAccounts, pages, businesses] = await Promise.all([
     graph.getAll('/me/adaccounts', token, { fields: 'id,name,currency,account_status' }),
-    graph.getAll('/me/accounts', token, { fields: 'id,name,instagram_business_account{id,username}' }),
+    // O perfil do Instagram ligado à Página exige instagram_basic; sem essa permissão, lista só as Páginas.
+    graph.getAll('/me/accounts', token, { fields: 'id,name,instagram_business_account{id,username}' })
+      .catch(() => graph.getAll('/me/accounts', token, { fields: 'id,name,instagram_business_account' }))
+      .catch(() => graph.getAll('/me/accounts', token, { fields: 'id,name' })),
     graph.getAll('/me/businesses', token, { fields: 'id,name' }).catch(() => []),
   ]);
   return {
@@ -153,10 +160,18 @@ async function setupCatalog(storeId) {
   if (!conn.business_id) throw httpError(400, 'Escolha o portfólio empresarial (Business) da loja em Configurações.');
   let catalogId = conn.catalog_id;
   if (!catalogId) {
-    const cat = await graph.post(`/${conn.business_id}/owned_product_catalogs`, token, {
-      name: `${store.name} · Veículos (GiroAuto)`,
-      vertical: 'vehicles',
-    });
+    let cat;
+    try {
+      cat = await graph.post(`/${conn.business_id}/owned_product_catalogs`, token, {
+        name: `${store.name} · Veículos (GiroAuto)`,
+        vertical: 'vehicles',
+      });
+    } catch (e) {
+      if (!(config.meta.extraScopes || []).includes('catalog_management') || /permission|permiss|\(#(10|200|294)\)/i.test(e.message)) {
+        throw httpError(400, 'O Facebook não deu permissão para criar catálogos. O administrador precisa adicionar o caso de uso "Gerenciar catálogos" no app da Meta, ligar "Catálogo de veículos" em Configurações > App da Meta e conectar o Facebook de novo. Os modos WhatsApp e Messenger funcionam sem catálogo.');
+      }
+      throw e;
+    }
     catalogId = cat.id;
   }
   let feedId = conn.feed_id;

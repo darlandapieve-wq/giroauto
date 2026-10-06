@@ -2,6 +2,17 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v1.6.1 — 06/10/2026
+
+**Correção: "Invalid Scopes" ao conectar o Facebook**
+
+- O GiroAuto passou a pedir só as permissões que o caso de uso "Criar e gerenciar anúncios com a API de Marketing" aceita: `ads_management`, `ads_read`, `business_management`, `pages_show_list` e `pages_read_engagement`.
+- `catalog_management` e `instagram_basic` viraram opcionais: o administrador liga em **Configurações > App da Meta > Permissões extras**, depois de adicionar o caso de uso correspondente no app da Meta. `pages_manage_ads` não é mais pedida.
+- Sem `instagram_basic`, as Páginas continuam aparecendo e os anúncios continuam indo para o Instagram.
+- Mensagem clara ao criar o catálogo sem a permissão. WhatsApp e Messenger funcionam sem catálogo.
+
+Arquivos alterados: `src/config.js`, `src/settings.js`, `src/meta/service.js`, `src/server.js`, `public/app.js`, `test/api.test.js`, `package.json`, `CHANGELOG.md`, `README.md`.
+
 ## v1.6 — 06/10/2026
 
 **Campanhas com público, posicionamentos e alcance estimado**

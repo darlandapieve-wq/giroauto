@@ -141,6 +141,15 @@ test('conexão com a Meta e campanha no WhatsApp', async () => {
   const loc = new URL(r.headers.get('location'));
   assert.equal(loc.searchParams.get('client_id'), '123');
   assert.match(loc.searchParams.get('scope'), /ads_management/);
+  // O caso de uso "API de Marketing" rejeita estas permissões ("Invalid Scopes"); só vão se o administrador ligar.
+  assert.doesNotMatch(loc.searchParams.get('scope'), /catalog_management|pages_manage_ads|instagram_basic/);
+  let sc = await api('PUT', '/api/admin/meta-app/scopes', { scopes: ['catalog_management', 'pages_manage_ads'] });
+  assert.equal(sc.status, 200);
+  assert.deepEqual(sc.body.optional_scopes.filter((o) => o.enabled).map((o) => o.key), ['catalog_management']);
+  r = await api('GET', '/api/meta/connect');
+  assert.match(new URL(r.headers.get('location')).searchParams.get('scope'), /catalog_management/);
+  assert.doesNotMatch(new URL(r.headers.get('location')).searchParams.get('scope'), /pages_manage_ads/);
+  await api('PUT', '/api/admin/meta-app/scopes', { scopes: [] });
   const st = loc.searchParams.get('state');
   r = await api('GET', `/api/meta/callback?code=abc&state=${st}`);
   assert.equal(r.status, 302);
