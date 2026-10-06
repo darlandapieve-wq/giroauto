@@ -15,9 +15,9 @@ shutil.copy(ROOT / 'test' / 'fixtures' / 'fb-form.html', site / 'index.html')
 JPG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA='
 VEH = {'marca': 'Chevrolet', 'modelo': 'Onix', 'versao': 'LT 1.0 Turbo', 'ano_modelo': 2022, 'ano_fab': 2021, 'km': 48200,
        'preco': 74900, 'carroceria': 'Hatch', 'cor': 'Prata', 'combustivel': 'Flex', 'cambio': 'Automático',
-       'descricao': 'Carro revisado', 'photos': [{'url': JPG}] * 3}
-EXPECTED = {'tipo': 'Carro/picape', 'ano': '2022', 'carroceria': 'Hatchback', 'cor': 'Prata', 'cond': 'Bom', 'comb': 'Flex',
-            'trans': 'Transmissão automática', 'marca': 'Chevrolet', 'modelo': 'Onix LT 1.0 Turbo', 'km': '48200',
+       'cor_interna': 'Bege', 'descricao': 'Carro revisado', 'photos': [{'url': JPG}] * 3}
+EXPECTED = {'tipo': 'Carro/picape', 'ano': '2022', 'carroceria': 'Hatchback', 'cor': 'Prata', 'corint': 'Bege', 'cond': 'Bom', 'comb': 'Flex',
+            'trans': 'Transmissão automática', 'fabricante': 'Chevrolet', 'modelo': 'Onix', 'km': '48200',
             'preco': '74900', 'desc': 'Carro revisado', 'fotos': 3}
 
 

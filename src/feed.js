@@ -52,6 +52,7 @@ function feedRows(store) {
         fuel_type: FUEL[v.combustivel] || 'OTHER',
         transmission: TRANS[v.cambio] || 'OTHER',
         exterior_color: v.cor || '',
+        interior_color: v.cor_interna || '',
         dealer_name: store.name,
         dealer_phone: store.whatsapp || store.phone || '',
         'address.addr1': store.address || '',
@@ -70,7 +71,7 @@ function buildCsv(store) {
   const base = [
     'vehicle_id', 'title', 'description', 'url', 'make', 'model', 'year', 'trim',
     'mileage.value', 'mileage.unit', 'price', 'state_of_vehicle', 'availability', 'body_style',
-    'fuel_type', 'transmission', 'exterior_color', 'dealer_name', 'dealer_phone',
+    'fuel_type', 'transmission', 'exterior_color', 'interior_color', 'dealer_name', 'dealer_phone',
     'address.addr1', 'address.city', 'address.region', 'address.postal_code', 'address.country',
   ];
   const maxImg = rows.reduce((m, r) => Math.max(m, Object.keys(r).filter((k) => k.startsWith('image[')).length), 1);

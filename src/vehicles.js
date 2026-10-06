@@ -68,6 +68,7 @@ function cleanInput(body = {}) {
     fipe: int(body.fipe),
     placa: str(body.placa, 8).toUpperCase().replace(/[^A-Z0-9]/g, ''),
     cor: pick(body.cor, CORES),
+    cor_interna: pick(body.cor_interna, CORES),
     cambio: pick(body.cambio, CAMBIOS),
     combustivel: pick(body.combustivel, COMBUSTIVEIS),
     carroceria: pick(body.carroceria, CARROCERIAS),

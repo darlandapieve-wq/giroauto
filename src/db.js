@@ -167,6 +167,7 @@ addColumn('stores', 'pub_mode', "TEXT NOT NULL DEFAULT 'manual'");
 // Administrador da plataforma (quem configura o app da Meta). O primeiro usuário cadastrado vira administrador.
 // Veículo escolhido para o preenchimento automático (favorito no Facebook).
 addColumn('stores', 'assist_vehicle_id', 'INTEGER');
+addColumn('vehicles', 'cor_interna', "TEXT DEFAULT ''");
 addColumn('stores', 'assist_at', 'TEXT');
 addColumn('users', 'is_admin', 'INTEGER NOT NULL DEFAULT 0');
 db.exec(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')))`);

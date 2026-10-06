@@ -35,7 +35,7 @@
       const b = await (await fetch(new URL(p.url).pathname)).blob();
       files.push(new File([b], `${String(i + 1).padStart(2, '0')}.${(b.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg')}`, { type: b.type || 'image/jpeg' }));
     }
-    data = { vehicle: v, files };
+    data = { vehicle: v, files, version: cur.version };
     send();
   }
 
@@ -49,7 +49,7 @@
       return;
     }
     // Só envia para o Facebook. Se a aba que abriu esta janela for outro site, a mensagem é descartada pelo navegador.
-    FB.forEach((o) => { try { window.opener.postMessage({ type: 'giro-data', vehicle: data.vehicle, files: data.files }, o); } catch { /* origem diferente */ } });
+    FB.forEach((o) => { try { window.opener.postMessage({ type: 'giro-data', vehicle: data.vehicle, files: data.files, version: data.version }, o); } catch { /* origem diferente */ } });
     st.outerHTML = `<div class="ok">Dados enviados ao Facebook. Acompanhe o preenchimento na outra aba.</div>
       <span class="muted" id="st2">Depois de clicar em Publicar no Facebook, esta janela registra a publicação e fecha sozinha.</span>
       <div class="row" style="flex-wrap:wrap"><button id="resend">Enviar de novo</button><button id="copy">Copiar dados</button><button class="p" id="done">Já publiquei</button></div>`;

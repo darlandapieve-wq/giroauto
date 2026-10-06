@@ -60,12 +60,13 @@ test('cadastro e login', async () => {
 test('veículo com fotos e publicação pela extensão', async () => {
   let r = await api('POST', '/api/vehicles', {
     marca: 'Chevrolet', modelo: 'Onix', versao: 'LT 1.0 Turbo', ano_fab: 2021, ano_modelo: 2022, km: '48.200',
-    preco: 'R$ 74.900', cambio: 'Automático', combustivel: 'Flex', carroceria: 'Hatch', cor: 'Prata', catalogo: true,
+    preco: 'R$ 74.900', cambio: 'Automático', combustivel: 'Flex', carroceria: 'Hatch', cor: 'Prata', cor_interna: 'Preto', catalogo: true,
   });
   assert.equal(r.status, 201);
   vehicleId = r.body.id;
   assert.equal(r.body.km, 48200);
   assert.equal(r.body.preco, 74900);
+  assert.equal(r.body.cor_interna, 'Preto');
 
   r = await api('POST', `/api/vehicles/${vehicleId}/publish`);
   assert.equal(r.status, 400, 'sem foto não publica');

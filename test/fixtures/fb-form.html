@@ -1,28 +1,42 @@
 <!doctype html><html><head><meta charset="utf-8"></head><body><div role="main">
-<!-- Imitação simplificada da estrutura do formulário do Marketplace (rótulos em span dentro de label, combobox com listbox) -->
+<!-- Imitação simplificada do formulário de veículo do Marketplace (pt-BR).
+     Fabricante: lista longa com busca e só 8 itens visíveis por vez (como lista virtualizada).
+     Modelo: lista que depende do fabricante escolhido. -->
 <label role="combobox" tabindex="0" aria-haspopup="listbox" id="tipo"><span>Tipo de veículo</span><span class="val"></span></label>
 <input type="file" accept="image/*,image/heif,image/heic" multiple id="fotos">
 <label role="combobox" tabindex="0" aria-haspopup="listbox" id="ano"><span>Ano</span><span class="val"></span></label>
-<label><span>Marca</span><input type="text" id="marca"></label>
-<label><span>Modelo</span><input type="text" id="modelo"></label>
+<label role="combobox" tabindex="0" aria-haspopup="listbox" id="fabricante"><span>Fabricante</span><span class="val"></span></label>
+<label role="combobox" tabindex="0" aria-haspopup="listbox" id="modelo"><span>Modelo</span><span class="val"></span></label>
 <label><span>Quilometragem</span><input type="text" id="km"></label>
 <label><span>Preço</span><input type="text" id="preco"></label>
 <label role="combobox" tabindex="0" aria-haspopup="listbox" id="carroceria"><span>Estilo da carroceria</span><span class="val"></span></label>
 <label role="combobox" tabindex="0" aria-haspopup="listbox" id="cor"><span>Cor externa</span><span class="val"></span></label>
+<label role="combobox" tabindex="0" aria-haspopup="listbox" id="corint"><span>Cor interna</span><span class="val"></span></label>
 <label role="combobox" tabindex="0" aria-haspopup="listbox" id="cond"><span>Condição do veículo</span><span class="val"></span></label>
 <label role="combobox" tabindex="0" aria-haspopup="listbox" id="comb"><span>Tipo de combustível</span><span class="val"></span></label>
 <label role="combobox" tabindex="0" aria-haspopup="listbox" id="trans"><span>Transmissão</span><span class="val"></span></label>
 <label><span>Descrição</span><textarea id="desc"></textarea></label>
 </div>
 <script>
+const MAKES=['Acura','Alfa Romeo','Aston Martin','Audi','Bentley','BMW','BYD','Caoa Chery','Chevrolet','Chrysler','Citroën','Dodge','Ferrari','Fiat','Ford','GWM','Honda','Hyundai','Jac','Jaguar','Jeep','Kia','Land Rover','Lexus','Mercedes-Benz','Mini','Mitsubishi','Nissan','Peugeot','Porsche','RAM','Renault','Subaru','Suzuki','Toyota','Troller','Volkswagen','Volvo'];
+const MODELS={Chevrolet:['Cruze','Equinox','Montana','Onix','Onix Plus','S10','Spin','Tracker'],Volkswagen:['Gol','Nivus','Polo','T-Cross','Taos','Virtus'],Jeep:['Commander','Compass','Renegade']};
+const COLORS=['Preto','Azul','Marrom','Dourado','Verde','Cinza','Rosa','Roxo','Vermelho','Prata','Laranja','Branco','Amarelo','Bege','Outro'];
 const OPTS={tipo:['Carro/picape','Motocicleta','Barco'],ano:Array.from({length:40},(_,i)=>String(2026-i)),carroceria:['Cupê','Picape','Sedã','Hatchback','SUV','Conversível','Perua','Minivan','Outro'],
-cor:['Preto','Azul','Marrom','Ouro','Verde','Cinza','Rosa','Roxo','Vermelho','Prata','Laranja','Branco','Amarelo','Outro'],cond:['Excelente','Muito bom','Bom','Razoável','Ruim'],
-comb:['Diesel','Elétrico','Gasolina','Flex','Híbrido','Outro'],trans:['Transmissão manual','Transmissão automática']};
-document.querySelectorAll('[role=combobox]').forEach(cb=>cb.addEventListener('click',()=>{
+cor:COLORS,corint:COLORS,cond:['Excelente','Muito bom','Bom','Razoável','Ruim'],comb:['Diesel','Elétrico','Gasolina','Flex','Híbrido','Outro'],trans:['Transmissão manual','Transmissão automática']};
+function openList(cb){
   document.querySelectorAll('[role=listbox]').forEach(x=>x.remove());
-  const lb=document.createElement('div');lb.setAttribute('role','listbox');lb.style.cssText='max-height:120px;overflow:auto';
-  OPTS[cb.id].forEach(t=>{const o=document.createElement('div');o.setAttribute('role','option');o.innerHTML='<span>'+t+'</span>';o.onclick=()=>{cb.querySelector('.val').textContent=t;lb.remove();};lb.appendChild(o);});
+  const lb=document.createElement('div');lb.setAttribute('role','listbox');lb.style.cssText='max-height:160px;overflow:auto;border:1px solid #ccc';
+  let items=OPTS[cb.id]||[], search=null, virtual=false;
+  if(cb.id==='fabricante'){items=MAKES;virtual=true;search=document.createElement('input');search.type='text';search.placeholder='Pesquisar';lb.appendChild(search);}
+  if(cb.id==='modelo'){const f=document.querySelector('#fabricante .val').textContent;items=MODELS[f]||[];}
+  const box=document.createElement('div');lb.appendChild(box);
+  const draw=(q)=>{box.textContent='';let list=items.filter(t=>!q||t.toLowerCase().includes(q.toLowerCase()));if(virtual&&!q)list=list.slice(0,8);
+    list.forEach(t=>{const o=document.createElement('div');o.setAttribute('role','option');o.innerHTML='<span>'+t+'</span>';o.onclick=()=>{cb.querySelector('.val').textContent=t;if(cb.id==='fabricante')document.querySelector('#modelo .val').textContent='';lb.remove();};box.appendChild(o);});};
+  draw('');
+  if(search)search.addEventListener('input',()=>draw(search.value));
   document.body.appendChild(lb);
-}));
-window.results=()=>Object.fromEntries([...document.querySelectorAll('[role=combobox]')].map(c=>[c.id,c.querySelector('.val').textContent]).concat([...document.querySelectorAll('input[type=text],textarea')].map(i=>[i.id,i.value])).concat([['fotos',document.getElementById('fotos').files.length]]));
+  if(search)search.focus();
+}
+document.querySelectorAll('[role=combobox]').forEach(cb=>cb.addEventListener('click',()=>openList(cb)));
+window.results=()=>Object.fromEntries([...document.querySelectorAll('[role=combobox]')].map(c=>[c.id,c.querySelector('.val').textContent]).concat([...document.querySelectorAll('input[type=text]:not([placeholder=Pesquisar]),textarea')].map(i=>[i.id,i.value])).concat([['fotos',document.getElementById('fotos').files.length]]));
 </script></body></html>

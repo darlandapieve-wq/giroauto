@@ -299,7 +299,7 @@
 
   /* ---------------- VEÍCULO (novo/editar) ---------------- */
   function blankDraft() {
-    return { id: null, marca: '', modelo: '', versao: '', ano_fab: '', ano_modelo: '', km: '', preco: '', fipe: '', placa: '', cor: '', cambio: '', combustivel: 'Flex', carroceria: '', descricao: '', organico: true, catalogo: false, photos: [], status: 'rascunho' };
+    return { id: null, marca: '', modelo: '', versao: '', ano_fab: '', ano_modelo: '', km: '', preco: '', fipe: '', placa: '', cor: '', cor_interna: 'Preto', cambio: '', combustivel: 'Flex', carroceria: '', descricao: '', organico: true, catalogo: false, photos: [], status: 'rascunho' };
   }
   function draftFrom(v) { return { ...blankDraft(), ...v, km: v.km || '', preco: v.preco || '', fipe: v.fipe || '', ano_fab: v.ano_fab || '', ano_modelo: v.ano_modelo || '', photos: [...v.photos] }; }
   function viewVeiculo() {
@@ -317,7 +317,8 @@
           <div class="f"><label for="v-cambio">Câmbio</label>${sel('v-cambio', o.cambios, d.cambio)}</div>
           <div class="f"><label for="v-combustivel">Combustível</label>${sel('v-combustivel', o.combustiveis, d.combustivel)}</div>
           <div class="f"><label for="v-carroceria">Carroceria</label>${sel('v-carroceria', o.carrocerias, d.carroceria)}</div>
-          <div class="f"><label for="v-cor">Cor</label>${sel('v-cor', o.cores, d.cor)}</div>
+          <div class="f"><label for="v-cor">Cor externa</label>${sel('v-cor', o.cores, d.cor)}</div>
+          <div class="f"><label for="v-cor_interna">Cor interna</label>${sel('v-cor_interna', o.cores, d.cor_interna)}</div>
           ${inp('placa', 'Placa', 'ABC1D23', 'maxlength="7" style="text-transform:uppercase"')}
           <div class="f"></div>
           ${inp('preco', 'Preço de venda (R$)', '74900', 'inputmode="numeric"', 'w3')}${inp('fipe', 'Referência FIPE (R$)', '77320', 'inputmode="numeric"', 'w3')}
@@ -356,7 +357,7 @@
   }
   function readDraft() {
     const d = S.draft;
-    ['marca', 'modelo', 'versao', 'ano_fab', 'ano_modelo', 'km', 'preco', 'fipe', 'placa', 'cambio', 'combustivel', 'carroceria', 'cor', 'descricao'].forEach((k) => { d[k] = $('#v-' + k).value; });
+    ['marca', 'modelo', 'versao', 'ano_fab', 'ano_modelo', 'km', 'preco', 'fipe', 'placa', 'cambio', 'combustivel', 'carroceria', 'cor', 'cor_interna', 'descricao'].forEach((k) => { d[k] = $('#v-' + k).value; });
     d.organico = $('#v-organico').checked; d.catalogo = $('#v-catalogo').checked;
   }
   function addFiles(files) {
@@ -525,12 +526,13 @@
     const fields = [
       ['Tipo de veículo', 'Carro/picape', 'escolha'],
       ['Ano', String(v.ano_modelo || v.ano_fab || ''), 'escolha'],
-      ['Marca', v.marca, 'copiar'],
+      ['Fabricante', v.marca, 'escolha'],
       ['Modelo', modelo, 'copiar'],
       ['Quilometragem', String(v.km || 0), 'copiar'],
       ['Preço', String(v.preco || ''), 'copiar'],
       v.carroceria && ['Estilo da carroceria', FB_BODY[v.carroceria] || v.carroceria, 'escolha'],
       v.cor && ['Cor externa', v.cor, 'escolha'],
+      v.cor_interna && ['Cor interna', v.cor_interna, 'escolha'],
       ['Condição do veículo', 'Bom', 'escolha'],
       v.combustivel && ['Tipo de combustível', FB_FUEL[v.combustivel] || v.combustivel, 'escolha'],
       v.cambio && ['Transmissão', FB_TRANS[v.cambio] || v.cambio, 'escolha'],
@@ -609,7 +611,7 @@
   async function setupBookmarklet() {
     const a = $('#bmLink'); if (!a) return;
     try {
-      if (!bmCode) bmCode = (await (await fetch('/bookmarklet.js')).text()).trim().replace('__GIRO_ORIGIN__', location.origin);
+      if (!bmCode) bmCode = (await (await fetch('/bookmarklet.js')).text()).trim().replace('__GIRO_ORIGIN__', location.origin).replace('__GIRO_VERSION__', String(S.me.version || ''));
       a.href = 'javascript:' + encodeURIComponent(bmCode);
     } catch { a.removeAttribute('href'); }
     a.onclick = (e) => { e.preventDefault(); toast('Arraste este botão para a barra de favoritos. Ele funciona na página do Facebook.', 5000); };

@@ -88,22 +88,47 @@
     return (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') && !el.readOnly && el.getAttribute('role') !== 'combobox';
   }
 
+  const optionEls = () => [...document.querySelectorAll('[role="option"], [role="menuitemradio"], [role="menuitem"]')].filter(visible);
+  // Mesma regra do favorito: igual; nome base ("Onix" para "Onix LT 1.0 Turbo"); ou começa com o desejado.
+  function bestOption(opts, wanted) {
+    let top = null; let topScore = 0;
+    for (const o of opts) {
+      const t = norm(o.innerText.split('\n')[0]);
+      if (!t) continue;
+      wanted.forEach((w, i) => {
+        let sc = 0;
+        if (t === w) sc = 1000 - i;
+        else if (w.startsWith(t + ' ')) sc = 500 + t.length - i;
+        else if (t.startsWith(w)) sc = 300 - (t.length - w.length) - i;
+        if (sc > topScore) { topScore = sc; top = o; }
+      });
+    }
+    return top;
+  }
   async function chooseOption(el, choices) {
+    const wanted = choices.filter(Boolean).map(norm);
     el.scrollIntoView({ block: 'center' });
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    const before = document.activeElement;
     el.click();
-    await sleep(500);
-    const wanted = choices.map(norm);
-    for (let tries = 0; tries < 6; tries++) {
-      const opts = [...document.querySelectorAll('[role="option"], [role="menuitemradio"], [role="menuitem"]')].filter(visible);
-      for (const w of wanted) {
-        const o = opts.find((x) => norm(x.innerText) === w) || opts.find((x) => norm(x.innerText).startsWith(w));
-        if (o) { o.scrollIntoView({ block: 'center' }); o.click(); await human(); return true; }
-      }
-      if (opts.length) { // lista aberta mas sem a opção: rola a lista
-        const lb = opts[0].closest('[role="listbox"], [role="menu"]') || opts[0].parentElement;
-        lb.scrollTop += 300;
-      }
-      await sleep(300);
+    await sleep(600);
+    const a = document.activeElement;
+    // Só usa um campo de busca aberto pela lista; nunca outro campo do formulário (Preço, Quilometragem...).
+    const sb = (el.tagName === 'INPUT' && !el.readOnly) ? el
+      : (a && a !== el && a !== before && a.tagName === 'INPUT' && a.type !== 'file' && !(box && box.contains(a)) && !a.closest('label')) ? a
+        : [...document.querySelectorAll('[role="listbox"] input, [role="menu"] input')].filter(visible)[0];
+    if (sb) { setNativeValue(sb, String(choices[0])); await sleep(900); }
+    let lastTop = -1; let still = 0;
+    for (let tries = 0; tries < 60; tries++) {
+      const opts = optionEls();
+      const o = bestOption(opts, wanted);
+      if (o) { o.scrollIntoView({ block: 'center' }); o.click(); await human(); return true; }
+      if (!opts.length) { await sleep(300); if (tries > 6) break; continue; }
+      const lb = opts[0].closest('[role="listbox"], [role="menu"]') || opts[0].parentElement;
+      lb.scrollTop += 400;
+      opts[opts.length - 1].scrollIntoView({ block: 'end' });
+      await sleep(250);
+      if (lb.scrollTop === lastTop) { if (++still > 2) break; } else { still = 0; lastTop = lb.scrollTop; }
     }
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     return false;
@@ -117,8 +142,7 @@
       setNativeValue(el, String(value));
       await human();
       // campos com autocompletar abrem uma lista: escolhe a opção igual, se houver
-      const opts = [...document.querySelectorAll('[role="option"]')].filter(visible);
-      const o = opts.find((x) => norm(x.innerText) === norm(value));
+      const o = bestOption(optionEls(), (options || [String(value)]).map(norm));
       if (o) { o.click(); await human(); }
       return 'ok';
     }
@@ -136,12 +160,13 @@
   const L = {
     tipo: ['Tipo de veículo', 'Vehicle type'],
     ano: ['Ano', 'Year'],
-    marca: ['Marca', 'Make'],
+    marca: ['Fabricante', 'Marca', 'Make'],
     modelo: ['Modelo', 'Model'],
     km: ['Quilometragem', 'Mileage'],
     preco: ['Preço', 'Price'],
     carroceria: ['Estilo da carroceria', 'Carroceria', 'Body style'],
     corExt: ['Cor externa', 'Cor exterior', 'Exterior color'],
+    corInt: ['Cor interna', 'Cor do interior', 'Interior color'],
     condicao: ['Condição do veículo', 'Estado do veículo', 'Vehicle condition'],
     combustivel: ['Tipo de combustível', 'Combustível', 'Fuel type'],
     transmissao: ['Transmissão', 'Transmission'],
@@ -185,12 +210,14 @@
     await sleep(800);
     await step(`Fotos (${v.photos.length})`, () => attachPhotos(v.photos.slice(0, 20)));
     await step('Ano', () => fillField(L.ano, v.ano_modelo || v.ano_fab));
-    await step('Marca', () => fillField(L.marca, v.marca));
-    await step('Modelo', () => fillField(L.modelo, `${v.modelo} ${v.versao || ''}`.trim()));
+    await step('Fabricante', () => fillField(L.marca, v.marca));
+    await sleep(700);
+    await step('Modelo', () => fillField(L.modelo, `${v.modelo} ${v.versao || ''}`.trim(), { options: [`${v.modelo} ${v.versao || ''}`.trim(), v.modelo] }));
     await step('Quilometragem', () => fillField(L.km, v.km));
     await step('Preço', () => fillField(L.preco, v.preco));
     if (v.carroceria) await step('Carroceria', () => fillField(L.carroceria, v.carroceria, { options: BODY[v.carroceria] }));
     if (v.cor) await step('Cor externa', () => fillField(L.corExt, v.cor, { options: [v.cor] }));
+    await step('Cor interna', () => fillField(L.corInt, v.cor_interna || 'Preto', { options: [v.cor_interna || 'Preto'] }));
     await step('Condição', () => fillField(L.condicao, 'Bom', { options: ['Bom', 'Muito bom', 'Good'] }));
     if (v.combustivel) await step('Combustível', () => fillField(L.combustivel, v.combustivel, { options: FUEL[v.combustivel] }));
     if (v.cambio) await step('Transmissão', () => fillField(L.transmissao, v.cambio, { options: TRANS[v.cambio] }));

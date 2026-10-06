@@ -312,7 +312,7 @@ app.get('/api/assist/current', auth.requireUser, (req, res) => {
   const s = get(`SELECT assist_vehicle_id, assist_at FROM stores WHERE id = ? AND assist_at > datetime('now', '-2 hours')`, req.user.storeId);
   const v = s?.assist_vehicle_id && V.findVehicle(req.user.storeId, s.assist_vehicle_id);
   if (!v || v.status === 'vendido') throw fail(404, 'Nenhum veículo escolhido para publicar agora.');
-  res.json({ vehicle: V.serialize(v) });
+  res.json({ vehicle: V.serialize(v), version: VERSION });
 });
 
 /* ------------------------------------------------------------------ */

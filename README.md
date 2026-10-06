@@ -1,4 +1,4 @@
-# GiroAuto v1.1
+# GiroAuto v1.2
 
 Histórico de versões: veja [CHANGELOG.md](CHANGELOG.md).
 
