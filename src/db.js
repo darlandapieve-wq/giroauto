@@ -164,6 +164,15 @@ function addColumn(table, col, def) {
 }
 // Modo de publicação orgânica: 'manual' (assistente no painel, sem instalar nada) ou 'extensao'.
 addColumn('stores', 'pub_mode', "TEXT NOT NULL DEFAULT 'manual'");
+// Administrador da plataforma (quem configura o app da Meta). O primeiro usuário cadastrado vira administrador.
+// Veículo escolhido para o preenchimento automático (favorito no Facebook).
+addColumn('stores', 'assist_vehicle_id', 'INTEGER');
+addColumn('stores', 'assist_at', 'TEXT');
+addColumn('users', 'is_admin', 'INTEGER NOT NULL DEFAULT 0');
+db.exec(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')))`);
+if (!db.prepare('SELECT 1 FROM users WHERE is_admin = 1').get()) {
+  db.exec('UPDATE users SET is_admin = 1 WHERE id = (SELECT MIN(id) FROM users)');
+}
 
 function tx(fn) {
   db.exec('BEGIN');

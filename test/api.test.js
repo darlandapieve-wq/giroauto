@@ -266,3 +266,55 @@ test('vendido gera exclusão do anúncio e aviso de campanha', async () => {
   assert.ok(jobs.body.find((j) => j.type === 'republicar' && j.status === 'cancelado'));
   assert.equal(r.body.excluir_manual, false);
 });
+
+test('administrador configura o app da Meta pelo painel', async () => {
+  let r = await api('GET', '/api/me');
+  assert.equal(r.body.user.is_admin, true, 'primeiro usuário é administrador');
+  r = await api('GET', '/api/admin/meta-app');
+  assert.equal(r.body.source, 'env');
+  assert.match(r.body.redirect_uri, /\/api\/meta\/callback$/);
+  r = await api('PUT', '/api/admin/meta-app', { app_id: '123', app_secret: 'curta' });
+  assert.equal(r.status, 400);
+  mock.state.failOn = { method: 'GET', re: /oauth\/access_token$/ };
+  r = await api('PUT', '/api/admin/meta-app', { app_id: '1234567890', app_secret: 'a'.repeat(32) });
+  mock.state.failOn = null;
+  assert.equal(r.status, 400);
+  assert.match(r.body.error, /não aceitou/);
+  r = await api('PUT', '/api/admin/meta-app', { app_id: '1234567890', app_secret: 'b'.repeat(32) });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.source, 'painel');
+  assert.equal(r.body.app_id, '1234567890');
+  r = await api('GET', '/api/meta/connect');
+  assert.equal(new URL(r.headers.get('location')).searchParams.get('client_id'), '1234567890');
+  for (const p of ['/privacidade', '/exclusao-de-dados', '/termos']) assert.equal((await fetch(base + p)).status, 200);
+
+  // outra loja não é administradora
+  const saved = cookie; cookie = '';
+  r = await api('POST', '/api/auth/register', { loja: 'Outra Loja', nome: 'Ana', email: 'ana@x.com', senha: '12345678' });
+  r = await api('GET', '/api/me');
+  assert.equal(r.body.user.is_admin, false);
+  r = await api('PUT', '/api/admin/meta-app', { app_id: '999999', app_secret: 'c'.repeat(32) });
+  assert.equal(r.status, 403);
+  cookie = saved;
+});
+
+test('preenchimento automático: veículo escolhido, ponte e favorito', async () => {
+  let r = await api('POST', '/api/vehicles', { marca: 'Jeep', modelo: 'Renegade', ano_modelo: 2019, km: 81000, preco: 84500 });
+  const id = r.body.id;
+  r = await api('POST', '/api/assist/start', { vehicle_id: id });
+  assert.equal(r.status, 400, 'sem foto não inicia');
+  const fd = new FormData();
+  fd.append('fotos', new Blob([JPG], { type: 'image/jpeg' }), 'a.jpg');
+  await api('POST', `/api/vehicles/${id}/photos`, fd);
+  r = await api('POST', '/api/assist/start', { vehicle_id: id });
+  assert.equal(r.status, 200);
+  r = await api('GET', '/api/assist/current');
+  assert.equal(r.body.vehicle.id, id);
+  assert.equal(r.body.vehicle.photos.length, 1);
+  assert.equal((await fetch(base + '/ponte')).status, 200);
+  const bm = await (await fetch(base + '/bookmarklet.js')).text();
+  assert.match(bm, /__GIRO_ORIGIN__/);
+  assert.ok(!/innerHTML/.test(bm), 'favorito não usa innerHTML');
+  r = await api('GET', '/health');
+  assert.equal(r.body.version, require('../package.json').version);
+});

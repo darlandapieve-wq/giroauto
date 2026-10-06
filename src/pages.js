@@ -67,6 +67,26 @@ function vehiclePage(store, v) {
   { image: v.photos[0]?.url, title: v.titulo, description: `${brl(v.preco)} · ${km(v.km)}` });
 }
 
+const legal = (title, html) => shell(`${title} · GiroAuto`, `<h1>${title}</h1><div style="max-width:68ch;margin-top:16px;display:flex;flex-direction:column;gap:10px">${html}</div>`);
+
+const privacy = () => legal('Política de privacidade', `
+<p>O GiroAuto é um painel usado por lojas de veículos para cadastrar o estoque e anunciar no Facebook e no Instagram.</p>
+<p><b>Dados que coletamos.</b> Da loja: nome, e-mail e senha de acesso (guardada com criptografia de mão única), dados de contato, veículos e fotos cadastrados. Quando a loja conecta a conta do Facebook, recebemos um token de acesso, o nome do usuário do Facebook e os identificadores da Página, da conta do Instagram, da conta de anúncios e do portfólio empresarial escolhidos pela loja.</p>
+<p><b>Como usamos.</b> Somente para executar o que a loja pede no painel: criar e acompanhar campanhas de anúncios, manter o catálogo de veículos e exibir a vitrine pública dos veículos. Não vendemos nem compartilhamos dados com terceiros, exceto com a Meta, para executar essas ações.</p>
+<p><b>Armazenamento.</b> Os dados ficam no servidor do GiroAuto. O token do Facebook é guardado criptografado e pode ser revogado a qualquer momento pela loja no painel (Desconectar) ou nas configurações do Facebook.</p>
+<p><b>Exclusão.</b> Veja como pedir a exclusão em <a href="/exclusao-de-dados">exclusão de dados</a>.</p>`);
+
+const deletion = () => legal('Exclusão de dados', `
+<p>Para remover os dados que o GiroAuto recebeu do Facebook:</p>
+<ol><li>No painel do GiroAuto, abra <b>Configurações &gt; Facebook e Instagram</b> e clique em <b>Desconectar</b>. O token e os identificadores da conta são apagados na hora.</li>
+<li>No Facebook, abra <b>Configurações &gt; Segurança e login &gt; Integrações comerciais</b> (ou Apps e sites) e remova o GiroAuto.</li></ol>
+<p>Para excluir a conta da loja e todos os veículos e fotos, peça ao administrador do GiroAuto pelo e-mail de contato da loja. A exclusão é concluída em até 30 dias.</p>`);
+
+const terms = () => legal('Termos de uso', `
+<p>Ao usar o GiroAuto, a loja é responsável pelo conteúdo dos anúncios e pelo cumprimento das políticas de publicidade e de comércio da Meta.</p>
+<p>As campanhas pagas são cobradas diretamente pela Meta, na forma de pagamento da conta de anúncios da loja. O GiroAuto não intermedeia pagamentos de anúncios.</p>
+<p>A publicação orgânica no Marketplace é feita pela própria loja, com o auxílio do painel.</p>`);
+
 const notFound = () => shell('Não encontrado', '<h1>Página não encontrada</h1><p class="muted">Este anúncio não está mais disponível.</p>');
 
-module.exports = { storefront, vehiclePage, notFound };
+module.exports = { storefront, vehiclePage, notFound, privacy, deletion, terms };

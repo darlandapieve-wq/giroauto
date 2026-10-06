@@ -90,6 +90,7 @@
     $('#login').hidden = true; $('#app').hidden = false;
     $('#storeName').textContent = S.me.store.name;
     $('#userName').textContent = S.me.user.name;
+    $('#appVersion').textContent = 'GiroAuto v' + String(S.me.version || '').replace(/\.0$/, '');
     await Promise.all([loadVehicles(), loadJobs(), loadMeta(), loadExt()]);
     route();
     setInterval(async () => { await Promise.all([loadVehicles(), loadJobs(), loadExt()]); if (['estoque', 'republicacao'].includes(S.view) && !$('#scrim')) render(); else counts(); }, 20000);
@@ -153,7 +154,8 @@
       if (S.view === 'config') {
         m.innerHTML = '<div class="loading">Carregando…</div>';
         await Promise.all([loadMeta(), loadExt()]);
-        if (S.meta.connected && !S.meta.expired) S.assets = await api('GET', '/api/meta/assets').catch((e) => ({ error: e.message }));
+        if (S.meta.connected && !S.meta.expired && S.meta.configured) S.assets = await api('GET', '/api/meta/assets').catch((e) => ({ error: e.message }));
+        S.metaApp = S.me.user.is_admin ? await api('GET', '/api/admin/meta-app').catch(() => null) : null;
         m.innerHTML = viewConfig();
       }
     } catch (e) { m.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
@@ -534,36 +536,83 @@
       v.cambio && ['Transmissão', FB_TRANS[v.cambio] || v.cambio, 'escolha'],
       ['Descrição', v.descricao || `${v.titulo}`, 'copiar'],
     ].filter(Boolean);
+    const mobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
     let n = 0;
     const step = (title, body) => `<div class="astep"><span class="n">${++n}</span><div><h4>${title}</h4>${body}</div></div>`;
-    modal(`<h3>${repub ? 'Republicar' : 'Publicar'} ${esc(v.marca)} ${esc(v.modelo)}</h3>
-      <div class="asst">
-        ${repub ? step('Exclua o anúncio antigo', `<p>Assim o Facebook não vê o mesmo carro anunciado duas vezes.</p>
+    const deleteStep = repub ? step('Exclua o anúncio antigo', `<p>Assim o Facebook não vê o mesmo carro anunciado duas vezes.</p>
           <div class="btnrow"><a class="btn" href="${esc(v.fb_listing_url || FB_SELLING)}" target="_blank" rel="noopener">${v.fb_listing_url ? 'Abrir o anúncio antigo' : 'Abrir Seus anúncios'}</a></div>
-          <p class="note" style="margin-top:6px">Toque em <b>…</b> e depois em <b>Excluir anúncio</b>.</p>`) : ''}
+          <p class="note" style="margin-top:6px">Toque em <b>…</b> e depois em <b>Excluir anúncio</b>.</p>`) : '';
+    let bmReady = false; try { bmReady = localStorage.getItem('giroBm') === '1'; } catch { /* sem armazenamento */ }
+    const autoHtml = mobile ? '' : `
+      ${step('Instale o botão de preenchimento (uma vez só)', `<p>Arraste o botão abaixo para a <b>barra de favoritos</b> do navegador. Se a barra não aparece, aperte <b>Ctrl+Shift+B</b>.</p>
+        <div class="btnrow" style="align-items:center"><a class="btn bm" id="bmLink" href="#" draggable="true">★ GiroAuto Preencher</a>
+        <label class="inline-check" style="font-size:13px"><input type="checkbox" id="bmOk" ${bmReady ? 'checked' : ''}> Já está nos meus favoritos</label></div>`)}
+      ${step('Abra o Facebook com o veículo escolhido', `<p>O GiroAuto separa este veículo e abre o formulário do Marketplace numa aba nova.</p>
+        <div class="btnrow"><button class="btn primary" id="aAuto" type="button">Preencher automaticamente</button></div>`)}
+      ${step('Na aba do Facebook, clique no favorito', `<p>Clique em <b>★ GiroAuto Preencher</b> e depois em <b>Buscar dados no GiroAuto</b>. Os campos, as listas e as fotos são preenchidos sozinhos. Confira e clique em <b>Avançar</b> e <b>Publicar</b>. O GiroAuto registra a publicação automaticamente.</p>
+        <div class="infobox" id="aWait" hidden>Aguardando a publicação no Facebook… esta janela fecha sozinha quando o anúncio for registrado.</div>`)}`;
+    const manualSteps = () => `
         ${step(`Salve as ${v.photos.length} fotos`, `<p>${canShare ? 'No celular, salve as fotos na galeria para escolher no Facebook.' : 'Baixe o arquivo, clique com o botão direito nele e escolha <b>Extrair tudo</b>.'}</p>
           <div class="btnrow">${canShare ? '<button class="btn" id="aShare" type="button">Salvar fotos no celular</button>' : ''}
           <a class="btn" href="/api/vehicles/${v.id}/photos.zip" download>Baixar fotos (.zip)</a></div>`)}
         ${step('Abra o formulário do Marketplace', `<p>Abre numa aba nova, já na opção de veículo. Adicione as fotos na ordem (01 é a capa).</p>
-          <div class="btnrow"><a class="btn primary" href="${FB_CREATE}" target="_blank" rel="noopener">Abrir Marketplace</a></div>`)}
+          <div class="btnrow"><a class="btn ${mobile ? 'primary' : ''}" href="${FB_CREATE}" target="_blank" rel="noopener">Abrir Marketplace</a></div>`)}
         ${step('Preencha os campos', `<p>Copie e cole os campos de texto. Nos de lista, escolha a opção indicada.</p>
           <div class="cfields">${fields.map(([k, val, how], i) => `<div class="cf"><span class="k">${esc(k)}</span><span class="v ${k === 'Descrição' ? 'long' : ''}">${esc(val)}</span>
             ${how === 'copiar' ? `<button class="btn sm" type="button" data-copy="${i}">Copiar</button>` : '<span class="how">escolha na lista</span>'}</div>`).join('')}</div>`)}
-        ${step('Publique e registre aqui', `<p>Depois de publicar no Facebook, cole o link do anúncio (opcional) e confirme. Assim o painel controla a data para a próxima republicação.</p>
-          <div class="f w6"><label for="aLink">Link do anúncio</label><input id="aLink" placeholder="https://www.facebook.com/marketplace/item/..." inputmode="url"></div>`)}
-      </div>
+        ${step('Publique e registre aqui', `<p>Depois de publicar no Facebook, cole o link do anúncio (opcional) e confirme.</p>
+          <div class="f w6"><label for="aLink">Link do anúncio</label><input id="aLink" placeholder="https://www.facebook.com/marketplace/item/..." inputmode="url"></div>`)}`;
+    let manualHtml;
+    if (mobile) manualHtml = manualSteps();
+    else { n = repub ? 1 : 0; manualHtml = `<details class="manual"><summary>Prefiro preencher à mão</summary><div class="asst" style="margin-top:12px">${manualSteps()}</div></details>`; }
+    modal(`<h3>${repub ? 'Republicar' : 'Publicar'} ${esc(v.marca)} ${esc(v.modelo)}</h3>
+      <div class="asst">${deleteStep}${autoHtml}${manualHtml}</div>
       <div class="err" id="aErr" hidden></div>
-      <div class="modal-foot"><button class="btn" data-close type="button">Fechar</button><button class="btn primary" id="aDone" type="button">Já publiquei</button></div>`, true);
+      <div class="modal-foot"><button class="btn" data-close type="button">Fechar</button><button class="btn ${mobile ? 'primary' : ''}" id="aDone" type="button">Já publiquei</button></div>`, true);
     $$('[data-copy]').forEach((b) => { b.onclick = () => copyText(fields[Number(b.dataset.copy)][1], b); });
     const sh = $('#aShare'); if (sh) sh.onclick = () => sharePhotos(v, sh);
+    let poll = null;
+    const stopPoll = () => { clearInterval(poll); poll = null; };
+    const done = async (fromPoll) => {
+      closeModal(); await loadVehicles(); render();
+      toast(repub ? 'Republicação registrada' : 'Publicação registrada' + (fromPoll ? ' automaticamente' : ''));
+    };
     $('#aDone').onclick = async () => {
       const b = $('#aDone'); b.disabled = true; $('#aErr').hidden = true;
-      try {
-        await api('POST', `/api/vehicles/${v.id}/mark-published`, { listing_url: $('#aLink').value.trim() });
-        closeModal(); await loadVehicles(); render();
-        toast(repub ? 'Republicação registrada' : 'Publicação registrada');
-      } catch (e) { $('#aErr').textContent = e.message; $('#aErr').hidden = false; b.disabled = false; }
+      try { await api('POST', `/api/vehicles/${v.id}/mark-published`, { listing_url: ($('#aLink')?.value || '').trim() }); stopPoll(); done(false); }
+      catch (e) { $('#aErr').textContent = e.message; $('#aErr').hidden = false; b.disabled = false; }
     };
+    if (mobile) return;
+    setupBookmarklet();
+    const ok = $('#bmOk'); ok.onchange = () => { try { localStorage.setItem('giroBm', ok.checked ? '1' : '0'); } catch { /* sem armazenamento */ } };
+    $('#aAuto').onclick = async () => {
+      const b = $('#aAuto'); $('#aErr').hidden = true;
+      try {
+        await api('POST', '/api/assist/start', { vehicle_id: v.id });
+        window.open(FB_CREATE, '_blank', 'noopener');
+        b.textContent = 'Abrir o Facebook de novo';
+        $('#aWait').hidden = false;
+        const before = v.publicado_em || '';
+        stopPoll();
+        poll = setInterval(async () => {
+          if (!$('#aWait')) return stopPoll();
+          try {
+            const cur = await api('GET', `/api/vehicles/${v.id}`);
+            if (cur.status === 'publicado' && (cur.publicado_em || '') !== before) { stopPoll(); done(true); }
+          } catch { /* tenta de novo */ }
+        }, 4000);
+      } catch (e) { $('#aErr').textContent = e.message; $('#aErr').hidden = false; }
+    };
+  }
+
+  let bmCode = null;
+  async function setupBookmarklet() {
+    const a = $('#bmLink'); if (!a) return;
+    try {
+      if (!bmCode) bmCode = (await (await fetch('/bookmarklet.js')).text()).trim().replace('__GIRO_ORIGIN__', location.origin);
+      a.href = 'javascript:' + encodeURIComponent(bmCode);
+    } catch { a.removeAttribute('href'); }
+    a.onclick = (e) => { e.preventDefault(); toast('Arraste este botão para a barra de favoritos. Ele funciona na página do Facebook.', 5000); };
   }
 
   /* ---------------- CAMPANHAS ---------------- */
@@ -586,7 +635,9 @@
   function viewCampanhas() {
     const m = S.meta;
     let setup = '';
-    if (!m.configured) setup = `<div class="err">O servidor ainda não tem um app da Meta configurado (META_APP_ID e META_APP_SECRET). Veja o guia de instalação.</div>`;
+    if (!m.configured) setup = S.me.user.is_admin
+      ? `<div class="infobox conn-row"><span>Para criar campanhas, configure primeiro o app da Meta da plataforma.</span><a class="btn primary" href="#config">Configurar agora</a></div>`
+      : `<div class="infobox">As campanhas ainda não foram liberadas pelo administrador do GiroAuto.</div>`;
     else if (!m.connected) setup = `<div class="infobox conn-row"><span>Conecte a conta do Facebook da loja para criar campanhas no Facebook e no Instagram.</span><a class="btn primary" href="/api/meta/connect">Conectar Facebook</a></div>`;
     else if (m.expired) setup = `<div class="err conn-row"><span>A conexão com o Facebook expirou.</span><a class="btn primary" href="/api/meta/connect">Conectar de novo</a></div>`;
     else if (!m.ready) setup = `<div class="infobox conn-row"><span>Escolha a conta de anúncios e a Página da loja.</span><a class="btn primary" href="#config">Abrir configurações</a></div>`;
@@ -776,7 +827,9 @@
     const s = S.me.store; const m = S.meta; const a = S.assets || {};
     const opt = (list, val, label) => `<option value="">Selecione</option>${(list || []).map((x) => `<option value="${esc(x.id)}" ${x.id === val ? 'selected' : ''}>${esc(label(x))}</option>`).join('')}`;
     let metaHtml;
-    if (!m.configured) metaHtml = `<div class="err">Falta configurar o app da Meta no servidor (META_APP_ID e META_APP_SECRET no arquivo .env).</div>`;
+    if (!m.configured) metaHtml = S.me.user.is_admin
+      ? `<p class="lead">Antes de conectar, o GiroAuto precisa de um app da Meta. É uma configuração única para toda a plataforma.</p><div><a class="btn primary" href="#config-meta" id="goMetaApp">Configurar o app da Meta</a></div>`
+      : `<div class="infobox">A conexão com o Facebook ainda não foi liberada pelo administrador do GiroAuto.</div>`;
     else if (!m.connected || m.expired) metaHtml = `<p class="lead">Use a conta do Facebook que administra a Página da loja e a conta de anúncios. O GiroAuto não vê nem guarda sua senha.</p>${m.expired ? '<div class="err">A conexão expirou.</div>' : ''}<div><a class="btn primary" href="/api/meta/connect">Conectar Facebook</a></div>`;
     else metaHtml = `
       <div class="okbox">Conectado como <b>${esc(m.user)}</b>${m.expires_at ? ` · válido até ${new Date(m.expires_at).toLocaleDateString('pt-BR')}` : ''}</div>
@@ -814,6 +867,7 @@
         </div>
       </div>
       <div class="stack">
+        ${S.metaApp ? metaAppPanel(S.metaApp) : ''}
         <div class="panel">
           <h2>Publicação no Marketplace</h2>
           <div class="modes">
@@ -834,6 +888,47 @@
           ${S.ext.length ? `<div class="log">${S.ext.map((e) => `<div><time>${when(e.last_seen || e.created_at)}</time><span>${esc(e.label)} · pareada em ${when(e.created_at)}</span></div>`).join('')}</div>` : ''}
         </div>
       </div>
+    </div>`;
+  }
+
+  /* ---------------- App da Meta (administrador da plataforma) ---------------- */
+  function copyRow(label, value, id) {
+    return `<div class="cf"><span class="k">${esc(label)}</span><span class="v" style="font-family:var(--f-mono);font-size:12.5px;font-weight:500">${esc(value)}</span><button class="btn sm" type="button" data-cp="${id}">Copiar</button></div>`;
+  }
+  function metaAppPanel(a) {
+    const ok = a.configured;
+    const rows = [
+      ['URI de redirecionamento do OAuth', a.redirect_uri],
+      ['Domínio do app', a.app_domain],
+      ['URL do site', a.site_url],
+      ['Política de privacidade', a.privacy_url],
+      ['Exclusão de dados', a.deletion_url],
+      ['Termos de serviço', a.terms_url],
+    ];
+    S._cp = rows.map((r) => r[1]);
+    return `<div class="panel" id="config-meta">
+      <h2>App da Meta (plataforma)</h2>
+      ${ok ? `<div class="okbox">Configurado${a.source === 'env' ? ' pelas variáveis do servidor' : ''}. ID do app: <b>${esc(a.app_id)}</b></div>`
+        : '<p class="lead">Configuração única, feita pelo administrador. Depois dela, cada loja conecta o próprio Facebook com um clique.</p>'}
+      ${!a.https ? '<div class="warnbox">O endereço do painel não usa HTTPS. A Meta só aceita login em endereços HTTPS (exceto localhost).</div>' : ''}
+      <details ${ok ? '' : 'open'}><summary style="cursor:pointer;font-weight:600">Passo a passo no site da Meta</summary>
+        <ol class="note" style="padding-left:18px;display:flex;flex-direction:column;gap:8px;margin:10px 0 0">
+          <li>Abra <a class="link" href="https://developers.facebook.com/apps/creation/" target="_blank" rel="noopener">developers.facebook.com</a> com o Facebook que administra a Página e a conta de anúncios. Se for o primeiro acesso, conclua o cadastro de desenvolvedor.</li>
+          <li>Clique em <b>Criar app</b>. Dê o nome <b>GiroAuto</b>. No caso de uso, escolha a opção de <b>anúncios com a API de Marketing</b> (se não aparecer, escolha <b>Outro</b> e o tipo <b>Empresa</b>). Vincule ao portfólio empresarial da loja quando pedir.</li>
+          <li>No painel do app, adicione o produto <b>Login do Facebook para Empresas</b>. Em <b>Configurações</b> dele, cole a URI de redirecionamento abaixo em <b>URIs de redirecionamento do OAuth válidos</b> e salve.</li>
+          <li>Em <b>Configurações do app &gt; Básico</b>, preencha domínio, política de privacidade, exclusão de dados e termos com os endereços abaixo. Escolha uma categoria (ex.: Negócios e páginas) e salve.</li>
+          <li>Ainda em <b>Básico</b>, copie o <b>ID do app</b> e a <b>Chave secreta do app</b> (clique em Mostrar) e cole nos campos abaixo.</li>
+        </ol>
+      </details>
+      <div class="cfields">${rows.map((r, i) => copyRow(r[0], r[1], i)).join('')}</div>
+      <div class="fields">
+        <div class="f w3"><label for="ma-id">ID do app</label><input id="ma-id" inputmode="numeric" value="${esc(a.source === 'painel' ? a.app_id : '')}" placeholder="1234567890123456" autocomplete="off"></div>
+        <div class="f w3"><label for="ma-secret">Chave secreta do app</label><input id="ma-secret" type="password" placeholder="${ok ? '•••••••• (guardada)' : '32 caracteres'}" autocomplete="new-password"></div>
+      </div>
+      <p class="note">A chave fica guardada criptografada no servidor. Ao salvar, o GiroAuto confere as credenciais na Meta.</p>
+      <div class="err" id="maErr" hidden></div>
+      <div class="form-foot">${a.source === 'painel' ? '<button class="btn ghost danger" id="maClear" type="button">Remover</button>' : ''}<button class="btn primary" id="maSave" type="button">${ok ? 'Atualizar credenciais' : 'Salvar e testar'}</button></div>
+      <p class="note">Enquanto o app estiver em <b>modo de desenvolvimento</b>, só quem tem função no app (você) consegue conectar. Para outras lojas usarem, a Meta exige verificação da empresa e análise do app, com acesso avançado às permissões de anúncios.</p>
     </div>`;
   }
 
@@ -898,6 +993,19 @@
         } catch (e) { $('#mErr2').textContent = e.message; $('#mErr2').hidden = false; }
         ms.disabled = false;
       };
+      $$('[data-cp]').forEach((b) => { b.onclick = () => copyText(S._cp[Number(b.dataset.cp)], b); });
+      const gm = $('#goMetaApp'); if (gm) gm.onclick = (e) => { e.preventDefault(); const t = $('#config-meta'); t && t.scrollIntoView({ behavior: 'smooth' }); setTimeout(() => $('#ma-id')?.focus(), 400); };
+      const mas = $('#maSave');
+      if (mas) mas.onclick = async () => {
+        mas.disabled = true; mas.textContent = 'Conferindo na Meta…'; $('#maErr').hidden = true;
+        try {
+          await api('PUT', '/api/admin/meta-app', { app_id: $('#ma-id').value, app_secret: $('#ma-secret').value });
+          toast('App da Meta configurado. Agora clique em Conectar Facebook.', 5000);
+          render();
+        } catch (e) { $('#maErr').textContent = e.message; $('#maErr').hidden = false; mas.disabled = false; mas.textContent = 'Salvar e testar'; }
+      };
+      const mac = $('#maClear');
+      if (mac) mac.onclick = () => confirmBox('Remover credenciais do app?', 'As lojas não vão conseguir criar campanhas até o app ser configurado de novo.', 'Remover', async () => { await api('DELETE', '/api/admin/meta-app'); render(); }, true);
       const md = $('#mDisc');
       if (md) md.onclick = () => confirmBox('Desconectar o Facebook?', 'As campanhas já criadas continuam na Meta, mas o painel deixa de controlá-las até você conectar de novo.', 'Desconectar', async () => { await api('POST', '/api/meta/disconnect'); render(); }, true);
     }

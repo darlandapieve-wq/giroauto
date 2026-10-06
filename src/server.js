@@ -11,6 +11,7 @@ const feed = require('./feed');
 const meta = require('./meta/service');
 const { MetaError } = require('./meta/graph');
 const pages = require('./pages');
+const settings = require('./settings');
 
 const app = express();
 app.disable('x-powered-by');
@@ -31,7 +32,12 @@ app.use('/media', (req, res, next) => { res.setHeader('Access-Control-Allow-Orig
 
 app.use(express.static(path.join(__dirname, '..', 'public'), { index: false }));
 
-app.get('/health', (req, res) => res.json({ ok: true }));
+const VERSION = require('../package.json').version;
+app.get('/health', (req, res) => res.json({ ok: true, version: VERSION }));
+app.get('/ponte', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'ponte.html')));
+app.get('/privacidade', (req, res) => res.send(pages.privacy()));
+app.get('/exclusao-de-dados', (req, res) => res.send(pages.deletion()));
+app.get('/termos', (req, res) => res.send(pages.terms()));
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'app.html')));
 
@@ -76,7 +82,8 @@ app.post('/api/auth/register', (req, res) => {
   if (get('SELECT 1 FROM users WHERE email = ?', em)) throw fail(409, 'Já existe uma conta com este e-mail.');
   const userId = tx(() => {
     const s = run('INSERT INTO stores (name, slug, feed_key) VALUES (?, ?, ?)', String(loja).trim(), slugify(loja), randomToken(12));
-    const u = run('INSERT INTO users (store_id, name, email, pass_hash) VALUES (?, ?, ?, ?)', s.lastInsertRowid, String(nome).trim(), em, hashPassword(senha));
+    const firstAdmin = !get('SELECT 1 FROM users WHERE is_admin = 1');
+    const u = run('INSERT INTO users (store_id, name, email, pass_hash, is_admin) VALUES (?, ?, ?, ?, ?)', s.lastInsertRowid, String(nome).trim(), em, hashPassword(senha), firstAdmin ? 1 : 0);
     return u.lastInsertRowid;
   });
   auth.createSession(res, userId);
@@ -96,12 +103,59 @@ app.post('/api/auth/logout', (req, res) => { auth.destroySession(req, res); res.
 app.get('/api/me', auth.requireUser, (req, res) => {
   const store = get('SELECT id, name, slug, phone, whatsapp, address, city, state, postal_code, pub_mode FROM stores WHERE id = ?', req.user.storeId);
   res.json({
-    user: req.user, store,
+    user: { ...req.user, is_admin: !!get('SELECT is_admin FROM users WHERE id = ?', req.user.id)?.is_admin }, store,
     vitrine_url: `${config.publicUrl}/v/${store.slug}`,
     options: { cambios: V.CAMBIOS, combustiveis: V.COMBUSTIVEIS, carrocerias: V.CARROCERIAS, cores: V.CORES },
     republish_days: config.republishDays,
+    version: VERSION,
   });
 });
+
+/* ---- Administração da plataforma: app da Meta ---- */
+
+function requireAdmin(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: 'Entre na sua conta para continuar.' });
+  if (!get('SELECT is_admin FROM users WHERE id = ?', req.user.id)?.is_admin) {
+    return res.status(403).json({ error: 'Só o administrador da plataforma pode alterar o app da Meta.' });
+  }
+  next();
+}
+
+function metaAppInfo() {
+  const host = new URL(config.publicUrl).host;
+  return {
+    configured: meta.isConfigured(),
+    source: config.meta.source || '',
+    app_id: config.meta.appId || '',
+    redirect_uri: `${config.publicUrl}/api/meta/callback`,
+    app_domain: host,
+    site_url: config.publicUrl + '/',
+    privacy_url: `${config.publicUrl}/privacidade`,
+    deletion_url: `${config.publicUrl}/exclusao-de-dados`,
+    terms_url: `${config.publicUrl}/termos`,
+    https: config.publicUrl.startsWith('https://'),
+  };
+}
+
+app.get('/api/admin/meta-app', requireAdmin, (req, res) => res.json(metaAppInfo()));
+
+app.put('/api/admin/meta-app', requireAdmin, wrap(async (req, res) => {
+  const appId = String(req.body?.app_id || '').trim();
+  const appSecret = String(req.body?.app_secret || '').trim();
+  if (!/^\d{6,20}$/.test(appId)) throw fail(400, 'O ID do app tem só números (em Configurações do app > Básico).');
+  if (!/^[a-f0-9]{32}$/i.test(appSecret)) throw fail(400, 'A chave secreta tem 32 caracteres (letras de a a f e números). Clique em "Mostrar" ao lado dela no painel da Meta e copie de novo.');
+  // Confere na Meta se o par ID + chave é válido.
+  try {
+    await require('./meta/graph').get('/oauth/access_token', null, { client_id: appId, client_secret: appSecret, grant_type: 'client_credentials' });
+  } catch (e) {
+    throw fail(400, `A Meta não aceitou essas credenciais: ${e.message}. Confira o ID e a chave secreta.`);
+  }
+  settings.saveMetaApp(appId, appSecret);
+  logEvent(req.user.storeId, 'App da Meta configurado no painel');
+  res.json(metaAppInfo());
+}));
+
+app.delete('/api/admin/meta-app', requireAdmin, (req, res) => { settings.clearMetaApp(); res.json(metaAppInfo()); });
 
 app.put('/api/store', auth.requireUser, (req, res) => {
   const b = req.body || {};
@@ -242,6 +296,23 @@ app.post('/api/vehicles/:id/mark-published', auth.requireUser, (req, res) => {
   const nome = `${v.marca} ${v.modelo} ${v.versao}`.trim();
   logEvent(req.user.storeId, republicado ? `${nome} republicado no Marketplace` : `${nome} publicado no Marketplace`);
   res.json(V.serialize(V.findVehicle(req.user.storeId, v.id)));
+});
+
+// Preenchimento automático: o painel escolhe o veículo; a janela-ponte busca e entrega ao favorito no Facebook.
+app.post('/api/assist/start', auth.requireUser, (req, res) => {
+  const v = V.findVehicle(req.user.storeId, req.body?.vehicle_id);
+  if (!v) throw fail(404, 'Veículo não encontrado.');
+  if (v.status === 'vendido') throw fail(409, 'Veículo vendido não pode ser publicado.');
+  if (!V.photosOf(v.id).length) throw fail(400, 'Adicione ao menos uma foto antes de publicar.');
+  run(`UPDATE stores SET assist_vehicle_id = ?, assist_at = datetime('now') WHERE id = ?`, v.id, req.user.storeId);
+  res.json({ ok: true });
+});
+
+app.get('/api/assist/current', auth.requireUser, (req, res) => {
+  const s = get(`SELECT assist_vehicle_id, assist_at FROM stores WHERE id = ? AND assist_at > datetime('now', '-2 hours')`, req.user.storeId);
+  const v = s?.assist_vehicle_id && V.findVehicle(req.user.storeId, s.assist_vehicle_id);
+  if (!v || v.status === 'vendido') throw fail(404, 'Nenhum veículo escolhido para publicar agora.');
+  res.json({ vehicle: V.serialize(v) });
 });
 
 /* ------------------------------------------------------------------ */

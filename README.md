@@ -1,4 +1,6 @@
-# GiroAuto
+# GiroAuto v1.1
+
+Histórico de versões: veja [CHANGELOG.md](CHANGELOG.md).
 
 Painel para lojas de veículos com três frentes:
 
@@ -35,6 +37,19 @@ Escolha em **Configurações > Publicação no Marketplace**.
 - **Automática, com a extensão do Chrome:** a extensão preenche o formulário, exclui e republica sozinha; a pessoa só confirma no Facebook. Exige instalar a extensão (seção abaixo).
 
 A publicação orgânica não pode ser 100% automática pelo servidor: a Meta não oferece API de Marketplace para veículos no Brasil, e um robô no servidor logado na conta do cliente viola os termos do Facebook e leva a bloqueio. Por isso, ou a pessoa publica com o assistente, ou a extensão age no navegador dela.
+
+### Preenchimento automático (v1.1)
+
+No computador, o assistente de publicação tem o botão **Preencher automaticamente**:
+
+1. Uma única vez, arraste o botão **★ GiroAuto Preencher** (aparece no assistente) para a barra de favoritos do navegador (Ctrl+Shift+B mostra a barra).
+2. Clique em **Preencher automaticamente**. O GiroAuto separa o veículo e abre o formulário do Marketplace.
+3. Na aba do Facebook, clique no favorito e em **Buscar dados no GiroAuto**. Uma janela pequena do GiroAuto abre e entrega os dados e as fotos. O favorito escolhe as opções das listas, preenche os textos e anexa as fotos.
+4. Confira e clique em **Avançar** e **Publicar**. A publicação é registrada no GiroAuto sozinha.
+
+Por que um favorito: por segurança, um site não pode controlar a aba de outro site. O favorito roda dentro da página do Facebook, a pedido da pessoa, sem instalar nada. Ele nunca clica em Publicar. Se o navegador bloquear a troca de dados entre as janelas, aparece a opção de copiar e colar os dados.
+
+O código-fonte do favorito fica em `assist/filler.src.js`. Depois de alterar, gere `public/bookmarklet.js` com `npm install && npm run build:bookmarklet`.
 
 ## Requisitos (para rodar no seu computador)
 

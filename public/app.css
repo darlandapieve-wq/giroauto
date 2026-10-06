@@ -307,3 +307,7 @@ a.link:hover{text-decoration:underline}
 @media (max-width:520px){.cf{grid-template-columns:minmax(0,1fr) auto}.cf .k{grid-column:1/-1}}
 a.btn{text-decoration:none;color:inherit}
 a.btn.primary{color:#1b1400}
+
+.bm{border-style:dashed;border-color:var(--accent);font-weight:600;cursor:grab}
+details.manual{border-top:1px solid var(--line);padding-top:12px}
+details.manual summary{cursor:pointer;font-weight:600;color:var(--muted)}
