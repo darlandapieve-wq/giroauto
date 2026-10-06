@@ -12,6 +12,7 @@ const meta = require('./meta/service');
 const { MetaError } = require('./meta/graph');
 const pages = require('./pages');
 const settings = require('./settings');
+const storage = require('./storage');
 
 const app = express();
 app.disable('x-powered-by');
@@ -27,8 +28,15 @@ const fail = (status, message) => Object.assign(new Error(message), { status });
 /* ------------------------------------------------------------------ */
 
 // Fotos: nomes aleatórios, públicas (a Meta e a extensão precisam baixá-las).
-app.use('/media', (req, res, next) => { res.setHeader('Access-Control-Allow-Origin', '*'); next(); },
-  express.static(path.join(config.dataDir, 'media'), { maxAge: '7d', fallthrough: false }));
+// Fotos: nomes aleatórios, públicas (a Meta e o preenchimento precisam baixá-las).
+// Se o servidor for novo, a foto é buscada no Supabase e guardada no disco como cache.
+app.get('/media/:file', wrap(async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  const file = await storage.ensureLocal(req.params.file).catch(() => null);
+  if (!file) return res.status(404).send('Foto não encontrada');
+  res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+  res.type(storage.MIME[path.extname(file)] || 'image/jpeg').sendFile(file);
+}));
 
 app.use(express.static(path.join(__dirname, '..', 'public'), { index: false }));
 
@@ -155,6 +163,15 @@ app.put('/api/admin/meta-app', requireAdmin, wrap(async (req, res) => {
   res.json(metaAppInfo());
 }));
 
+app.get('/api/admin/storage', requireAdmin, (req, res) => res.json(storage.status()));
+app.post('/api/admin/storage/backup', requireAdmin, wrap(async (req, res) => {
+  if (!storage.enabled()) throw fail(400, 'O armazenamento permanente não está configurado.');
+  storage.markDirty(); await storage.flush();
+  const st = storage.status();
+  if (st.last_error) throw fail(502, `A cópia falhou: ${st.last_error}`);
+  res.json(st);
+}));
+
 app.delete('/api/admin/meta-app', requireAdmin, (req, res) => { settings.clearMetaApp(); res.json(metaAppInfo()); });
 
 app.put('/api/store', auth.requireUser, (req, res) => {
@@ -221,12 +238,15 @@ app.put('/api/vehicles/:id', auth.requireUser, (req, res) => {
   res.json(V.serialize(V.findVehicle(req.user.storeId, v.id)));
 });
 
-app.delete('/api/vehicles/:id', auth.requireUser, (req, res) => {
+app.delete('/api/vehicles/:id', auth.requireUser, wrap(async (req, res) => {
   const v = own(req);
   if (v.status === 'publicado') throw fail(409, 'Este veículo está publicado. Marque como vendido para retirar o anúncio.');
+  const names = all('SELECT filename FROM photos WHERE vehicle_id = ?', v.id).map((p) => p.filename);
   run('DELETE FROM vehicles WHERE id = ?', v.id);
+  names.forEach((n) => require('node:fs').rm(path.join(config.dataDir, 'media', n), () => {}));
+  await storage.removeMedia(names).catch(() => {});
   res.json({ ok: true });
-});
+}));
 
 // Marca como "pronto para publicar" quando o cadastro está completo.
 app.post('/api/vehicles/:id/ready', auth.requireUser, (req, res) => {
@@ -237,17 +257,27 @@ app.post('/api/vehicles/:id/ready', auth.requireUser, (req, res) => {
   res.json(V.serialize(V.findVehicle(req.user.storeId, v.id)));
 });
 
-app.post('/api/vehicles/:id/photos', auth.requireUser, upload.array('fotos', 20), (req, res) => {
-  const v = own(req);
+app.post('/api/vehicles/:id/photos', auth.requireUser, upload.array('fotos', 20), wrap(async (req, res) => {
   const files = req.files || [];
+  const discard = () => files.forEach((f) => require('node:fs').rm(f.path, () => {}));
+  let v;
+  try { v = own(req); } catch (e) { discard(); throw e; }
   if (!files.length) throw fail(400, 'Envie fotos em JPG, PNG ou WEBP de até 12 MB.');
   const count = get('SELECT COUNT(*) n FROM photos WHERE vehicle_id = ?', v.id).n;
-  if (count + files.length > 20) throw fail(400, `Limite de 20 fotos. Este veículo já tem ${count}.`);
+  if (count + files.length > 20) { discard(); throw fail(400, `Limite de 20 fotos. Este veículo já tem ${count}.`); }
+  // Guarda no armazenamento permanente antes de registrar no banco.
+  try { for (const f of files) await storage.saveMedia(f.filename); }
+  catch (e) {
+    discard();
+    await storage.removeMedia(files.map((f) => f.filename)).catch(() => {});
+    console.error(e.message);
+    throw fail(502, 'Não foi possível guardar as fotos no armazenamento. Tente de novo em instantes.');
+  }
   let pos = (get('SELECT MAX(position) m FROM photos WHERE vehicle_id = ?', v.id).m ?? -1) + 1;
   for (const f of files) run('INSERT INTO photos (vehicle_id, filename, mime, position) VALUES (?, ?, ?, ?)', v.id, f.filename, f.mimetype, pos++);
   run(`UPDATE vehicles SET updated_at=datetime('now') WHERE id=?`, v.id);
   res.json(V.serialize(V.findVehicle(req.user.storeId, v.id)));
-});
+}));
 
 app.put('/api/vehicles/:id/photos/order', auth.requireUser, (req, res) => {
   const v = own(req);
@@ -264,24 +294,27 @@ app.delete('/api/vehicles/:id/photos/:pid', auth.requireUser, (req, res) => {
   if (!p) throw fail(404, 'Foto não encontrada.');
   run('DELETE FROM photos WHERE id = ?', p.id);
   require('node:fs').rm(path.join(config.dataDir, 'media', p.filename), () => {});
+  storage.removeMedia([p.filename]).catch(() => {});
   res.json(V.serialize(V.findVehicle(req.user.storeId, v.id)));
 });
 
 // Todas as fotos do veículo num .zip (publicação assistida sem extensão).
-app.get('/api/vehicles/:id/photos.zip', auth.requireUser, (req, res) => {
+app.get('/api/vehicles/:id/photos.zip', auth.requireUser, wrap(async (req, res) => {
   const v = own(req);
   const photos = V.photosOf(v.id);
   if (!photos.length) throw fail(404, 'Este veículo não tem fotos.');
   const fs = require('node:fs');
-  const files = photos.map((p, i) => ({
-    name: `${String(i + 1).padStart(2, '0')}${path.extname(p.filename)}`,
-    data: fs.readFileSync(path.join(config.dataDir, 'media', p.filename)),
-  }));
+  const files = [];
+  for (const [i, p] of photos.entries()) {
+    const file = await storage.ensureLocal(p.filename);
+    if (file) files.push({ name: `${String(i + 1).padStart(2, '0')}${path.extname(p.filename)}`, data: fs.readFileSync(file) });
+  }
+  if (!files.length) throw fail(404, 'As fotos deste veículo não foram encontradas.');
   const base = `${v.marca}-${v.modelo}-${v.ano_modelo || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '');
   res.setHeader('Content-Type', 'application/zip');
   res.setHeader('Content-Disposition', `attachment; filename="fotos-${base || v.id}.zip"`);
   res.send(require('./zip').buildZip(files));
-});
+}));
 
 // Publicação assistida: a pessoa publicou no Facebook e registra aqui.
 app.post('/api/vehicles/:id/mark-published', auth.requireUser, (req, res) => {

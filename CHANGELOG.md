@@ -2,6 +2,22 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v1.3 — 06/10/2026
+
+**Dados permanentes: lojas, veículos e fotos não se perdem mais a cada nova versão**
+
+- O banco de dados é copiado para o **Supabase** (gratuito) poucos segundos depois de cada alteração e sempre que o servidor desliga (o Render desliga a versão antiga ao publicar uma nova).
+- Ao iniciar, o servidor baixa a última cópia antes de abrir o painel. As sessões também continuam: não é preciso entrar de novo.
+- As fotos ficam no Supabase; o servidor guarda uma cópia local apenas como cache.
+- Uma cópia por dia fica guardada na pasta `copias` do Supabase, como segurança extra.
+- Se as chaves do Supabase estiverem erradas, o servidor não inicia, para nunca sobrescrever a cópia guardada com um banco vazio.
+- Painel do administrador mostra a situação dos dados (protegidos ou temporários), a hora da última cópia e o botão **Fazer cópia agora**.
+- Novo `atualizar.bat` para manter uma pasta no computador sempre na última versão do GitHub, sem apagar dados locais nem o `.env`.
+
+Configuração necessária no Render (uma vez): variáveis `SUPABASE_URL` e `SUPABASE_SECRET_KEY`.
+
+Arquivos alterados: `src/storage.js` (novo), `src/start.js` (novo), `src/server.js`, `src/db.js`, `src/meta/service.js`, `public/app.js`, `package.json`, `Dockerfile`, `render.yaml`, `.env.example`, `atualizar.bat` (novo), `test/storage.test.js` (novo), `test/mock-supabase.js` (novo), `CHANGELOG.md`, `README.md`.
+
 ## v1.2 — 06/10/2026
 
 **Correções no preenchimento automático (testado no Facebook real pela loja)**

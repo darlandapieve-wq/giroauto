@@ -1,4 +1,4 @@
-# GiroAuto v1.2
+# GiroAuto v1.3
 
 Histórico de versões: veja [CHANGELOG.md](CHANGELOG.md).
 
@@ -7,6 +7,21 @@ Painel para lojas de veículos com três frentes:
 1. **Estoque**: cadastro do veículo uma única vez, com até 20 fotos.
 2. **Anúncio orgânico no Facebook Marketplace**: uma extensão do Chrome publica, exclui e republica os anúncios na conta do Facebook da loja. A pessoa sempre confirma a publicação clicando em "Publicar" no próprio Facebook.
 3. **Campanhas pagas no Facebook e no Instagram**: criadas direto na conta de anúncios da loja pela API de Marketing da Meta (campanha, conjunto de anúncios, criativo e anúncio), com métricas, pausa, reativação e encerramento pelo painel.
+
+## Dados permanentes (Supabase, gratuito)
+
+Sem configuração, lojas, veículos e fotos ficam só no disco do servidor e somem a cada nova versão no Render. Para guardar de forma permanente:
+
+1. Crie uma conta e um projeto em [supabase.com](https://supabase.com) (plano Free). Região sugerida: São Paulo.
+2. Em **Project Settings > API Keys**, copie a **secret key** (`sb_secret_...`). Em **Project Settings > Data API** (ou na página inicial do projeto), copie a **Project URL** (`https://xxxx.supabase.co`).
+3. No Render, no serviço do GiroAuto, abra **Environment** e adicione `SUPABASE_URL` e `SUPABASE_SECRET_KEY`. Salve: o Render publica de novo.
+4. Em **Configurações** no painel, o quadro **Armazenamento dos dados** deve mostrar "Dados protegidos no Supabase".
+
+O GiroAuto cria sozinho os buckets privados `giroauto-dados` (banco e cópias diárias) e `giroauto-fotos`. Limites do plano gratuito: 1 GB de arquivos. Um projeto gratuito sem uso por 7 dias pode ser pausado pelo Supabase; se o painel não abrir, entre no Supabase e clique em **Restore project**.
+
+## Pasta no computador sempre atualizada
+
+Copie `atualizar.bat` para a pasta desejada (ex.: `E:\Downloads\Scale2 IA\Giro Auto`) e dê dois cliques. Ele baixa a última versão do GitHub para a pasta, sem apagar `data` nem `.env`. Repita a cada nova versão. Funciona enquanto o repositório for público; com repositório privado, baixe o .zip pelo GitHub.
 
 ## Colocar no ar (100% online, sem o cliente instalar nada)
 

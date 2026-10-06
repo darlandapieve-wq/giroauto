@@ -3,12 +3,8 @@ services:
   - type: web
     name: giroauto
     runtime: docker
-    plan: starter            # o plano gratuito não tem disco; sem disco os dados somem a cada reinício
+    plan: free               # os dados ficam no Supabase (SUPABASE_URL e SUPABASE_SECRET_KEY), não no disco do Render
     healthCheckPath: /health
-    disk:
-      name: giroauto-data
-      mountPath: /data
-      sizeGB: 5
     envVars:
       - key: NODE_ENV
         value: production
@@ -19,6 +15,10 @@ services:
       - key: META_APP_ID
         sync: false
       - key: META_APP_SECRET
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
         sync: false
       - key: META_API_VERSION
         value: v25.0

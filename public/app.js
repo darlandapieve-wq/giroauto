@@ -156,6 +156,7 @@
         await Promise.all([loadMeta(), loadExt()]);
         if (S.meta.connected && !S.meta.expired && S.meta.configured) S.assets = await api('GET', '/api/meta/assets').catch((e) => ({ error: e.message }));
         S.metaApp = S.me.user.is_admin ? await api('GET', '/api/admin/meta-app').catch(() => null) : null;
+        S.storage = S.me.user.is_admin ? await api('GET', '/api/admin/storage').catch(() => null) : null;
         m.innerHTML = viewConfig();
       }
     } catch (e) { m.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
@@ -869,6 +870,7 @@
         </div>
       </div>
       <div class="stack">
+        ${S.storage ? storagePanel(S.storage) : ''}
         ${S.metaApp ? metaAppPanel(S.metaApp) : ''}
         <div class="panel">
           <h2>Publicação no Marketplace</h2>
@@ -891,6 +893,23 @@
         </div>
       </div>
     </div>`;
+  }
+
+  /* ---------------- Armazenamento dos dados (administrador) ---------------- */
+  function storagePanel(st) {
+    if (!st.enabled) {
+      return `<div class="panel"><h2>Armazenamento dos dados</h2>
+        <div class="warnbox"><b>Dados temporários.</b> Lojas, veículos e fotos ficam só no servidor e são apagados quando uma nova versão é publicada.</div>
+        <p class="note">Para guardar de forma permanente e gratuita, configure o Supabase: crie um projeto em supabase.com, copie a <b>Project URL</b> e a <b>secret key</b> (Project Settings &gt; API Keys) e cadastre no Render, em Environment, como <code>SUPABASE_URL</code> e <code>SUPABASE_SECRET_KEY</code>.</p></div>`;
+    }
+    const last = st.last_backup_at ? new Date(st.last_backup_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'ainda não feita';
+    return `<div class="panel"><h2>Armazenamento dos dados</h2>
+      ${st.last_error ? `<div class="err">A última cópia falhou: ${esc(st.last_error)}. O GiroAuto tenta de novo a cada 30 segundos.</div>` : `<div class="okbox"><b>Dados protegidos no Supabase.</b> Lojas, veículos e fotos continuam após cada nova versão.</div>`}
+      <div class="kv" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+        <div><span class="k">Última cópia</span><span class="v">${esc(last)}</span></div>
+        <div><span class="k">Cópias diárias</span><span class="v">pasta <code>copias</code> no Supabase</span></div>
+      </div>
+      <div class="form-foot"><button class="btn" id="stBackup" type="button">Fazer cópia agora</button></div></div>`;
   }
 
   /* ---------------- App da Meta (administrador da plataforma) ---------------- */
@@ -997,6 +1016,8 @@
       };
       $$('[data-cp]').forEach((b) => { b.onclick = () => copyText(S._cp[Number(b.dataset.cp)], b); });
       const gm = $('#goMetaApp'); if (gm) gm.onclick = (e) => { e.preventDefault(); const t = $('#config-meta'); t && t.scrollIntoView({ behavior: 'smooth' }); setTimeout(() => $('#ma-id')?.focus(), 400); };
+      const stb = $('#stBackup');
+      if (stb) stb.onclick = async () => { stb.disabled = true; try { await api('POST', '/api/admin/storage/backup'); toast('Cópia dos dados feita no Supabase'); render(); } catch (e) { toast(e.message, 6000); stb.disabled = false; } };
       const mas = $('#maSave');
       if (mas) mas.onclick = async () => {
         mas.disabled = true; mas.textContent = 'Conferindo na Meta…'; $('#maErr').hidden = true;

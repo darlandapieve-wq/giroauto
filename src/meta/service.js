@@ -207,7 +207,8 @@ function buildTargeting(c) {
 }
 
 async function uploadImage(adAccountId, token, photo) {
-  const file = path.join(config.dataDir, 'media', photo.filename);
+  const file = await require('../storage').ensureLocal(photo.filename);
+  if (!file) throw httpError(404, 'Foto do veículo não encontrada no armazenamento.');
   const bytes = fs.readFileSync(file).toString('base64');
   const r = await graph.post(`/${adAccountId}/adimages`, token, { bytes });
   const first = Object.values(r.images || {})[0];

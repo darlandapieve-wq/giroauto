@@ -177,14 +177,15 @@ if (!db.prepare('SELECT 1 FROM users WHERE is_admin = 1').get()) {
 
 function tx(fn) {
   db.exec('BEGIN');
-  try { const r = fn(); db.exec('COMMIT'); return r; }
+  try { const r = fn(); db.exec('COMMIT'); markDirty(); return r; }
   catch (e) { db.exec('ROLLBACK'); throw e; }
 }
 
 const plain = (row) => (row ? { ...row } : row);
 const all = (sql, ...a) => db.prepare(sql).all(...a).map(plain);
 const get = (sql, ...a) => plain(db.prepare(sql).get(...a));
-const run = (sql, ...a) => db.prepare(sql).run(...a);
+const markDirty = () => require('./storage').markDirty();
+const run = (sql, ...a) => { const r = db.prepare(sql).run(...a); if (r.changes) markDirty(); return r; };
 
 function logEvent(storeId, message) {
   run('INSERT INTO events (store_id, message) VALUES (?, ?)', storeId, message);

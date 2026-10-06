@@ -9,4 +9,4 @@ RUN mkdir -p /data
 VOLUME ["/data"]
 EXPOSE 3333
 HEALTHCHECK --interval=30s --timeout=5s CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3333)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-CMD ["node", "--no-warnings=ExperimentalWarning", "src/server.js"]
+CMD ["node", "--no-warnings=ExperimentalWarning", "src/start.js"]
