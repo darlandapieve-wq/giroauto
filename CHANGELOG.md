@@ -2,6 +2,12 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v1.6.2 — 06/10/2026
+
+- Quando a Meta recusa um anúncio porque o app ainda está em **modo de desenvolvimento**, o painel explica como mudar o app para o modo Ativo e tentar de novo.
+
+Arquivos alterados: `src/server.js`, `package.json`, `CHANGELOG.md`.
+
 ## v1.6.1 — 06/10/2026
 
 **Correção: "Invalid Scopes" ao conectar o Facebook**

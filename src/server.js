@@ -707,6 +707,17 @@ app.delete('/api/campaigns/:id', auth.requireUser, (req, res) => {
 app.use('/api', (req, res) => res.status(404).json({ error: 'Rota não encontrada.' }));
 
 // eslint-disable-next-line no-unused-vars
+
+// Erros da Meta com uma explicação do que fazer.
+function metaErrorText(err) {
+  const base = `A Meta recusou o pedido: ${err.title && err.title !== err.message ? err.title + ' — ' : ''}${err.message}`;
+  const txt = `${err.title || ''} ${err.message || ''}`;
+  if (err.subcode === 1885183 || /modo de desenvolvimento|development mode/i.test(txt)) {
+    return `${base} O que fazer: o app da Meta ainda está em modo de desenvolvimento. Em developers.facebook.com, abra o app GiroAuto e mude para o modo Ativo (botão "Publicar" no menu da esquerda ou a chave "Modo do app" no alto). Depois clique em "Tentar de novo" na campanha.`;
+  }
+  return base;
+}
+
 app.use((err, req, res, _next) => {
   if (err instanceof multer.MulterError) {
     return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'Cada foto pode ter no máximo 12 MB.' : 'Envio de fotos inválido.' });
@@ -715,7 +726,7 @@ app.use((err, req, res, _next) => {
   const status = isMeta ? 502 : err.status || 500;
   if (status >= 500 && !isMeta) console.error(err);
   res.status(status).json({
-    error: isMeta ? `A Meta recusou o pedido: ${err.title ? err.title + ' — ' : ''}${err.message}` : (status >= 500 ? 'Erro interno no servidor.' : err.message),
+    error: isMeta ? metaErrorText(err) : (status >= 500 ? 'Erro interno no servidor.' : err.message),
     ...(isMeta ? { meta: { code: err.code, subcode: err.subcode, fbtrace_id: err.fbtraceId } } : {}),
     ...(err.campaign ? { campaign: err.campaign } : {}),
   });
