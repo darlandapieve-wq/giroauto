@@ -18,7 +18,9 @@ services:
         sync: false
       - key: SUPABASE_URL
         sync: false
-      - key: SUPABASE_SECRET_KEY
+      - key: SUPABASE_KEY
+        sync: false
+      - key: GIROAUTO_STORAGE_TOKEN
         sync: false
       - key: META_API_VERSION
         value: v25.0

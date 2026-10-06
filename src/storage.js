@@ -2,19 +2,28 @@
 // - O banco SQLite é copiado para o Supabase alguns segundos depois de cada alteração e ao desligar o servidor.
 // - Ao iniciar, o servidor baixa a última cópia antes de abrir o banco.
 // - As fotos ficam no Supabase; o servidor guarda uma cópia local como cache.
-// Sem SUPABASE_URL e SUPABASE_SECRET_KEY, tudo continua só no disco local (como antes).
+// Dois modos de acesso ao Supabase:
+//  - "banco": SUPABASE_URL + SUPABASE_KEY (chave publicável) + GIROAUTO_STORAGE_TOKEN. Os arquivos ficam no
+//    Postgres do projeto, num esquema privado, acessado só por funções que exigem a senha do servidor.
+//  - "storage": SUPABASE_URL + SUPABASE_SECRET_KEY. Os arquivos ficam no Supabase Storage.
+// Sem nenhum dos dois, tudo continua só no disco local (como antes).
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const config = require('./config');
 
 const URL_ = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
-const KEY = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_KEY || '';
+const SECRET = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_KEY || '';
+const PUBKEY = process.env.SUPABASE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || '';
+const TOKEN = process.env.GIROAUTO_STORAGE_TOKEN || '';
+const MODE = URL_ && PUBKEY && TOKEN ? 'banco' : (URL_ && SECRET ? 'storage' : '');
+const KEY = MODE === 'banco' ? PUBKEY : SECRET;
+const PART = 512 * 1024; // tamanho de cada parte enviada ao banco
 const BUCKET_DATA = process.env.SUPABASE_BUCKET_DADOS || 'giroauto-dados';
 const BUCKET_MEDIA = process.env.SUPABASE_BUCKET_FOTOS || 'giroauto-fotos';
 const DB_OBJECT = 'giroauto.db';
 
-const enabled = () => !!(URL_ && KEY);
+const enabled = () => !!MODE;
 const state = { lastBackupAt: null, lastError: '', restoredFrom: null, dirty: false, timer: null, firstDirtyAt: 0, lastDaily: '' };
 
 function headers(extra = {}) {
@@ -32,7 +41,21 @@ async function req(method, p, { body, contentType, upsert } = {}) {
   return res;
 }
 
+async function rpc(fn, args) {
+  const res = await fetch(`${URL_}/rest/v1/rpc/${fn}`, {
+    method: 'POST', headers: headers({ 'Content-Type': 'application/json' }), body: JSON.stringify({ p_token: TOKEN, ...args }),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    let msg = text; try { msg = JSON.parse(text).message || text; } catch { /* texto puro */ }
+    throw new Error(`Supabase (${fn}) respondeu ${res.status}: ${String(msg).slice(0, 200)}`);
+  }
+  if (!text) return null;
+  try { return JSON.parse(text); } catch { return text; }
+}
+
 async function ensureBuckets() {
+  if (MODE === 'banco') { await rpc('giro_stats', {}); return; } // confere a senha do servidor
   for (const id of [BUCKET_DATA, BUCKET_MEDIA]) {
     const r = await req('POST', '/bucket', { body: JSON.stringify({ id, name: id, public: false }), contentType: 'application/json' });
     if (!r.ok && r.status !== 409) {
@@ -43,11 +66,32 @@ async function ensureBuckets() {
 }
 
 async function upload(bucket, name, data, contentType = 'application/octet-stream') {
+  if (MODE === 'banco') {
+    const tmp = `${name}#tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const parts = Math.max(1, Math.ceil(data.length / PART));
+    for (let i = 0; i < parts; i++) {
+      await rpc('giro_put_part', { p_bucket: bucket, p_tmp: tmp, p_idx: i, p_data: data.subarray(i * PART, (i + 1) * PART).toString('base64') });
+    }
+    await rpc('giro_commit', { p_bucket: bucket, p_tmp: tmp, p_name: name, p_parts: parts, p_type: contentType });
+    return;
+  }
   const r = await req('POST', `/object/${bucket}/${encodeURIComponent(name)}`, { body: data, contentType, upsert: true });
   if (!r.ok) throw new Error(`Falha ao enviar ${name} ao Supabase (${r.status}): ${(await r.text()).slice(0, 200)}`);
 }
 
 async function download(bucket, name) {
+  if (MODE === 'banco') {
+    const info = await rpc('giro_get_info', { p_bucket: bucket, p_name: name });
+    if (!info || info.size == null) return null;
+    const bufs = [];
+    for (let off = 0; off < info.size; off += PART) {
+      const b64 = await rpc('giro_get_part', { p_bucket: bucket, p_name: name, p_offset: off, p_len: PART });
+      bufs.push(Buffer.from(b64 || '', 'base64'));
+    }
+    const out = Buffer.concat(bufs);
+    if (out.length !== Number(info.size)) throw new Error(`Arquivo ${name} veio incompleto do Supabase.`);
+    return out;
+  }
   const r = await req('GET', `/object/${bucket}/${encodeURIComponent(name)}`);
   if (r.ok) return Buffer.from(await r.arrayBuffer());
   const t = await r.text();
@@ -57,6 +101,7 @@ async function download(bucket, name) {
 
 async function remove(bucket, names) {
   if (!names.length) return;
+  if (MODE === 'banco') { await rpc('giro_remove', { p_bucket: bucket, p_names: names }); return; }
   const r = await req('DELETE', `/object/${bucket}`, { body: JSON.stringify({ prefixes: names }), contentType: 'application/json' });
   if (!r.ok) console.warn('Supabase: falha ao apagar', names.join(', '), r.status);
 }
@@ -151,6 +196,7 @@ function status() {
   return {
     enabled: enabled(),
     provider: enabled() ? 'Supabase' : 'disco local',
+    mode: MODE || 'local',
     last_backup_at: state.lastBackupAt,
     restored_at: state.restoredFrom,
     pending: state.dirty,

@@ -2,6 +2,18 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v1.4 — 06/10/2026
+
+**Supabase do GiroAuto configurado**
+
+- Projeto **giroauto** criado no Supabase (região São Paulo, plano gratuito).
+- Novo modo de armazenamento "banco": a cópia do banco e as fotos ficam no Postgres do projeto, num esquema privado (`giro_private`), acessado só por funções que exigem a senha do servidor. Não precisa da chave secreta do Supabase.
+- Arquivos enviados em partes de 512 KB e confirmados só no final: um envio interrompido nunca estraga a última cópia boa.
+- Senha do servidor errada: o painel não inicia, para não sobrescrever a cópia guardada.
+- Variáveis no Render: `SUPABASE_URL`, `SUPABASE_KEY` e `GIROAUTO_STORAGE_TOKEN`.
+
+Arquivos alterados: `src/storage.js`, `test/storage.test.js`, `test/mock-supabase.js`, `render.yaml`, `.env.example`, `package.json`, `CHANGELOG.md`, `README.md`.
+
 ## v1.3 — 06/10/2026
 
 **Dados permanentes: lojas, veículos e fotos não se perdem mais a cada nova versão**

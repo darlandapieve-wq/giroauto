@@ -21,11 +21,16 @@ before(async () => {
 after(() => { mock.server.close(); tmpDirs.forEach((d) => fs.rmSync(d, { recursive: true, force: true })); });
 
 // Sobe o servidor como no Render: disco novo e vazio a cada versão.
+const MODES = {
+  storage: { SUPABASE_SECRET_KEY: 'sb_secret_teste', SUPABASE_KEY: '', GIROAUTO_STORAGE_TOKEN: '' },
+  banco: { SUPABASE_SECRET_KEY: '', SUPABASE_KEY: 'sb_publishable_teste', GIROAUTO_STORAGE_TOKEN: 'giro_token_teste' },
+};
+let MODE = 'storage';
 async function boot() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'giro-ver-'));
   tmpDirs.push(dir);
   const child = spawn(process.execPath, ['--no-warnings=ExperimentalWarning', path.join(__dirname, '..', 'src', 'start.js')], {
-    env: { ...process.env, GIROAUTO_SKIP_ENV: '1', DATA_DIR: dir, PORT: String(PORT), PUBLIC_URL: base, SUPABASE_URL: supaUrl, SUPABASE_SECRET_KEY: 'sb_secret_teste', GIROAUTO_DB: '' },
+    env: { ...process.env, GIROAUTO_SKIP_ENV: '1', DATA_DIR: dir, PORT: String(PORT), PUBLIC_URL: base, SUPABASE_URL: supaUrl, ...MODES[MODE], GIROAUTO_DB: '' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let out = '';
@@ -54,10 +59,10 @@ async function api(method, url, body) {
   return { status: r.status, body: await r.json().catch(() => null) };
 }
 
-test('lojas, veículos e fotos continuam depois de publicar uma nova versão', async () => {
+async function cenario(email) {
   // Versão A
   let s = await boot();
-  let r = await api('POST', '/api/auth/register', { loja: 'Autos Paraná', nome: 'Darlan', email: 'd@x.com', senha: '12345678' });
+  let r = await api('POST', '/api/auth/register', { loja: 'Autos Paraná', nome: 'Darlan', email, senha: '12345678' });
   assert.equal(r.status, 200);
   r = await api('POST', '/api/vehicles', { marca: 'Chevrolet', modelo: 'Onix', ano_modelo: 2022, km: 48200, preco: 74900, cor_interna: 'Preto' });
   const id = r.body.id;
@@ -65,10 +70,12 @@ test('lojas, veículos e fotos continuam depois de publicar uma nova versão', a
   r = await api('POST', `/api/vehicles/${id}/photos`, fd);
   assert.equal(r.status, 200);
   const photoPath = new URL(r.body.photos[0].url).pathname;
-  assert.ok(mock.buckets.get('giroauto-fotos').size === 1, 'foto enviada ao Supabase');
+  const temFoto = MODE === 'banco' ? [...mock.files.keys()].some((k) => k.startsWith('giroauto-fotos/') && !k.includes('#tmp')) : mock.buckets.get('giroauto-fotos').size >= 1;
+  assert.ok(temFoto, 'foto enviada ao Supabase');
   await stop(s); // Render desliga a versão antiga com SIGTERM
-  assert.ok(mock.buckets.get('giroauto-dados').has('giroauto.db'), 'banco copiado ao desligar');
-  assert.ok([...mock.buckets.get('giroauto-dados').keys()].some((k) => k.startsWith('copias/')), 'cópia diária');
+  const nomes = MODE === 'banco' ? [...mock.files.keys()] : [...mock.buckets.get('giroauto-dados').keys()].map((k) => 'giroauto-dados/' + k);
+  assert.ok(nomes.includes('giroauto-dados/giroauto.db'), 'banco copiado ao desligar');
+  assert.ok(nomes.some((k) => k.startsWith('giroauto-dados/copias/')), 'cópia diária');
   assert.ok(!mock.log.some((l) => l.headers.authorization), 'chave nova só no apikey');
 
   // Versão B: servidor novo, disco vazio
@@ -94,11 +101,14 @@ test('lojas, veículos e fotos continuam depois de publicar uma nova versão', a
   await new Promise((res) => s.child.on('exit', res));
 
   s = await boot();
-  r = await api('POST', '/api/auth/login', { email: 'd@x.com', senha: '12345678' });
+  r = await api('POST', '/api/auth/login', { email, senha: '12345678' });
   r = await api('GET', '/api/vehicles');
   assert.equal(r.body.length, 2, 'alteração copiada automaticamente');
   await stop(s);
-});
+}
+
+test('modo Storage (chave secreta): dados continuam entre versões', async () => { MODE = 'storage'; cookie = ''; await cenario('s@x.com'); });
+test('modo banco (chave publicável + senha do servidor): dados continuam entre versões', async () => { MODE = 'banco'; cookie = ''; await cenario('b@x.com'); });
 
 test('não inicia com chave errada (para não sobrescrever a cópia guardada)', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'giro-bad-')); tmpDirs.push(dir);
@@ -107,5 +117,9 @@ test('não inicia com chave errada (para não sobrescrever a cópia guardada)', 
   });
   const code = await new Promise((r) => child.on('exit', r));
   assert.equal(code, 1);
+  const c2 = spawn(process.execPath, ['--no-warnings=ExperimentalWarning', path.join(__dirname, '..', 'src', 'start.js')], {
+    env: { ...process.env, GIROAUTO_SKIP_ENV: '1', DATA_DIR: dir, PORT: '4778', SUPABASE_URL: supaUrl, SUPABASE_KEY: 'sb_publishable_teste', GIROAUTO_STORAGE_TOKEN: 'senha_errada', GIROAUTO_DB: '' },
+  });
+  assert.equal(await new Promise((r) => c2.on('exit', r)), 1, 'senha do servidor errada não inicia');
   assert.ok(mock.buckets.get('giroauto-dados').has('giroauto.db'));
 });

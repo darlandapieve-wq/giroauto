@@ -1,4 +1,4 @@
-# GiroAuto v1.3
+# GiroAuto v1.4
 
 Histórico de versões: veja [CHANGELOG.md](CHANGELOG.md).
 
@@ -9,6 +9,12 @@ Painel para lojas de veículos com três frentes:
 3. **Campanhas pagas no Facebook e no Instagram**: criadas direto na conta de anúncios da loja pela API de Marketing da Meta (campanha, conjunto de anúncios, criativo e anúncio), com métricas, pausa, reativação e encerramento pelo painel.
 
 ## Dados permanentes (Supabase, gratuito)
+
+**Configuração atual (v1.4):** projeto Supabase `giroauto` (região São Paulo). No Render, cadastre:
+`SUPABASE_URL`, `SUPABASE_KEY` (chave publicável `sb_publishable_...`) e `GIROAUTO_STORAGE_TOKEN` (senha do servidor; o Supabase guarda só o hash dela em `giro_private.settings`). Para trocar a senha, gere uma nova e atualize o hash com
+`insert into giro_private.settings (key, value) values ('token_sha256', encode(sha256(convert_to('NOVA_SENHA','UTF8')),'hex')) on conflict (key) do update set value = excluded.value;`
+
+Alternativa com Supabase Storage (chave secreta):
 
 Sem configuração, lojas, veículos e fotos ficam só no disco do servidor e somem a cada nova versão no Render. Para guardar de forma permanente:
 
