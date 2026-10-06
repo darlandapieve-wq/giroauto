@@ -319,3 +319,36 @@ test('preenchimento automático: veículo escolhido, ponte e favorito', async ()
   r = await api('GET', '/health');
   assert.equal(r.body.version, require('../package.json').version);
 });
+
+test('público personalizado, interesses, posicionamentos e alcance estimado', async () => {
+  let r = await api('GET', '/api/meta/interests?q=carros');
+  assert.equal(r.status, 200);
+  assert.equal(r.body[0].name, 'Automóveis');
+  const aud = { city_key: '242789', city_name: 'Assis', radius_km: 30, age_min: 25, age_max: 55, audience_mode: 'manual', genders: '1',
+    interests: [{ id: r.body[0].id, name: r.body[0].name }], placements: 'manual', positions: ['fb_marketplace', 'ig_reels'] };
+  r = await api('POST', '/api/meta/reach', aud);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.lower, 38000);
+  const est = mock.calls.find((c) => c.path.endsWith('/reachestimate'));
+  assert.deepEqual(est.params.targeting_spec.genders, [1]);
+  assert.equal(est.params.targeting_spec.flexible_spec[0].interests[0].id, '6003176678152');
+  assert.deepEqual(est.params.targeting_spec.facebook_positions, ['marketplace']);
+  assert.deepEqual(est.params.targeting_spec.instagram_positions, ['reels']);
+
+  // campanha com Advantage+ e posicionamento automático
+  const v = await api('POST', '/api/vehicles', { marca: 'Ford', modelo: 'Ka', ano_modelo: 2019, km: 50000, preco: 45000 });
+  const fd = new FormData(); fd.append('fotos', new Blob([JPG], { type: 'image/jpeg' }), 'a.jpg');
+  await api('POST', `/api/vehicles/${v.body.id}/photos`, fd);
+  await api('POST', `/api/vehicles/${v.body.id}/ready`);
+  mock.calls.length = 0;
+  const amanha = new Date(Date.now() + 2 * 864e5).toISOString().slice(0, 10);
+  r = await api('POST', '/api/campaigns', { name: 'Ka Advantage', mode: 'messenger', daily_budget: 12, days: 5, radius_km: 25,
+    city_key: '242789', city_name: 'Assis', vehicle_ids: [v.body.id], audience_mode: 'advantage', age_min: 30, placements: 'auto', start_date: amanha });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  const adset = mock.calls.find((c) => c.path === '/act_111/adsets');
+  const t = adset.params.targeting;
+  assert.equal(t.targeting_automation.advantage_audience, 1);
+  assert.equal(t.age_min, 25, 'idade mínima limitada a 25 no Advantage+');
+  assert.equal(t.publisher_platforms, undefined, 'posicionamento automático');
+  assert.ok(adset.params.start_time.startsWith(amanha), 'começa na data escolhida');
+});

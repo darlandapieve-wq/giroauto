@@ -567,8 +567,11 @@ app.post('/api/meta/catalog/setup', auth.requireUser, wrap(async (req, res) => r
 app.post('/api/meta/catalog/sync', auth.requireUser, wrap(async (req, res) => res.json(await meta.syncCatalog(req.user.storeId))));
 
 function campaignOut(c) {
+  const parse = (x, f) => { try { return JSON.parse(x); } catch { return f; } };
   return {
     ...c,
+    interests: parse(c.interests_json, []),
+    positions: parse(c.positions_json, []),
     daily_budget: c.daily_budget_cents / 100,
     stats: c.stats_json ? JSON.parse(c.stats_json) : null,
     vehicle_ids: all('SELECT vehicle_id FROM campaign_vehicles WHERE campaign_id = ?', c.id).map((r) => r.vehicle_id),
@@ -588,16 +591,45 @@ app.get('/api/campaigns', auth.requireUser, wrap(async (req, res) => {
   res.json(all('SELECT * FROM campaigns WHERE store_id = ? ORDER BY id DESC', req.user.storeId).map(campaignOut));
 }));
 
+// Lê e valida público/posicionamentos enviados pelo formulário de campanha.
+function audienceFrom(b) {
+  const radius = parseInt(b.radius_km, 10);
+  const ageMin = Math.min(65, Math.max(18, parseInt(b.age_min ?? 18, 10) || 18));
+  const ageMax = Math.min(65, Math.max(ageMin, parseInt(b.age_max ?? 65, 10) || 65));
+  const audience = b.audience_mode === 'advantage' ? 'advantage' : 'manual';
+  const genders = ['1', '2'].includes(String(b.genders)) ? String(b.genders) : '';
+  const interests = (Array.isArray(b.interests) ? b.interests : []).slice(0, 15)
+    .filter((i) => i && /^\d+$/.test(String(i.id))).map((i) => ({ id: String(i.id), name: String(i.name || '').slice(0, 80) }));
+  const placements = b.placements === 'auto' ? 'auto' : 'manual';
+  const positions = (Array.isArray(b.positions) ? b.positions : meta.DEFAULT_POSITIONS).filter((p) => meta.POSITIONS[p]);
+  if (placements === 'manual' && !positions.length) throw fail(400, 'Escolha ao menos um lugar onde o anúncio vai aparecer.');
+  return {
+    city_key: String(b.city_key || ''), city_name: String(b.city_name || '').slice(0, 120), radius_km: radius, age_min: ageMin, age_max: ageMax,
+    audience_mode: audience, genders, interests_json: JSON.stringify(interests), placements, positions_json: JSON.stringify(positions),
+  };
+}
+
+app.get('/api/meta/interests', auth.requireUser, wrap(async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  res.json(q.length < 2 ? [] : await meta.searchInterests(req.user.storeId, q));
+}));
+
+app.post('/api/meta/reach', auth.requireUser, wrap(async (req, res) => {
+  const a = audienceFrom(req.body || {});
+  if (!a.city_key) throw fail(400, 'Escolha a cidade.');
+  if (!(a.radius_km >= 17 && a.radius_km <= 80)) throw fail(400, 'Raio entre 17 e 80 km.');
+  res.json(await meta.reachEstimate(req.user.storeId, a));
+}));
+
 app.post('/api/campaigns', auth.requireUser, wrap(async (req, res) => {
   const b = req.body || {};
+  const aud = audienceFrom(b);
   const storeId = req.user.storeId;
   const name = String(b.name || '').trim().slice(0, 120);
   const mode = String(b.mode || '');
   const daily = Number(String(b.daily_budget ?? '').replace(',', '.'));
   const days = parseInt(b.days, 10);
-  const radius = parseInt(b.radius_km, 10);
-  const ageMin = Math.min(65, Math.max(18, parseInt(b.age_min ?? 18, 10) || 18));
-  const ageMax = Math.min(65, Math.max(ageMin, parseInt(b.age_max ?? 65, 10) || 65));
+  const radius = aud.radius_km;
   if (!name) throw fail(400, 'Dê um nome à campanha.');
   if (!meta.MODES[mode]) throw fail(400, 'Escolha o tipo de campanha.');
   if (!(daily >= 6)) throw fail(400, 'O orçamento diário mínimo é R$ 6.');
@@ -611,13 +643,22 @@ app.post('/api/campaigns', auth.requireUser, wrap(async (req, res) => {
   if (vs.some((v) => !v || v.status === 'vendido' || v.status === 'rascunho')) throw fail(400, 'Há veículos vendidos, em rascunho ou inexistentes na seleção.');
   if (mode === 'catalogo' && vs.some((v) => !v.catalogo)) throw fail(400, 'No modo Catálogo dinâmico, todos os veículos precisam estar marcados para o catálogo.');
 
-  const start = new Date(Date.now() + 5 * 60e3);
+  // Início: agora (+5 min) ou numa data escolhida (até 60 dias à frente).
+  let start = new Date(Date.now() + 5 * 60e3);
+  if (b.start_date) {
+    const d = new Date(`${String(b.start_date).slice(0, 10)}T08:00:00-03:00`);
+    if (Number.isNaN(d.getTime())) throw fail(400, 'Data de início inválida.');
+    if (d.getTime() > Date.now() + 60 * 864e5) throw fail(400, 'A data de início deve ser nos próximos 60 dias.');
+    if (d > start) start = d;
+  }
   const end = new Date(start.getTime() + days * 864e5);
   const c = tx(() => {
-    const r = run(`INSERT INTO campaigns (store_id, name, mode, daily_budget_cents, days, city_key, city_name, radius_km, age_min, age_max, message, start_time, end_time)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    storeId, name, mode, Math.round(daily * 100), days, String(b.city_key), String(b.city_name).slice(0, 120), radius, ageMin, ageMax,
-    String(b.message || '').trim().slice(0, 600), start.toISOString(), end.toISOString());
+    const r = run(`INSERT INTO campaigns (store_id, name, mode, daily_budget_cents, days, city_key, city_name, radius_km, age_min, age_max, message, start_time, end_time,
+      audience_mode, genders, interests_json, placements, positions_json)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    storeId, name, mode, Math.round(daily * 100), days, aud.city_key, aud.city_name, aud.radius_km, aud.age_min, aud.age_max,
+    String(b.message || '').trim().slice(0, 600), start.toISOString(), end.toISOString(),
+    aud.audience_mode, aud.genders, aud.interests_json, aud.placements, aud.positions_json);
     ids.forEach((id) => run('INSERT INTO campaign_vehicles (campaign_id, vehicle_id) VALUES (?, ?)', r.lastInsertRowid, id));
     return r.lastInsertRowid;
   });

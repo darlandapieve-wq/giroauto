@@ -2,6 +2,19 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v1.6 — 06/10/2026
+
+**Campanhas com público, posicionamentos e alcance estimado**
+
+- **Público automático (Advantage+)**, recomendado pela Meta: a loja define cidade, raio e idade mínima; a Meta encontra quem tem mais chance de comprar.
+- **Público personalizado**: idade mínima e máxima, gênero e **interesses** buscados direto na Meta (com sugestões prontas: Automóveis, Carros usados, Concessionária, Picapes, SUV).
+- **Onde o anúncio aparece**: automático (a Meta distribui) ou escolhido entre Feed, Marketplace, Stories e Reels do Facebook e Feed, Stories, Explorar e Reels do Instagram.
+- **Alcance estimado** pela Meta, atualizado a cada mudança, com aviso quando o público fica pequeno demais.
+- **Data de início** da campanha (vazio = começa agora).
+- Idade padrão 21 a 65 anos.
+
+Arquivos alterados: `src/meta/service.js`, `src/server.js`, `src/db.js`, `public/app.js`, `test/api.test.js`, `test/mock-graph.js`, `package.json`, `CHANGELOG.md`.
+
 ## v1.5 — 06/10/2026
 
 **Publicação automática com um clique (extensão do Chrome)**

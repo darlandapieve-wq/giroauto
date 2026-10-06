@@ -192,18 +192,72 @@ const MODES = {
 
 const fmtBRL = (n) => 'R$ ' + Number(n).toLocaleString('pt-BR');
 
+// Posicionamentos que o lojista pode escolher (nomes da API da Meta).
+const POSITIONS = {
+  fb_feed: ['facebook', 'facebook_positions', 'feed'],
+  fb_marketplace: ['facebook', 'facebook_positions', 'marketplace'],
+  fb_story: ['facebook', 'facebook_positions', 'story'],
+  fb_reels: ['facebook', 'facebook_positions', 'facebook_reels'],
+  ig_feed: ['instagram', 'instagram_positions', 'stream'],
+  ig_story: ['instagram', 'instagram_positions', 'story'],
+  ig_explore: ['instagram', 'instagram_positions', 'explore'],
+  ig_reels: ['instagram', 'instagram_positions', 'reels'],
+};
+const DEFAULT_POSITIONS = ['fb_feed', 'fb_marketplace', 'fb_story', 'ig_feed', 'ig_story', 'ig_explore'];
+
+function parseList(v, fallback) {
+  if (Array.isArray(v)) return v;
+  try { const x = JSON.parse(v || ''); return Array.isArray(x) ? x : fallback; } catch { return fallback; }
+}
+
+/**
+ * Monta o público da Meta a partir da campanha.
+ * - Advantage+ (recomendado pela Meta): só cidade/raio e idade mínima (até 25) como controles; a Meta acha o público.
+ * - Personalizado: idade, gênero e interesses (ex.: Automóveis, Carros usados).
+ * Posicionamentos: automáticos (a Meta distribui) ou só os escolhidos.
+ */
 function buildTargeting(c) {
-  return {
-    geo_locations: {
-      cities: [{ key: c.city_key, radius: c.radius_km, distance_unit: 'kilometer' }],
-    },
-    age_min: c.age_min,
-    age_max: c.age_max,
-    publisher_platforms: ['facebook', 'instagram'],
-    facebook_positions: ['feed', 'marketplace', 'story'],
-    instagram_positions: ['stream', 'story', 'explore'],
-    targeting_automation: { advantage_audience: 0 },
-  };
+  const t = { geo_locations: { cities: [{ key: c.city_key, radius: c.radius_km, distance_unit: 'kilometer' }] } };
+  if (c.audience_mode === 'advantage') {
+    t.age_min = Math.min(25, c.age_min || 18);
+    t.age_max = 65;
+    t.targeting_automation = { advantage_audience: 1 };
+  } else {
+    t.age_min = c.age_min;
+    t.age_max = c.age_max;
+    if (c.genders === '1' || c.genders === '2') t.genders = [Number(c.genders)];
+    const interests = parseList(c.interests_json, []).filter((i) => i && i.id);
+    if (interests.length) t.flexible_spec = [{ interests: interests.map((i) => ({ id: String(i.id), name: i.name })) }];
+    t.targeting_automation = { advantage_audience: 0 };
+  }
+  if (c.placements !== 'auto') {
+    const chosen = parseList(c.positions_json, DEFAULT_POSITIONS).filter((p) => POSITIONS[p]);
+    const list = chosen.length ? chosen : DEFAULT_POSITIONS;
+    t.publisher_platforms = [...new Set(list.map((p) => POSITIONS[p][0]))];
+    for (const p of list) { const [, key, val] = POSITIONS[p]; (t[key] = t[key] || []).push(val); }
+  }
+  return t;
+}
+
+async function searchInterests(storeId, q) {
+  const { token } = tokenFor(storeId);
+  const r = await graph.get('/search', token, { type: 'adinterest', q, limit: 12, locale: 'pt_BR' });
+  return (r.data || []).map((i) => ({
+    id: String(i.id), name: i.name,
+    size: Number(i.audience_size_upper_bound || i.audience_size || 0) || null,
+    path: Array.isArray(i.path) ? i.path.join(' > ') : '',
+  }));
+}
+
+// Estimativa de alcance (pessoas que podem ver o anúncio). A Meta pode não responder para públicos pequenos.
+async function reachEstimate(storeId, c) {
+  const { conn, token } = tokenFor(storeId);
+  if (!conn.ad_account_id) throw httpError(400, 'Escolha a conta de anúncios em Configurações.');
+  const r = await graph.get(`/${conn.ad_account_id}/reachestimate`, token, { targeting_spec: buildTargeting(c) });
+  const d = Array.isArray(r.data) ? r.data[0] : r.data || r;
+  const lo = Number(d?.users_lower_bound ?? d?.estimate_mau_lower_bound ?? 0);
+  const hi = Number(d?.users_upper_bound ?? d?.estimate_mau_upper_bound ?? 0);
+  return { lower: lo || null, upper: hi || null, ready: d?.estimate_ready !== false };
 }
 
 async function uploadImage(adAccountId, token, photo) {
@@ -439,5 +493,5 @@ async function refreshStats(storeId, campaignId) {
 
 module.exports = {
   MODES, isConfigured, connectUrl, exchangeCode, saveConnection, publicStatus, listAssets, saveSettings,
-  searchCities, setupCatalog, syncCatalog, launchCampaign, setCampaignStatus, refreshStats, httpError, buildTargeting,
+  searchCities, searchInterests, reachEstimate, POSITIONS, DEFAULT_POSITIONS, setupCatalog, syncCatalog, launchCampaign, setCampaignStatus, refreshStats, httpError, buildTargeting,
 };

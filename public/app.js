@@ -709,8 +709,10 @@
   function blankCamp() {
     const mes = new Date().toLocaleDateString('pt-BR', { month: 'long' });
     return {
-      name: `Estoque · ${mes}`, mode: 'whatsapp', daily_budget: 20, days: 7, radius_km: 40, age_min: 18, age_max: 65,
+      name: `Estoque · ${mes}`, mode: 'whatsapp', daily_budget: 20, days: 7, radius_km: 40, age_min: 21, age_max: 65,
       city_key: '', city_name: '', message: '', vehicle_ids: [], activate: true,
+      audience_mode: 'advantage', genders: '', interests: [], placements: 'auto',
+      positions: ['fb_feed', 'fb_marketplace', 'fb_story', 'ig_feed', 'ig_story', 'ig_explore'], start_date: '', reach: null,
     };
   }
   function viewCampanhas() {
@@ -789,6 +791,33 @@
     const c = S.camp;
     return S.vehicles.filter((v) => ['pronto', 'publicado'].includes(v.status) && (c.mode !== 'catalogo' || v.catalogo));
   }
+  const PLC = { fb_feed: 'Feed do Facebook', fb_marketplace: 'Marketplace', fb_story: 'Stories do Facebook', fb_reels: 'Reels do Facebook',
+    ig_feed: 'Feed do Instagram', ig_story: 'Stories do Instagram', ig_explore: 'Explorar do Instagram', ig_reels: 'Reels do Instagram' };
+  const fmtN = (n) => Number(n).toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+  function reachHtml(r) {
+    if (!r) return '<span class="sub">Escolha a cidade para ver o alcance estimado.</span>';
+    if (r.loading) return '<span class="sub">Calculando o alcance estimado…</span>';
+    if (r.error) return `<span class="sub">Alcance estimado indisponível: ${esc(r.error)}</span>`;
+    if (!r.lower && !r.upper) return '<span class="sub">A Meta não informou o alcance para este público.</span>';
+    const small = (r.upper || r.lower) < 5000;
+    return `<b>Público estimado: ${fmtN(r.lower)} a ${fmtN(r.upper)} pessoas</b> na região escolhida.${small ? ' <span class="sub">Público pequeno: amplie o raio ou tire interesses para a Meta entregar melhor.</span>' : ''}`;
+  }
+  function campAudienceBody(c) {
+    return { city_key: c.city_key, city_name: c.city_name, radius_km: c.radius_km, age_min: c.age_min, age_max: c.age_max,
+      audience_mode: c.audience_mode, genders: c.genders, interests: c.interests, placements: c.placements, positions: c.positions };
+  }
+  let reachTimer;
+  function updateReach() {
+    const c = S.camp; if (!c || !c.city_key) return;
+    clearTimeout(reachTimer);
+    reachTimer = setTimeout(async () => {
+      readCamp();
+      c.reach = { loading: true }; const box = $('#c-reach'); if (box) box.innerHTML = reachHtml(c.reach);
+      try { c.reach = await api('POST', '/api/meta/reach', campAudienceBody(c)); }
+      catch (e) { c.reach = { error: e.message.replace(/^A Meta recusou o pedido: /, '') }; }
+      const b2 = $('#c-reach'); if (b2) b2.innerHTML = reachHtml(c.reach);
+    }, 600);
+  }
   function campFormHtml() {
     const c = S.camp;
     const vs = campVehicles();
@@ -804,10 +833,36 @@
             <div class="f w6"><label for="c-name">Nome</label><input id="c-name" value="${esc(c.name)}"></div>
             <div class="f w6 ta"><label for="c-city">Cidade</label><input id="c-city" value="${esc(c.city_name)}" placeholder="Digite a cidade da loja" autocomplete="off"><ul id="cityList" hidden></ul></div>
             <div class="f"><label for="c-radius">Raio (km)</label><input id="c-radius" inputmode="numeric" value="${c.radius_km}"><span class="hint">De 17 a 80 km</span></div>
-            <div class="f w1"><label for="c-agemin">Idade mín.</label><input id="c-agemin" inputmode="numeric" value="${c.age_min}"></div>
-            <div class="f w1"><label for="c-agemax">Idade máx.</label><input id="c-agemax" inputmode="numeric" value="${c.age_max}"></div>
             <div class="f"><label for="c-daily">Orçamento diário (R$)</label><input id="c-daily" inputmode="decimal" value="${c.daily_budget}"></div>
             <div class="f"><label for="c-days">Duração (dias)</label><input id="c-days" inputmode="numeric" value="${c.days}"></div>
+            <div class="f"><label for="c-start">Início</label><input id="c-start" type="date" value="${esc(c.start_date)}" min="${new Date().toISOString().slice(0, 10)}"><span class="hint">Vazio = começa agora</span></div>
+          </div>
+          <div><span class="lbl">Público</span>
+            <div class="seg" style="margin-top:6px">
+              <label><input type="radio" name="c-aud" value="advantage" ${c.audience_mode === 'advantage' ? 'checked' : ''}><b>Automático (Advantage+)</b><span>Recomendado pela Meta. Ela encontra quem tem mais chance de comprar, dentro da sua cidade e raio.</span></label>
+              <label><input type="radio" name="c-aud" value="manual" ${c.audience_mode === 'manual' ? 'checked' : ''}><b>Personalizado</b><span>Você escolhe idade, gênero e interesses.</span></label>
+            </div>
+          </div>
+          <div class="fields">
+            <div class="f w1"><label for="c-agemin">Idade mín.</label><input id="c-agemin" inputmode="numeric" value="${c.age_min}"></div>
+            ${c.audience_mode === 'manual' ? `<div class="f w1"><label for="c-agemax">Idade máx.</label><input id="c-agemax" inputmode="numeric" value="${c.age_max}"></div>
+            <div class="f"><label for="c-gender">Gênero</label><select id="c-gender"><option value="" ${!c.genders ? 'selected' : ''}>Todos</option><option value="1" ${c.genders === '1' ? 'selected' : ''}>Homens</option><option value="2" ${c.genders === '2' ? 'selected' : ''}>Mulheres</option></select></div>`
+              : '<div class="f w3"><span class="hint" style="margin-top:22px">No automático, a idade mínima vai até 25 anos; a Meta ajusta o resto.</span></div>'}
+          </div>
+          ${c.audience_mode === 'manual' ? `<div class="ta"><span class="lbl">Interesses</span>
+            <div class="chips" style="margin:6px 0">${c.interests.map((i, k) => `<button class="chip" aria-pressed="true" type="button" data-rmint="${k}" title="Remover">${esc(i.name)} ×</button>`).join('') || '<span class="sub">Nenhum interesse: o anúncio aparece para todos na região.</span>'}</div>
+            <div class="f w6"><input id="c-int" placeholder="Buscar interesse (ex.: carros usados, automóveis, financiamento)" autocomplete="off"><ul id="intList" hidden></ul></div>
+            <div class="chips" style="margin-top:6px"><span class="sub">Sugestões:</span>${['Automóveis', 'Carros usados', 'Concessionária', 'Picapes', 'SUV'].map((q) => `<button class="chip" type="button" data-sugint="${q}">+ ${q}</button>`).join('')}</div>
+          </div>` : ''}
+          <div><span class="lbl">Onde o anúncio aparece</span>
+            <div class="seg" style="margin-top:6px">
+              <label><input type="radio" name="c-plc" value="auto" ${c.placements === 'auto' ? 'checked' : ''}><b>Automático</b><span>A Meta distribui entre Facebook, Instagram, Marketplace, Stories e Reels onde o resultado for melhor.</span></label>
+              <label><input type="radio" name="c-plc" value="manual" ${c.placements === 'manual' ? 'checked' : ''}><b>Escolher</b><span>Só nos lugares marcados.</span></label>
+            </div>
+            ${c.placements === 'manual' ? `<div class="chips" style="margin-top:8px">${Object.entries(PLC).map(([k, l]) => `<label class="chip" style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" data-plc="${k}" ${c.positions.includes(k) ? 'checked' : ''}>${l}</label>`).join('')}</div>` : ''}
+          </div>
+          <div class="infobox" id="c-reach">${reachHtml(c.reach)}</div>
+          <div class="fields">
             <div class="f w6"><label for="c-msg">Texto do anúncio</label><textarea id="c-msg" style="min-height:70px" placeholder="Seminovos revisados na ${esc(S.me.store.name)}. Chame e agende seu test drive.">${esc(c.message)}</textarea></div>
           </div>
           <div><span class="lbl">Veículos ${c.mode === 'catalogo' ? '(marcados para o catálogo)' : '(até 10, em carrossel)'}</span>
@@ -831,14 +886,20 @@
             </div>
           </div>
           ${sel.length > 1 ? `<span class="sub">Carrossel com ${sel.length} veículos</span>` : ''}
-          <span class="sub">Aparece no feed, Marketplace e stories do Facebook e no feed, stories e explorar do Instagram.</span>
+          <span class="sub">${c.placements === 'auto' ? 'A Meta distribui entre Facebook, Instagram, Marketplace, Stories e Reels' : 'Aparece em: ' + (c.positions.map((k) => PLC[k]).join(', ') || 'nenhum lugar marcado')}.</span>
         </div>
       </div>
     </div>`;
   }
   function readCamp() {
     const c = S.camp; if (!c || !$('#c-name')) return;
-    c.name = $('#c-name').value; c.radius_km = $('#c-radius').value; c.age_min = $('#c-agemin').value; c.age_max = $('#c-agemax').value;
+    c.name = $('#c-name').value; c.radius_km = $('#c-radius').value; c.age_min = $('#c-agemin').value;
+    if ($('#c-agemax')) c.age_max = $('#c-agemax').value;
+    if ($('#c-gender')) c.genders = $('#c-gender').value;
+    c.start_date = $('#c-start').value;
+    const au = $('input[name="c-aud"]:checked'); if (au) c.audience_mode = au.value;
+    const pl = $('input[name="c-plc"]:checked'); if (pl) c.placements = pl.value;
+    if ($$('[data-plc]').length) c.positions = $$('[data-plc]').filter((x) => x.checked).map((x) => x.dataset.plc);
     c.daily_budget = $('#c-daily').value; c.days = $('#c-days').value; c.message = $('#c-msg').value; c.activate = $('#c-activate').checked;
     const m = $('input[name="c-mode"]:checked'); if (m) c.mode = m.value;
   }
@@ -859,6 +920,31 @@
       if (cb.checked) a.push(id); else a.splice(a.indexOf(id), 1);
       refreshCampForm();
     }));
+    $$('input[name="c-aud"], input[name="c-plc"]').forEach((r) => r.addEventListener('change', () => { refreshCampForm(); updateReach(); }));
+    $$('[data-plc], #c-gender').forEach((x) => x.addEventListener('change', () => { readCamp(); updateReach(); }));
+    ['c-radius', 'c-agemin', 'c-agemax'].forEach((id) => { const el = $('#' + id); if (el) el.addEventListener('change', updateReach); });
+    $$('[data-rmint]').forEach((b) => { b.onclick = () => { readCamp(); S.camp.interests.splice(Number(b.dataset.rmint), 1); refreshCampForm(); updateReach(); }; });
+    const addInterest = (i) => { readCamp(); if (!S.camp.interests.some((x) => x.id === i.id)) S.camp.interests.push(i); refreshCampForm(); updateReach(); };
+    $$('[data-sugint]').forEach((b) => {
+      b.onclick = async () => {
+        b.disabled = true;
+        try { const r = await api('GET', '/api/meta/interests?q=' + encodeURIComponent(b.dataset.sugint)); if (r[0]) addInterest({ id: r[0].id, name: r[0].name }); else toast('A Meta não encontrou esse interesse.'); }
+        catch (e) { toast(e.message, 6000); b.disabled = false; }
+      };
+    });
+    const ii = $('#c-int'); const il = $('#intList'); let intTimer;
+    if (ii) ii.addEventListener('input', () => {
+      clearTimeout(intTimer);
+      if (ii.value.trim().length < 2) { il.hidden = true; return; }
+      intTimer = setTimeout(async () => {
+        try {
+          const r = await api('GET', '/api/meta/interests?q=' + encodeURIComponent(ii.value.trim()));
+          il.innerHTML = r.length ? r.map((x, k) => `<li><button type="button" data-ipick="${k}">${esc(x.name)} <span class="sub">${x.size ? fmtN(x.size) + ' pessoas' : ''} ${esc(x.path)}</span></button></li>`).join('') : '<li class="sub" style="padding:7px 10px">Nada encontrado</li>';
+          il.hidden = false;
+          $$('[data-ipick]', il).forEach((b) => { b.onclick = () => addInterest({ id: r[Number(b.dataset.ipick)].id, name: r[Number(b.dataset.ipick)].name }); });
+        } catch (e) { il.innerHTML = `<li class="sub" style="padding:7px 10px">${esc(e.message)}</li>`; il.hidden = false; }
+      }, 300);
+    });
     const city = $('#c-city'); const list = $('#cityList');
     city.addEventListener('input', () => {
       S.camp.city_key = ''; S.camp.city_name = city.value;
@@ -870,7 +956,7 @@
           const r = await api('GET', '/api/meta/cities?q=' + encodeURIComponent(city.value.trim()));
           list.innerHTML = r.length ? r.map((x) => `<li><button type="button" data-key="${esc(x.key)}" data-name="${esc(x.name + (x.region ? ', ' + x.region : ''))}">${esc(x.name)} <span class="sub">${esc(x.region)}</span></button></li>`).join('') : '<li class="sub" style="padding:7px 10px">Nenhuma cidade encontrada</li>';
           list.hidden = false;
-          $$('button', list).forEach((b) => { b.onclick = () => { S.camp.city_key = b.dataset.key; S.camp.city_name = b.dataset.name; refreshCampForm(); }; });
+          $$('button', list).forEach((b) => { b.onclick = () => { S.camp.city_key = b.dataset.key; S.camp.city_name = b.dataset.name; refreshCampForm(); updateReach(); }; });
         } catch (e) { list.innerHTML = `<li class="sub" style="padding:7px 10px">${esc(e.message)}</li>`; list.hidden = false; }
       }, 300);
     });

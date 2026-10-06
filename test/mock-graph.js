@@ -29,7 +29,11 @@ function createMock() {
   app.get('/:v/me/adaccounts', (req, res) => res.json({ data: [{ id: 'act_111', name: 'Loja Ads', currency: 'BRL', account_status: 1 }] }));
   app.get('/:v/me/accounts', (req, res) => res.json({ data: [{ id: 'page_1', name: 'Autos Teste', instagram_business_account: { id: 'ig_1', username: 'autosteste' } }] }));
   app.get('/:v/me/businesses', (req, res) => res.json({ data: [{ id: 'biz_1', name: 'Autos Teste Ltda' }] }));
-  app.get('/:v/search', (req, res) => res.json({ data: [{ key: '242789', name: 'Assis Chateaubriand', region: 'Paraná' }] }));
+  app.get('/:v/search', (req, res) => {
+    if (req.p.type === 'adinterest') return res.json({ data: [{ id: '6003176678152', name: 'Automóveis', audience_size_upper_bound: 98000000, path: ['Interesses', 'Automóveis'] }, { id: '6003304473660', name: 'Carros usados', audience_size: 21000000 }] });
+    return res.json({ data: [{ key: '242789', name: 'Assis Chateaubriand', region: 'Paraná' }] });
+  });
+  app.get('/:v/:act/reachestimate', (req, res) => res.json({ data: { users_lower_bound: 38000, users_upper_bound: 44700, estimate_ready: true } }));
   app.post('/:v/:act/adimages', (req, res) => res.json({ images: { bytes: { hash: 'hash_' + id(), url: 'https://x' } } }));
   app.post('/:v/:node/:edge', (req, res) => res.json({ id: id() }));
   app.post('/:v/:node', (req, res) => res.json({ success: true }));
