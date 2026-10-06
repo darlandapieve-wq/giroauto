@@ -1,0 +1,12 @@
+<!doctype html><html><head><meta charset="utf-8"></head><body><div role="main">
+<h1>Seus anúncios</h1>
+<div class="card" id="c1"><a href="/marketplace/item/555/">2022 Chevrolet Onix LT</a> <span>R$ 74.900</span>
+  <div role="button" aria-label="Mais opções para Chevrolet Onix" id="more">…</div></div>
+</div>
+<script>
+document.getElementById('more').onclick=()=>{const m=document.createElement('div');m.setAttribute('role','menu');
+  m.innerHTML='<div role="menuitem" id="del">Excluir anúncio</div>';document.body.appendChild(m);
+  document.getElementById('del').onclick=()=>{m.remove();const d=document.createElement('div');d.setAttribute('role','dialog');
+    d.innerHTML='<p>Excluir este anúncio?</p><div role="button" id="ok">Excluir</div>';document.body.appendChild(d);
+    document.getElementById('ok').onclick=()=>{d.remove();document.getElementById('c1').remove();window.__deleted=true;};};};
+</script></body></html>

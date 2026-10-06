@@ -226,11 +226,99 @@
     await send({ cmd: 'filled' });
     const icon = { ok: ['✓', 'ok'], skip: ['–', ''], missing: ['!', 'warn'], manual: ['!', 'warn'], erro: ['✕', 'bad'] };
     const pend = res.filter(([, r]) => r !== 'ok' && r !== 'skip');
+    const lista = `<ul>${res.map(([n, r]) => `<li><span class="${icon[r][1]}">${icon[r][0]}</span><span>${esc(n)}${r === 'missing' || r === 'manual' ? ' — preencha à mão' : ''}</span></li>`).join('')}</ul>`;
+    if (current.auto && !pend.length) return autoPublish(current, lista);
+    if (current.auto) send({ cmd: 'note', text: `Aguardando você no Facebook: preencher ${pend.map(([n]) => n).join(', ')} e clicar em Publicar.` });
     show(`<div class="t">${pend.length ? 'Quase pronto' : 'Formulário preenchido'}</div>
       <ul>${res.map(([n, r]) => `<li><span class="${icon[r][1]}">${icon[r][0]}</span><span>${esc(n)}${r === 'missing' || r === 'manual' ? ' — preencha à mão' : ''}</span></li>`).join('')}</ul>
       <div class="note">Confira os dados e clique em <b>Avançar</b> e depois em <b>Publicar</b> no Facebook. O GiroAuto registra a publicação sozinho.</div>`,
     [{ label: 'Cancelar', onClick: () => { send({ cmd: 'cancel' }); show('<div>Tarefa cancelada.</div>'); } },
       { label: 'Já publiquei', onClick: () => { send({ cmd: 'published', listing_url: '' }); show('<div class="ok">Registrado no painel.</div>'); } }]);
+  }
+
+  /* ---------------- Publicação automática ---------------- */
+  // Textos que indicam que o Facebook quer a pessoa (verificação, bloqueio, erro): a automação para na hora.
+  const BLOCKERS = ['confirme sua identidade', 'verificacao de seguranca', 'checkpoint', 'captcha', 'temporariamente bloquead',
+    'nao foi possivel publicar', 'limite de anuncios', 'verifique sua conta', 'sua conta foi', 'algo deu errado',
+    'confirm your identity', 'security check', 'temporarily blocked', 'something went wrong', 'couldn\'t publish'];
+  function blocker() {
+    const zones = [...document.querySelectorAll('[role="dialog"], [role="alert"], [role="alertdialog"]')].filter(visible);
+    for (const z of zones) {
+      const t = norm(z.innerText);
+      const hit = BLOCKERS.find((b) => t.includes(b));
+      if (hit) return z.innerText.split('\n').slice(0, 2).join(' ').slice(0, 160);
+    }
+    return null;
+  }
+  function findButton(texts) {
+    const want = texts.map(norm);
+    const els = [...document.querySelectorAll('[role="button"], button')].filter(visible).filter((e) => !(box && box.contains(e)));
+    for (const w of want) {
+      const el = els.find((e) => norm(e.innerText) === w || norm(e.getAttribute('aria-label')) === w);
+      if (el) return el;
+    }
+    return null;
+  }
+  const enabled = (el) => el && el.getAttribute('aria-disabled') !== 'true' && !el.disabled;
+  async function waitButton(texts, ms) {
+    const end = Date.now() + ms;
+    while (Date.now() < end) {
+      const b = blocker(); if (b) return { blocked: b };
+      const el = findButton(texts);
+      if (enabled(el)) return { el };
+      await sleep(400);
+    }
+    return {};
+  }
+  async function autoPublish(current, lista) {
+    show(`<div class="t">Publicando automaticamente…</div>${lista}`);
+    await sleep(1200 + Math.random() * 800);
+    const stop = (motivo) => {
+      send({ cmd: 'failed', error: `Publicação parada: ${motivo}` });
+      show(`<div class="t bad">Publicação automática parada</div><div>${esc(motivo)}</div><div class="note">Resolva no Facebook e, se quiser, publique à mão. O GiroAuto não vai insistir.</div>`);
+    };
+    const manual = (motivo) => {
+      send({ cmd: 'note', text: `Aguardando você no Facebook: ${motivo}` });
+      show(`<div class="t warn">Falta um passo seu</div><div>${esc(motivo)}</div><div class="note">Clique em <b>Publicar</b> no Facebook. O GiroAuto registra a publicação sozinho.</div>`,
+        [{ label: 'Já publiquei', onClick: () => send({ cmd: 'published', listing_url: '' }) }]);
+    };
+    // Pode haver uma ou duas telas de "Avançar" antes do "Publicar".
+    for (let step = 0; step < 3; step++) {
+      const pub = findButton(['Publicar', 'Publish']);
+      if (enabled(pub)) break;
+      const r = await waitButton(['Avançar', 'Próximo', 'Next'], step === 0 ? 15000 : 4000);
+      if (r.blocked) return stop(r.blocked);
+      if (!r.el) break;
+      r.el.click();
+      await sleep(1500 + Math.random() * 1000);
+    }
+    const r = await waitButton(['Publicar', 'Publish'], 20000);
+    if (r.blocked) return stop(r.blocked);
+    if (!r.el) return manual('não encontrei o botão Publicar habilitado (algum campo obrigatório pode estar vazio).');
+    r.el.click();
+    show(`<div class="t">Publicando…</div><div>Aguardando o Facebook confirmar.</div>`);
+    // A extensão percebe a mudança de página. Aqui só vigiamos avisos do Facebook.
+    const end = Date.now() + 45000;
+    while (Date.now() < end && location.pathname.includes('/marketplace/create')) {
+      const b = blocker(); if (b) return stop(b);
+      await sleep(700);
+    }
+    if (location.pathname.includes('/marketplace/create')) manual('o Facebook não confirmou a publicação em 45 segundos.');
+  }
+
+  // Depois de publicar, em "Seus anúncios": encontra o link do anúncio novo.
+  async function capture(current) {
+    const v = current.vehicle;
+    const words = [norm(v.marca), norm(v.modelo)];
+    for (let i = 0; i < 16; i++) {
+      const a = [...document.querySelectorAll('a[href*="/marketplace/item/"]')].find((x) => {
+        const t = norm((x.closest('[role="article"], div') || x).innerText);
+        return words.every((w) => t.includes(w));
+      });
+      if (a) { await send({ cmd: 'published', listing_url: new URL(a.getAttribute('href'), location.origin).href.split('?')[0] }); return; }
+      await sleep(500);
+    }
+    await send({ cmd: 'published', listing_url: '' });
   }
 
   /* ---------------- Fluxo: excluir anúncio antigo ---------------- */
@@ -245,14 +333,15 @@
   }
 
   async function removeOld(current) {
+    if (blocker()) { send({ cmd: 'failed', error: `Publicação parada: ${blocker()}` }); return; }
     const v = current.vehicle;
     const titulo = `${v.marca} ${v.modelo}`;
     show(`<div class="t">Procurando o anúncio de ${esc(titulo)}…</div>`);
-    const manual = (motivo) => show(
+    const manual = (motivo) => (current.auto && send({ cmd: 'note', text: `Aguardando você no Facebook: excluir o anúncio antigo (${motivo})` }), show(
       `<div class="t warn">Exclua o anúncio antigo manualmente</div><div>${esc(motivo)}</div>
        <div class="note">Em <b>Seus anúncios</b>, abra o anúncio de <b>${esc(titulo)}</b>, clique em <b>…</b> e em <b>Excluir anúncio</b>. Depois clique em “Já excluí”.</div>`,
       [{ label: 'Cancelar', onClick: () => { send({ cmd: 'cancel' }); show('<div>Tarefa cancelada.</div>'); } },
-        { label: 'Já excluí', primary: true, onClick: async () => { show('<div>Continuando…</div>'); await send({ cmd: 'deleted' }); } }]);
+        { label: 'Já excluí', primary: true, onClick: async () => { show('<div>Continuando…</div>'); await send({ cmd: 'deleted' }); } }]));
 
     let card = null;
     const words = [norm(v.marca), norm(v.modelo)];
@@ -285,7 +374,8 @@
     if (msg.cmd !== 'run') return;
     const c = msg.current;
     const url = location.href;
-    if (c.phase === 'excluir' && url.includes('/marketplace/you/selling')) removeOld(c);
+    if (c.phase === 'capturar') capture(c);
+    else if (c.phase === 'excluir' && url.includes('/marketplace/you/selling')) removeOld(c);
     else if (c.phase === 'preencher' && url.includes('/marketplace/create')) fill(c);
     else if (c.phase === 'aguardando_publicar' && url.includes('/marketplace/create')) {
       show('<div class="t">Aguardando você publicar</div><div>Clique em Avançar e Publicar no formulário do Facebook.</div>',

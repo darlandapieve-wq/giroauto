@@ -41,6 +41,27 @@ app.get('/media/:file', wrap(async (req, res) => {
 app.use(express.static(path.join(__dirname, '..', 'public'), { index: false }));
 
 const VERSION = require('../package.json').version;
+const EXT_DIR = path.join(__dirname, '..', 'extension');
+let EXTENSION_ID = ''; let EXTENSION_VERSION = '';
+try {
+  const m = JSON.parse(require('node:fs').readFileSync(path.join(EXT_DIR, 'manifest.json'), 'utf8'));
+  EXTENSION_VERSION = m.version;
+  if (m.key) {
+    const der = Buffer.from(m.key, 'base64');
+    EXTENSION_ID = crypto.createHash('sha256').update(der).digest('hex').slice(0, 32).split('').map((h) => String.fromCharCode(97 + parseInt(h, 16))).join('');
+  }
+} catch { /* extensão não incluída no servidor */ }
+
+// Extensão do Chrome para baixar pelo painel (pasta giroauto-extensao dentro do .zip).
+app.get('/extensao.zip', (req, res) => {
+  const fs = require('node:fs');
+  if (!fs.existsSync(EXT_DIR)) return res.status(404).send('Extensão não disponível neste servidor.');
+  const files = fs.readdirSync(EXT_DIR).filter((f) => fs.statSync(path.join(EXT_DIR, f)).isFile())
+    .map((f) => ({ name: `giroauto-extensao/${f}`, data: fs.readFileSync(path.join(EXT_DIR, f)) }));
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="giroauto-extensao-${EXTENSION_VERSION}.zip"`);
+  res.send(require('./zip').buildZip(files));
+});
 app.get('/health', (req, res) => res.json({ ok: true, version: VERSION }));
 app.get('/ponte', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'ponte.html')));
 app.get('/privacidade', (req, res) => res.send(pages.privacy()));
@@ -109,13 +130,14 @@ app.post('/api/auth/login', (req, res) => {
 app.post('/api/auth/logout', (req, res) => { auth.destroySession(req, res); res.json({ ok: true }); });
 
 app.get('/api/me', auth.requireUser, (req, res) => {
-  const store = get('SELECT id, name, slug, phone, whatsapp, address, city, state, postal_code, pub_mode FROM stores WHERE id = ?', req.user.storeId);
+  const store = get('SELECT id, name, slug, phone, whatsapp, address, city, state, postal_code, pub_mode, auto_publish, daily_limit FROM stores WHERE id = ?', req.user.storeId);
   res.json({
     user: { ...req.user, is_admin: !!get('SELECT is_admin FROM users WHERE id = ?', req.user.id)?.is_admin }, store,
     vitrine_url: `${config.publicUrl}/v/${store.slug}`,
     options: { cambios: V.CAMBIOS, combustiveis: V.COMBUSTIVEIS, carrocerias: V.CARROCERIAS, cores: V.CORES },
     republish_days: config.republishDays,
     version: VERSION,
+    extension: { id: EXTENSION_ID, version: EXTENSION_VERSION },
   });
 });
 
@@ -181,6 +203,13 @@ app.put('/api/store', auth.requireUser, (req, res) => {
   run(`UPDATE stores SET name=?, phone=?, whatsapp=?, address=?, city=?, state=?, postal_code=? WHERE id=?`,
     s(b.name), s(b.phone, 20), s(b.whatsapp, 20).replace(/\D/g, ''), s(b.address, 160), s(b.city, 80), s(b.state, 2).toUpperCase(), s(b.postal_code, 9), req.user.storeId);
   res.json({ ok: true });
+});
+
+app.put('/api/store/automation', auth.requireUser, (req, res) => {
+  const auto = req.body?.auto_publish ? 1 : 0;
+  const limit = Math.min(50, Math.max(1, parseInt(req.body?.daily_limit, 10) || 15));
+  run('UPDATE stores SET auto_publish = ?, daily_limit = ? WHERE id = ?', auto, limit, req.user.storeId);
+  res.json({ ok: true, auto_publish: auto, daily_limit: limit });
 });
 
 app.put('/api/store/pub-mode', auth.requireUser, (req, res) => {
@@ -444,13 +473,26 @@ extRouter.post('/pair', (req, res) => {
 extRouter.get('/next', auth.requireExtension, (req, res) => {
   // Tarefas "em andamento" há mais de 30 min voltam para a fila.
   run(`UPDATE ext_jobs SET status='pendente' WHERE store_id=? AND status='em_andamento' AND updated_at < datetime('now','-30 minutes')`, req.ext.storeId);
+  const st = get('SELECT name, city, state, auto_publish, daily_limit FROM stores WHERE id = ?', req.ext.storeId);
   const job = get(`SELECT * FROM ext_jobs WHERE store_id = ? AND status = 'pendente' ORDER BY id LIMIT 1`, req.ext.storeId);
   const pendentes = get(`SELECT COUNT(*) n FROM ext_jobs WHERE store_id = ? AND status = 'pendente'`, req.ext.storeId).n;
   if (!job) return res.json({ job: null, pendentes: 0 });
-  run(`UPDATE ext_jobs SET status='em_andamento', updated_at=datetime('now') WHERE id=?`, job.id);
+  // Limite diário de publicações (protege a conta do Facebook da loja).
+  const hoje = get(`SELECT COUNT(*) n FROM ext_jobs WHERE store_id = ? AND status = 'concluido' AND type IN ('publicar','republicar')
+    AND date(updated_at, '-3 hours') = date('now', '-3 hours')`, req.ext.storeId).n;
+  if (job.type !== 'excluir' && hoje >= st.daily_limit) {
+    run(`UPDATE ext_jobs SET note=? WHERE id=?`, `Limite de ${st.daily_limit} publicações por dia atingido. Continua amanhã.`, job.id);
+    return res.json({ job: null, pendentes, limit_reached: true });
+  }
+  run(`UPDATE ext_jobs SET status='em_andamento', note='', updated_at=datetime('now') WHERE id=?`, job.id);
   const v = V.serialize(V.findVehicle(req.ext.storeId, job.vehicle_id));
-  const store = get('SELECT name, city, state FROM stores WHERE id = ?', req.ext.storeId);
-  res.json({ job: { id: job.id, type: job.type }, vehicle: v, store, pendentes });
+  res.json({ job: { id: job.id, type: job.type }, vehicle: v, store: { name: st.name, city: st.city, state: st.state }, pendentes,
+    settings: { auto_publish: !!st.auto_publish } });
+});
+
+extRouter.post('/jobs/:id/note', auth.requireExtension, (req, res) => {
+  run(`UPDATE ext_jobs SET note=?, updated_at=datetime('now') WHERE id=? AND store_id=?`, String(req.body?.note || '').slice(0, 300), Number(req.params.id), req.ext.storeId);
+  res.json({ ok: true });
 });
 
 extRouter.post('/jobs/:id', auth.requireExtension, (req, res) => {

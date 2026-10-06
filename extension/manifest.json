@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "GiroAuto — Marketplace assistido",
   "short_name": "GiroAuto",
-  "version": "1.2.0",
-  "description": "Publica, exclui e republica os veículos do painel GiroAuto no Facebook Marketplace, sempre com a sua confirmação.",
+  "version": "1.5.0",
+  "description": "Publica, exclui e republica com um clique os veículos do painel GiroAuto no Facebook Marketplace.",
   "permissions": [
     "storage",
     "alarms",
@@ -25,5 +25,13 @@
     "16": "icon16.png",
     "48": "icon48.png",
     "128": "icon128.png"
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzam5hzmouinYY6NzA7TwPXz6Ooo2Ft8bl28Qdzh89/ei0qIeKlQfm5uwPbK7d1QlCKyO3aHE+SZXyuyum0Oo9JfAmliIykhCUKAPCEaKnSiZjITZniGXEU9fxbIk5U66fmpGlLckBsFFzdnw7cwYlyOCahIhKu8IOKghGje9r7N/NJArD+zbKlvCbsWjg/815oWkIVvcpomZK7MnswKa3ojhMzXEtKpk2RXeIZ1VBhMhyOqjCC9aA8GLZEv4le41xWBUUkG4/rGHqvDfawCPo3FrLOYUrfoqcPKS0iPibbEAEFVaZRvI66HAto33O7ScG+EcF7C8Lv4Yhj3EdVghVwIDAQAB",
+  "externally_connectable": {
+    "matches": [
+      "https://giroauto.onrender.com/*",
+      "http://localhost/*",
+      "http://127.0.0.1/*"
+    ]
   }
 }

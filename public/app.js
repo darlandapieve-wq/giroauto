@@ -92,6 +92,7 @@
     $('#userName').textContent = S.me.user.name;
     $('#appVersion').textContent = 'GiroAuto v' + String(S.me.version || '').replace(/\.0$/, '');
     await Promise.all([loadVehicles(), loadJobs(), loadMeta(), loadExt()]);
+    if (S.jobs.some((j) => ['pendente', 'em_andamento'].includes(j.status))) watchJobs();
     route();
     setInterval(async () => { await Promise.all([loadVehicles(), loadJobs(), loadExt()]); if (['estoque', 'republicacao'].includes(S.view) && !$('#scrim')) render(); else counts(); }, 20000);
   }
@@ -99,15 +100,89 @@
   async function loadJobs() { S.jobs = await api('GET', '/api/jobs'); }
   async function loadEvents() { S.events = await api('GET', '/api/events'); }
   async function loadMeta() { S.meta = await api('GET', '/api/meta/status'); }
+  /* ---- Conversa direta com a extensão do Chrome (sem abrir a extensão) ---- */
+  function extSend(msg, timeout = 4000) {
+    const id = S.me?.extension?.id;
+    return new Promise((resolve) => {
+      if (!id || !window.chrome || !chrome.runtime || !chrome.runtime.sendMessage) return resolve(null);
+      const t = setTimeout(() => resolve(null), timeout);
+      try {
+        chrome.runtime.sendMessage(id, msg, (r) => { clearTimeout(t); void chrome.runtime.lastError; resolve(r || null); });
+      } catch { clearTimeout(t); resolve(null); }
+    });
+  }
+  let pairing = null;
+  // Conecta a extensão a este painel sozinho, sem digitar código.
+  async function extConnect() {
+    const h = await extSend({ cmd: 'hello' });
+    S.extInfo = h;
+    if (!h) return null;
+    if ((!h.paired || h.panelUrl !== location.origin) && !pairing) {
+      pairing = (async () => {
+        try {
+          const { code } = await api('POST', '/api/extension/pair-code');
+          const r = await extSend({ cmd: 'pair', code }, 10000);
+          if (r?.ok) S.extInfo = await extSend({ cmd: 'hello' });
+        } catch { /* tenta de novo na próxima */ }
+        pairing = null;
+      })();
+      await pairing;
+    }
+    return S.extInfo;
+  }
   async function loadExt() {
     S.ext = await api('GET', '/api/extension/status');
-    const last = S.ext[0];
-    const recent = last?.last_seen && (Date.now() - new Date(last.last_seen.replace(' ', 'T') + 'Z')) < 3 * 60e3;
-    $('#extTitle').textContent = !last ? 'Extensão não pareada' : recent ? 'Extensão conectada' : 'Extensão inativa';
-    $('#extSub').textContent = !last ? 'Pareie em Configurações' : `visto ${when(last.last_seen)}`;
-    $('#extDot').style.background = recent ? 'var(--ok)' : 'var(--muted)';
-    $('#extDot').style.boxShadow = recent ? '0 0 0 3px var(--ok-soft)' : 'none';
+    if (!manualMode()) await extConnect(); else S.extInfo = await extSend({ cmd: 'hello' }, 1500);
+    const h = S.extInfo;
+    const ok = h && h.paired && h.panelUrl === location.origin;
+    $('#extTitle').textContent = !h ? 'Extensão não instalada' : ok ? 'Extensão conectada' : 'Conectando a extensão…';
+    $('#extSub').textContent = !h ? 'Veja Configurações' : ok ? `v${h.version}${h.busy ? ' · publicando agora' : ''}` : '';
+    $('#extDot').style.background = ok ? 'var(--ok)' : 'var(--muted)';
+    $('#extDot').style.boxShadow = ok ? '0 0 0 3px var(--ok-soft)' : 'none';
     $('#extBox').hidden = manualMode();
+  }
+  // Pede para a extensão começar agora. Se não estiver instalada, explica como instalar.
+  async function extGo(okMsg) {
+    const h = await extConnect();
+    if (!h) { installModal(); return; }
+    const r = await extSend({ cmd: 'pollNow' }, 8000);
+    if (r?.ok && r.job) toast(okMsg, 5000);
+    else if (r?.reason === 'ocupada') toast('A extensão está terminando outro anúncio. Este entra na fila.', 5000);
+    else if (r?.reason === 'intervalo') toast(`Na fila. Para proteger a conta, o próximo anúncio sai em cerca de ${Math.ceil((r.wait_ms || 0) / 60000)} min.`, 6000);
+    else if (r?.ok && !r.job) toast('Na fila. Limite diário atingido ou nada pendente.', 5000);
+    else toast('Na fila. A extensão vai começar em até 1 minuto.', 5000);
+    watchJobs();
+  }
+  let jobTimer = null;
+  function watchJobs() {
+    clearInterval(jobTimer);
+    jobTimer = setInterval(async () => {
+      const before = JSON.stringify(S.jobs.filter((j) => ['pendente', 'em_andamento'].includes(j.status)).map((j) => [j.id, j.status, j.note]));
+      await loadJobs();
+      const active = S.jobs.filter((j) => ['pendente', 'em_andamento'].includes(j.status));
+      if (JSON.stringify(active.map((j) => [j.id, j.status, j.note])) !== before) {
+        await loadVehicles();
+        const done = S.jobs.find((j) => j.status === 'concluido' && Date.now() - new Date(j.updated_at.replace(' ', 'T') + 'Z') < 15000);
+        if (done) toast(`${done.marca} ${done.modelo}: ${done.type === 'excluir' ? 'anúncio excluído' : 'publicado no Marketplace'}`, 5000);
+        const failed = S.jobs.find((j) => j.status === 'falhou' && Date.now() - new Date(j.updated_at.replace(' ', 'T') + 'Z') < 15000);
+        if (failed) toast(`${failed.marca} ${failed.modelo}: ${failed.error}`, 9000);
+        if (!$('#scrim')) render();
+      }
+      if (!active.length) { clearInterval(jobTimer); jobTimer = null; }
+    }, 3000);
+  }
+  function installModal() {
+    modal(`<h3>Instale a extensão GiroAuto</h3>
+      <p>Para publicar com um clique, a extensão precisa estar no Chrome deste computador. É uma vez só, leva 1 minuto.</p>
+      <ol class="note" style="padding-left:18px;display:flex;flex-direction:column;gap:8px;margin:0">
+        <li><a class="btn sm primary" href="/extensao.zip" download>Baixar extensão</a> e extraia o arquivo (botão direito &gt; <b>Extrair tudo</b>).</li>
+        <li>Abra uma aba nova e cole o endereço <code>chrome://extensions</code> <button class="btn sm" type="button" id="cpExt">Copiar</button></li>
+        <li>Ligue o <b>Modo do desenvolvedor</b> (canto superior direito).</li>
+        <li>Clique em <b>Carregar sem compactação</b> e escolha a pasta <b>giroauto-extensao</b>.</li>
+        <li>Volte aqui e recarregue a página (F5). A extensão se conecta sozinha.</li>
+      </ol>
+      <div class="modal-foot"><button class="btn" data-close type="button">Fechar</button></div>`);
+    $('#cpExt').onclick = (e) => copyText('chrome://extensions', e.target);
   }
   async function loadCampaigns(refresh) { S.campaigns = await api('GET', '/api/campaigns' + (refresh ? '?refresh=1' : '')); }
 
@@ -119,6 +194,7 @@
     if (params.get('meta') === 'erro') toast('Não foi possível conectar: ' + (params.get('msg') || 'tente de novo'), 7000);
     if (params.get('meta') === 'cancelado') toast('Conexão com o Facebook cancelada.');
     if (name?.startsWith('editar-')) {
+      if (!S.vehicles.some((x) => x.id === Number(name.slice(7)))) { loadVehicles().then(() => { if (S.vehicles.some((x) => x.id === Number(name.slice(7)))) route(); }); }
       const v = S.vehicles.find((x) => x.id === Number(name.slice(7)));
       if (v) { S.draft = draftFrom(v); S.pendingFiles = []; S.view = 'novo'; return render(); }
     }
@@ -182,7 +258,7 @@
   const JOBNAME = { publicar: 'publicação', republicar: 'republicação', excluir: 'exclusão' };
   function statusPill(v) {
     const j = jobFor(v.id);
-    if (j) return `<span class="pill p-info">${j.status === 'em_andamento' ? 'Extensão trabalhando' : 'Na fila'}: ${JOBNAME[j.type]}</span>`;
+    if (j) return `<span class="pill ${j.note ? 'p-warn' : 'p-info'}" ${j.note ? `title="${esc(j.note)}"` : ''}>${j.note ? 'Precisa de você' : j.status === 'em_andamento' ? 'Publicando agora' : 'Na fila'}: ${JOBNAME[j.type]}</span>${j.note ? `<span class="sub" style="max-width:220px">${esc(j.note)}</span>` : ''}`;
     if (v.status === 'vendido') return '<span class="pill p-muted">Vendido</span>';
     if (v.status === 'rascunho') return '<span class="pill p-muted">Rascunho</span>';
     if (v.status === 'pronto') return '<span class="pill p-info">Pronto para publicar</span>';
@@ -214,6 +290,7 @@
       <div><h1>Estoque</h1><p>Cada veículo é cadastrado uma vez e publicado no Marketplace pela extensão ou enviado ao catálogo de campanhas.</p></div>
       <button class="btn primary" data-go="novo" type="button">+ Novo veículo</button>
     </div>
+    ${manualMode() && S.extInfo ? `<div class="infobox conn-row"><span>A extensão GiroAuto está instalada neste Chrome. Quer publicar e republicar com um clique?</span><button class="btn primary" id="enableAuto" type="button">Ativar publicação automática</button></div>` : ''}
     <div class="strip">
       <div><span class="k">No Marketplace</span><span class="v">${pub}</span></div>
       <div><span class="k">Para republicar</span><span class="v ${rep ? 'alert' : ''}">${rep}</span></div>
@@ -254,18 +331,18 @@
     if (a === 'editar') { location.hash = 'editar-' + id; return; }
     if ((a === 'publicar' || a === 'republicar') && manualMode()) return assistant(v, a);
     if (a === 'publicar') {
-      try { await api('POST', `/api/vehicles/${id}/publish`); toast('Enviado para a extensão. Ela abre o Marketplace e preenche o anúncio.'); }
+      try { await api('POST', `/api/vehicles/${id}/publish`); await loadJobs(); render(); await extGo('Publicando no Marketplace. Acompanhe na aba do Facebook.'); }
       catch (e) { toast(e.message, 6000); }
       await loadJobs(); await loadVehicles(); return render();
     }
     if (a === 'republicar') {
-      try { await api('POST', `/api/vehicles/${id}/republish`); toast('Republicação enviada para a extensão.'); }
+      try { await api('POST', `/api/vehicles/${id}/republish`); await loadJobs(); render(); await extGo('Republicando: a extensão exclui o anúncio antigo e publica de novo.'); }
       catch (e) {
         if (e.status === 409 && /dia/.test(e.message)) {
           return confirmBox('Republicar agora?', `${esc(e.message)}<br><br>O ideal é aguardar.`, 'Republicar mesmo assim', async () => {
             await api('POST', `/api/vehicles/${id}/republish`, { force: true });
-            toast('Republicação enviada para a extensão.');
             await loadJobs(); render();
+            extGo('Republicando: a extensão exclui o anúncio antigo e publica de novo.');
           });
         }
         toast(e.message, 6000);
@@ -276,6 +353,7 @@
       return confirmBox('Marcar como vendido?', `${esc(v.marca)} ${esc(v.modelo)} ${esc(v.versao)}<br><br>${v.status === 'publicado' ? 'A extensão vai excluir o anúncio do Marketplace. ' : ''}O veículo sai do catálogo na próxima sincronização.`, 'Marcar vendido', async () => {
         const r = await api('POST', `/api/vehicles/${id}/sold`);
         await Promise.all([loadVehicles(), loadJobs()]);
+        if (!manualMode() && v.status === 'publicado') extGo('A extensão está excluindo o anúncio do Marketplace.');
         render();
         if (r.excluir_manual) {
           modal(`<h3>Exclua o anúncio no Facebook</h3><p>O veículo foi marcado como vendido no painel. Agora retire o anúncio do Marketplace para não receber mais mensagens sobre ele.</p>
@@ -876,23 +954,35 @@
           <h2>Publicação no Marketplace</h2>
           <div class="modes">
             <label class="check"><input type="radio" name="pubmode" value="manual" ${manualMode() ? 'checked' : ''}><div><b>Assistida, sem instalar nada</b><span>Funciona em qualquer computador ou celular. O painel entrega as fotos e os dados prontos para copiar, abre o Marketplace e você publica.</span></div></label>
-            <label class="check"><input type="radio" name="pubmode" value="extensao" ${manualMode() ? '' : 'checked'}><div><b>Automática, com a extensão do Chrome</b><span>A extensão preenche o formulário, exclui e republica sozinha. Você só confirma a publicação. Exige instalar a extensão no Chrome do computador.</span></div></label>
+            <label class="check"><input type="radio" name="pubmode" value="extensao" ${manualMode() ? '' : 'checked'}><div><b>Automática, um clique (extensão do Chrome)</b><span>Clique em Publicar ou Republicar e a extensão faz tudo: exclui o anúncio antigo, preenche, publica e registra o link. Exige a extensão no Chrome do computador.</span></div></label>
           </div>
         </div>
         <div class="panel" ${manualMode() ? 'hidden' : ''}>
           <h2>Extensão do Chrome</h2>
-          <p class="lead">A extensão publica, exclui e republica os anúncios orgânicos no Marketplace pela sua conta do Facebook, no seu navegador.</p>
-          <ol class="note" style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px">
-            <li>Instale a extensão GiroAuto no Chrome (pasta <b>extension</b> do projeto).</li>
-            <li>Clique no ícone da extensão e informe o endereço do painel.</li>
-            <li>Gere um código abaixo e digite na extensão.</li>
-          </ol>
-          ${pair ? `<div class="code-big" aria-label="Código de pareamento">${esc(pair.code)}</div><p class="note">Válido por 10 minutos.</p>` : ''}
-          <div><button class="btn" id="pairBtn" type="button">${pair ? 'Gerar outro código' : 'Gerar código de pareamento'}</button></div>
-          ${S.ext.length ? `<div class="log">${S.ext.map((e) => `<div><time>${when(e.last_seen || e.created_at)}</time><span>${esc(e.label)} · pareada em ${when(e.created_at)}</span></div>`).join('')}</div>` : ''}
+          ${extStatusHtml()}
+          <div class="checks">
+            <label class="check"><input type="checkbox" id="autoPub" ${S.me.store.auto_publish ? 'checked' : ''}><div><b>Publicar sem conferir</b><span>A extensão clica em Publicar sozinha. Desmarcado, ela preenche tudo e espera você clicar.</span></div></label>
+          </div>
+          <div class="fields">
+            <div class="f w3"><label for="dailyLimit">Limite de publicações por dia</label><input id="dailyLimit" inputmode="numeric" value="${esc(S.me.store.daily_limit || 15)}"><span class="hint">Protege a conta do Facebook. Intervalo de 3 a 5 min entre anúncios.</span></div>
+          </div>
+          <div class="form-foot"><button class="btn primary" id="saveAuto" type="button">Salvar</button></div>
+          <details><summary class="note" style="cursor:pointer">Conectar manualmente (código)</summary>
+            ${pair ? `<div class="code-big" aria-label="Código de pareamento">${esc(pair.code)}</div><p class="note">Válido por 10 minutos. Digite no ícone da extensão.</p>` : ''}
+            <div style="margin-top:8px"><button class="btn sm" id="pairBtn" type="button">${pair ? 'Gerar outro código' : 'Gerar código'}</button></div>
+          </details>
         </div>
       </div>
     </div>`;
+  }
+
+  function extStatusHtml() {
+    const h = S.extInfo; const exp = S.me.extension?.version;
+    if (!h) return `<div class="warnbox">A extensão não está instalada neste Chrome.</div><div><button class="btn primary" id="installExt" type="button">Instalar a extensão</button></div>`;
+    const ok = h.paired && h.panelUrl === location.origin;
+    return `<div class="${ok ? 'okbox' : 'infobox'}">${ok ? `<b>Extensão conectada</b> à loja ${esc(h.store)} · versão ${esc(h.version)}` : 'Extensão instalada. Conectando…'}</div>
+      ${exp && h.version !== exp ? `<div class="warnbox">Há uma versão nova da extensão (${esc(exp)}). <a class="link" href="/extensao.zip" download>Baixe</a>, extraia por cima da pasta antiga e clique em ↻ (recarregar) no cartão do GiroAuto em chrome://extensions.</div>` : ''}
+      ${h.lastError ? `<div class="err">${esc(h.lastError)}</div>` : ''}`;
   }
 
   /* ---------------- Armazenamento dos dados (administrador) ---------------- */
@@ -900,7 +990,7 @@
     if (!st.enabled) {
       return `<div class="panel"><h2>Armazenamento dos dados</h2>
         <div class="warnbox"><b>Dados temporários.</b> Lojas, veículos e fotos ficam só no servidor e são apagados quando uma nova versão é publicada.</div>
-        <p class="note">Para guardar de forma permanente e gratuita, configure o Supabase: crie um projeto em supabase.com, copie a <b>Project URL</b> e a <b>secret key</b> (Project Settings &gt; API Keys) e cadastre no Render, em Environment, como <code>SUPABASE_URL</code> e <code>SUPABASE_SECRET_KEY</code>.</p></div>`;
+        <p class="note">Configure no Render as variáveis <code>SUPABASE_URL</code>, <code>SUPABASE_KEY</code> e <code>GIROAUTO_STORAGE_TOKEN</code> (veja o README).</p></div>`;
     }
     const last = st.last_backup_at ? new Date(st.last_backup_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'ainda não feita';
     return `<div class="panel"><h2>Armazenamento dos dados</h2>
@@ -960,6 +1050,8 @@
     const bs = $('#busca');
     if (bs) bs.oninput = () => { S.busca = bs.value; const pos = bs.selectionStart; render().then(() => { const nb = $('#busca'); nb.focus(); nb.setSelectionRange(pos, pos); }); };
     $$('[data-act]').forEach((b) => { b.onclick = () => act(b.dataset.act, Number(b.dataset.id)); });
+    const ea = $('#enableAuto');
+    if (ea) ea.onclick = async () => { await api('PUT', '/api/store/pub-mode', { mode: 'extensao' }); S.me.store.pub_mode = 'extensao'; await loadExt(); toast('Publicação automática ativada'); render(); };
 
     if (S.view === 'novo') {
       const drop = $('#drop'); const inp = $('#v-fotos');
@@ -994,13 +1086,22 @@
         } catch (e) { toast(e.message, 6000); }
       };
       $('#pairBtn').onclick = async () => { S.pairCode = await api('POST', '/api/extension/pair-code'); render(); };
+      const ie = $('#installExt'); if (ie) ie.onclick = installModal;
+      const sa = $('#saveAuto');
+      if (sa) sa.onclick = async () => {
+        try {
+          const r = await api('PUT', '/api/store/automation', { auto_publish: $('#autoPub').checked, daily_limit: $('#dailyLimit').value });
+          S.me.store.auto_publish = r.auto_publish; S.me.store.daily_limit = r.daily_limit; toast('Publicação automática salva');
+        } catch (e) { toast(e.message); }
+      };
       $$('input[name="pubmode"]').forEach((r) => {
         r.onchange = async () => {
           try {
             await api('PUT', '/api/store/pub-mode', { mode: r.value });
             S.me.store.pub_mode = r.value;
             await Promise.all([loadJobs(), loadExt()]);
-            toast(r.value === 'manual' ? 'Publicação assistida ativada' : 'Publicação pela extensão ativada');
+            toast(r.value === 'manual' ? 'Publicação assistida ativada' : 'Publicação automática ativada');
+            if (r.value === 'extensao' && !(await extConnect())) installModal();
             render();
           } catch (e) { toast(e.message); }
         };

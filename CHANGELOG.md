@@ -2,6 +2,22 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v1.5 — 06/10/2026
+
+**Publicação automática com um clique (extensão do Chrome)**
+
+- Clique em **Publicar** ou **Republicar** no GiroAuto e a extensão faz tudo sozinha: exclui o anúncio antigo (republicação), preenche o formulário, anexa as fotos, clica em **Avançar** e **Publicar**, registra o link do anúncio no painel, fecha a aba do Facebook e volta para o GiroAuto.
+- **Vendido** também exclui o anúncio do Marketplace na hora.
+- O painel conversa direto com a extensão: começa na hora (sem esperar 1 minuto) e conecta a extensão à loja sozinho, sem código.
+- O painel detecta a extensão instalada e oferece ativar a publicação automática com um botão.
+- Status ao vivo no estoque: "Na fila", "Publicando agora", "Precisa de você".
+- Proteções da conta do Facebook: limite de publicações por dia (padrão 15, ajustável), intervalo de 3 a 5 minutos entre anúncios, e parada imediata se o Facebook mostrar verificação de identidade, bloqueio ou erro.
+- Opção **Publicar sem conferir** (ligada por padrão). Desligada, a extensão preenche tudo e espera você clicar em Publicar.
+- Extensão para baixar direto pelo painel (Configurações > Extensão do Chrome > Instalar), com passo a passo. Aviso automático quando houver versão nova da extensão.
+- Extensão v1.5.0 com identificador fixo (o painel sempre a reconhece).
+
+Arquivos alterados: `extension/background.js`, `extension/content.js`, `extension/manifest.json`, `public/app.js`, `src/server.js`, `src/db.js`, `Dockerfile`, `.dockerignore`, `package.json`, `test/fixtures/fb-form.html`, `test/fixtures/fb-selling.html` (novo), `test/e2e-extension.py` (novo), `CHANGELOG.md`, `README.md`.
+
 ## v1.4 — 06/10/2026
 
 **Supabase do GiroAuto configurado**

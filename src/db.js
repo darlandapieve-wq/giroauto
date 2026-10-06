@@ -169,6 +169,10 @@ addColumn('stores', 'pub_mode', "TEXT NOT NULL DEFAULT 'manual'");
 addColumn('stores', 'assist_vehicle_id', 'INTEGER');
 addColumn('vehicles', 'cor_interna', "TEXT DEFAULT ''");
 addColumn('stores', 'assist_at', 'TEXT');
+// Publicação automática pela extensão (v1.5).
+addColumn('stores', 'auto_publish', 'INTEGER NOT NULL DEFAULT 1');
+addColumn('stores', 'daily_limit', 'INTEGER NOT NULL DEFAULT 15');
+addColumn('ext_jobs', 'note', "TEXT DEFAULT ''");
 addColumn('users', 'is_admin', 'INTEGER NOT NULL DEFAULT 0');
 db.exec(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')))`);
 if (!db.prepare('SELECT 1 FROM users WHERE is_admin = 1').get()) {

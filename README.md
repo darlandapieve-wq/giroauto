@@ -1,4 +1,4 @@
-# GiroAuto v1.4
+# GiroAuto v1.5
 
 Histórico de versões: veja [CHANGELOG.md](CHANGELOG.md).
 
@@ -120,6 +120,14 @@ Em todos os tipos: posicionamentos no Facebook (feed, Marketplace, stories) e no
 O botão "Criar catálogo de veículos" cria um catálogo com vertical `vehicles` no portfólio empresarial e um feed que a Meta lê a cada hora em `PUBLIC_URL/feed/<loja>.csv?k=<chave>`. Só entram no feed os veículos marcados "Catálogo para campanhas", com status pronto ou publicado e ao menos uma foto.
 
 A Meta precisa acessar esse endereço e as fotos pela internet, então o catálogo só funciona com `PUBLIC_URL` público em HTTPS (servidor publicado ou um túnel, por exemplo `cloudflared tunnel --url http://localhost:3333`). As campanhas de WhatsApp e Messenger funcionam também no teste local, porque as fotos são enviadas para a Meta pelo próprio servidor.
+
+## Publicação automática com um clique (v1.5)
+
+1. No painel: **Configurações > Publicação no Marketplace > Automática, um clique**.
+2. **Instalar a extensão** (uma vez por computador): o painel baixa `giroauto-extensao.zip`; extraia, abra `chrome://extensions`, ligue o **Modo do desenvolvedor**, clique em **Carregar sem compactação** e escolha a pasta `giroauto-extensao`. Recarregue o painel: a extensão se conecta sozinha.
+3. No estoque, **Publicar** ou **Republicar**: a extensão faz o resto e registra no painel.
+
+Proteções: limite diário (padrão 15), intervalo de 3 a 5 min entre anúncios e parada imediata em verificações do Facebook. Teste de ponta a ponta com a extensão real: `xvfb-run -a python3 test/e2e-extension.py`.
 
 ## Extensão do Chrome (anúncios orgânicos)
 

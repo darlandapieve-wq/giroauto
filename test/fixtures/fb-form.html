@@ -16,6 +16,9 @@
 <label role="combobox" tabindex="0" aria-haspopup="listbox" id="comb"><span>Tipo de combustível</span><span class="val"></span></label>
 <label role="combobox" tabindex="0" aria-haspopup="listbox" id="trans"><span>Transmissão</span><span class="val"></span></label>
 <label><span>Descrição</span><textarea id="desc"></textarea></label>
+<div id="step2" hidden><p>Anunciar também em grupos?</p></div>
+<div role="button" tabindex="0" id="btnNext" aria-disabled="false">Avançar</div>
+<div role="button" tabindex="0" id="btnPub" aria-disabled="true" hidden>Publicar</div>
 </div>
 <script>
 const MAKES=['Acura','Alfa Romeo','Aston Martin','Audi','Bentley','BMW','BYD','Caoa Chery','Chevrolet','Chrysler','Citroën','Dodge','Ferrari','Fiat','Ford','GWM','Honda','Hyundai','Jac','Jaguar','Jeep','Kia','Land Rover','Lexus','Mercedes-Benz','Mini','Mitsubishi','Nissan','Peugeot','Porsche','RAM','Renault','Subaru','Suzuki','Toyota','Troller','Volkswagen','Volvo'];
@@ -38,5 +41,9 @@ function openList(cb){
   if(search)search.focus();
 }
 document.querySelectorAll('[role=combobox]').forEach(cb=>cb.addEventListener('click',()=>openList(cb)));
+document.getElementById('btnNext').onclick=()=>{document.getElementById('step2').hidden=false;document.getElementById('btnNext').hidden=true;const p=document.getElementById('btnPub');p.hidden=false;setTimeout(()=>p.setAttribute('aria-disabled','false'),600);};
+document.getElementById('btnPub').onclick=()=>{ if(document.getElementById('btnPub').getAttribute('aria-disabled')==='true')return;
+  if(localStorage.getItem('bloquear')){const d=document.createElement('div');d.setAttribute('role','dialog');d.textContent='Confirme sua identidade para continuar';document.body.appendChild(d);return;}
+  window.__published=results(); setTimeout(()=>history.pushState({},'','/marketplace/item/777001/'),800); };
 window.results=()=>Object.fromEntries([...document.querySelectorAll('[role=combobox]')].map(c=>[c.id,c.querySelector('.val').textContent]).concat([...document.querySelectorAll('input[type=text]:not([placeholder=Pesquisar]),textarea')].map(i=>[i.id,i.value])).concat([['fotos',document.getElementById('fotos').files.length]]));
 </script></body></html>
