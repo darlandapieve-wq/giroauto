@@ -204,6 +204,10 @@ db.exec(`CREATE TABLE IF NOT EXISTS listings (
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (vehicle_id, channel)
 )`);
+// Destaques e preço de oferta (v1.8).
+addColumn('vehicles', 'destaques', "TEXT NOT NULL DEFAULT '[]'");
+addColumn('vehicles', 'preco_oferta', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('vehicles', 'oferta_desde', 'TEXT');
 db.exec(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')))`);
 if (!db.prepare('SELECT 1 FROM users WHERE is_admin = 1').get()) {
   db.exec('UPDATE users SET is_admin = 1 WHERE id = (SELECT MIN(id) FROM users)');

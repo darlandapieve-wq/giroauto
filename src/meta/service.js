@@ -325,7 +325,7 @@ async function buildCreative(ctx) {
     cards.push({
       image_hash: hash,
       link: linkFor(mode, store, v),
-      name: `${v.titulo} · ${fmtBRL(v.preco)}`.slice(0, 100),
+      name: `${v.titulo} · ${v.oferta_ativa ? 'Oferta ' : ''}${fmtBRL(v.preco_anuncio || v.preco)}`.slice(0, 100),
       description: `${Number(v.km).toLocaleString('pt-BR')} km${v.cambio ? ' · ' + v.cambio : ''}`,
       call_to_action: ctaFor(mode),
     });

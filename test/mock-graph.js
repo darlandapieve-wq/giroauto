@@ -48,6 +48,16 @@ function createMock() {
     res.json({ candidates: [{ content: { parts: [{ text: 'ok' }, { inlineData: { mimeType: 'image/png', data: png.toString('base64') } }] } }] });
   });
 
+  /* Pollinations (edição de imagem compatível com a OpenAI) */
+  const multer = require('multer');
+  app.post('/v1/images/edits', multer({ storage: multer.memoryStorage() }).single('image'), async (req, res) => {
+    (state.pollCalls ||= []).push({ auth: req.get('authorization'), model: req.body.model, prompt: req.body.prompt, size: req.file?.size });
+    if (state.pollFail) return res.status(state.pollFail).json({ error: { message: 'Insufficient pollen balance' } });
+    const { createCanvas } = require('@napi-rs/canvas');
+    const c = createCanvas(800, 1000); const ctx = c.getContext('2d'); ctx.fillStyle = '#668855'; ctx.fillRect(0, 0, 800, 1000);
+    res.json({ data: [{ b64_json: (await c.encode('png')).toString('base64') }] });
+  });
+
   app.get('/:v/oauth/access_token', (req, res) => res.json({ access_token: req.p.grant_type ? 'long-token' : 'short-token', expires_in: 5184000 }));
   app.get('/:v/me', (req, res) => res.json({ id: '9001', name: 'Darlan Teste' }));
   app.get('/:v/me/adaccounts', (req, res) => res.json({ data: [{ id: 'act_111', name: 'Loja Ads', currency: 'BRL', account_status: 1 }] }));

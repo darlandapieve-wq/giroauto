@@ -9,6 +9,7 @@ const meta = require('./meta/service');
 const arts = require('./arts');
 const card = require('./arts/card');
 const { get, all, run, logEvent } = require('./db');
+const V = require('./vehicles');
 
 const CHANNELS = {
   instagram: { label: 'Instagram', url: 'https://www.instagram.com/' },
@@ -46,13 +47,19 @@ function hashtag(s) {
 }
 
 function caption(v, store) {
+  const desc = V.descricaoAnuncio(v);
+  const preco = V.ofertaAtiva(v) ? `🔥 OFERTA: de R$ ${fmtInt(v.preco)} por R$ ${fmtInt(v.preco_oferta)}` : v.preco ? `💰 R$ ${fmtInt(v.preco)}` : '💰 Consulte o valor';
   const linhas = [
     `🚗 ${adTitle(v)}`,
-    v.preco ? `💰 R$ ${fmtInt(v.preco)}` : '💰 Consulte o valor',
+    preco,
     '',
     [v.km ? `📍 ${fmtInt(v.km)} km` : '', v.cambio ? `⚙️ Câmbio ${v.cambio.toLowerCase()}` : '', v.combustivel ? `⛽ ${v.combustivel}` : '', v.cor ? `🎨 ${v.cor}` : ''].filter(Boolean).join('\n'),
   ];
-  if (v.descricao) linhas.push('', v.descricao.trim());
+  // Destaques marcados que a descrição ainda não cita.
+  const extras = V.destaquesOf(v).map((k) => V.DESTAQUE[k]).filter((d) => !d.alerta && !desc.toLowerCase().includes(d.texto.toLowerCase()));
+  if (extras.length) linhas.push(extras.map((d) => `✅ ${d.texto}`).join('\n'));
+  const corpo = String(v.descricao || '').trim() ? desc : desc.replace(V.title(v), '').trim();
+  if (corpo) linhas.push('', corpo);
   const contato = store.whatsapp || store.phone;
   linhas.push('', `📲 ${contato ? `Chame no WhatsApp: ${contato}` : 'Chame no direct'}${store.name ? `\n🏪 ${store.name}` : ''}${store.city ? ` · ${store.city}${store.state ? '/' + store.state : ''}` : ''}`);
   const tags = [hashtag(v.marca), hashtag(v.modelo), hashtag(`${v.marca}${v.modelo}`), '#carrosusados', '#seminovos', '#carros', store.city ? hashtag(store.city) : '', store.city ? hashtag(`carros${store.city}`) : '']
@@ -61,16 +68,24 @@ function caption(v, store) {
   return linhas.join('\n').slice(0, 2150);
 }
 
+// Descrição para os sites: a da loja, os destaques que ela não cita e os avisos de transparência.
+function descricaoComDestaques(v) {
+  const desc = V.descricaoAnuncio(v);
+  const extras = V.destaquesOf(v).map((k) => V.DESTAQUE[k]).filter((d) => !d.alerta && !desc.toLowerCase().includes(d.texto.toLowerCase()));
+  const oferta = V.ofertaAtiva(v) ? `OFERTA: de R$ ${fmtInt(v.preco)} por R$ ${fmtInt(v.preco_oferta)}.\n\n` : '';
+  return `${oferta}${desc}${extras.length ? `\n\n${extras.map((d) => `✔ ${d.texto}`).join('\n')}` : ''}`;
+}
+
 // Campos prontos para copiar nos sites (Webmotors e OLX).
 function fields(v, store) {
   return [
     ['Título', adTitle(v)],
     ['Marca', v.marca], ['Modelo', v.modelo], ['Versão', v.versao],
     ['Ano de fabricação', v.ano_fab || ''], ['Ano do modelo', v.ano_modelo || ''],
-    ['Quilometragem', v.km ? String(v.km) : ''], ['Preço', v.preco ? String(v.preco) : ''],
+    ['Quilometragem', v.km ? String(v.km) : ''], ['Preço', V.precoAnuncio(v) ? String(V.precoAnuncio(v)) : ''],
     ['Câmbio', v.cambio], ['Combustível', v.combustivel], ['Carroceria', v.carroceria], ['Cor', v.cor],
     ['Placa', v.placa], ['CEP', store.postal_code || ''],
-    ['Descrição', v.descricao || ''],
+    ['Descrição', descricaoComDestaques(v)],
   ].filter(([, val]) => val !== '' && val !== null && val !== undefined).map(([label, value]) => ({ label, value: String(value) }));
 }
 

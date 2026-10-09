@@ -213,6 +213,30 @@ async function renderCard(v, photoFiles, store = {}) {
   ctx.fillStyle = '#F4F4F4'; ctx.textBaseline = 'top';
   tagLines.forEach((l, i) => ctx.fillText(l, tx, 60 + i * 34));
 
+  /* Selos dos destaques marcados (perícia e mais um) */
+  const marcados = Array.isArray(v.destaques) ? v.destaques : (() => { try { return JSON.parse(v.destaques || '[]'); } catch { return []; } })();
+  const selos = [];
+  if (marcados.includes('pericia_premium')) selos.push('PERÍCIA PREMIUM');
+  else if (marcados.includes('pericia_aprovada')) selos.push('PERÍCIA APROVADA');
+  const outro = ['sem_retoques', 'unico_dono', 'pneus_novos', 'garantia', 'revisoes'].find((k) => marcados.includes(k));
+  if (outro) selos.push({ sem_retoques: 'SEM RETOQUES', unico_dono: 'ÚNICO DONO', pneus_novos: 'PNEUS NOVOS', garantia: 'COM GARANTIA', revisoes: 'REVISÕES EM DIA' }[outro]);
+  let sy = 60 + tagLines.length * 34 + 26;
+  for (const selo of selos) {
+    ctx.font = '23px "GA Mont Black"';
+    const w = ctx.measureText(selo).width + 78;
+    const sx = W - 48 - w;
+    roundRect(ctx, sx, sy, w, 54, 27);
+    ctx.fillStyle = 'rgba(11,12,15,0.78)'; ctx.fill(); ctx.lineWidth = 2.5; ctx.strokeStyle = GOLD; ctx.stroke();
+    // escudo com visto
+    ctx.save(); ctx.translate(sx + 30, sy + 27);
+    ctx.beginPath(); ctx.moveTo(0, -15); ctx.lineTo(13, -9); ctx.lineTo(12, 3); ctx.quadraticCurveTo(9, 12, 0, 16); ctx.quadraticCurveTo(-9, 12, -12, 3); ctx.lineTo(-13, -9); ctx.closePath();
+    ctx.fillStyle = GOLD; ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-6, 0); ctx.lineTo(-1, 5); ctx.lineTo(7, -5); ctx.lineWidth = 3; ctx.strokeStyle = INK; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = '#FFFFFF'; ctx.textBaseline = 'middle'; ctx.fillText(selo, sx + 56, sy + 28);
+    sy += 66;
+  }
+
   /* Itens do veículo (coluna à esquerda) */
   let specs = specsOf(v);
   const SPEC_MAX = 960; // abaixo disso começam as fotos menores
@@ -231,8 +255,9 @@ async function renderCard(v, photoFiles, store = {}) {
     ctx.shadowColor = 'transparent';
   });
 
-  /* Preço */
-  const price = fmtInt(v.preco);
+  /* Preço (com oferta: preço normal riscado e selo OFERTA) */
+  const oferta = !!(v.preco_oferta && v.preco && v.preco_oferta < v.preco);
+  const price = fmtInt(oferta ? v.preco_oferta : v.preco);
   const PX = 440; const PY = 742; const PW = 590; const PH = 150;
   ctx.save();
   ctx.translate(PX, PY);
@@ -252,10 +277,24 @@ async function renderCard(v, photoFiles, store = {}) {
   } else {
     ctx.fillStyle = '#FFFFFF'; fitFont(ctx, 'CONSULTE', 'GA Mont Black', 92, 50, PW - 80); ctx.fillText('CONSULTE', 40, 112);
   }
+  if (oferta) {
+    // selo OFERTA no canto do quadro
+    ctx.fillStyle = GOLD; ctx.fillRect(18, -26, 170, 46);
+    ctx.fillStyle = INK; ctx.font = '28px "GA Mont Black"'; ctx.textBaseline = 'middle'; ctx.fillText('OFERTA', 40, -2);
+    // "de R$ ..." riscado acima do quadro, à direita
+    const de = `DE R$ ${fmtInt(v.preco)}`;
+    ctx.font = '30px "GA Mont Semi"'; ctx.fillStyle = '#E8E8E8'; ctx.textBaseline = 'alphabetic';
+    const dw = ctx.measureText(de).width;
+    const dx = PW - 30 - dw; const dy = -16;
+    ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = 8;
+    ctx.fillText(de, dx, dy);
+    ctx.shadowColor = 'transparent';
+    ctx.fillStyle = '#E04B3C'; ctx.fillRect(dx - 4, dy - 12, dw + 8, 4);
+  }
   ctx.restore();
   ctx.font = '40px "GA Mont Italic"'; ctx.fillStyle = GOLD_2; ctx.textBaseline = 'alphabetic';
   ctx.shadowColor = 'rgba(0,0,0,0.7)'; ctx.shadowBlur = 10;
-  const cta = 'Agende sua visita!';
+  const cta = marcados.includes('revisoes') ? 'Revisado e pronto para rodar!' : oferta ? 'Oferta por tempo limitado!' : 'Agende sua visita!';
   ctx.fillText(cta, W - 52 - ctx.measureText(cta).width, PY + PH + 66);
   ctx.shadowColor = 'transparent';
 

@@ -136,7 +136,7 @@ app.get('/api/me', auth.requireUser, (req, res) => {
   res.json({
     user: { ...req.user, is_admin: !!get('SELECT is_admin FROM users WHERE id = ?', req.user.id)?.is_admin }, store,
     vitrine_url: `${config.publicUrl}/v/${store.slug}`,
-    options: { cambios: V.CAMBIOS, combustiveis: V.COMBUSTIVEIS, carrocerias: V.CARROCERIAS, cores: V.CORES },
+    options: { cambios: V.CAMBIOS, combustiveis: V.COMBUSTIVEIS, carrocerias: V.CARROCERIAS, cores: V.CORES, destaques: V.DESTAQUES.map(({ key, label, texto, grupo, alerta }) => ({ key, label, texto, grupo: grupo || '', alerta: !!alerta })) },
     republish_days: config.republishDays,
     version: VERSION,
     extension: { id: EXTENSION_ID, version: EXTENSION_VERSION },
@@ -189,24 +189,36 @@ app.put('/api/admin/meta-app', requireAdmin, wrap(async (req, res) => {
   res.json(metaAppInfo());
 }));
 
-/* ---- IA de imagens (Google Gemini) ---- */
+/* ---- IA de imagens: manual (grátis), Pollinations (cota grátis) ou Gemini (pago) ---- */
 function aiInfo() {
-  const g = settings.gemini();
-  return { configured: !!g.key, source: g.source, model: g.model, default_model: require('./arts/gemini').DEFAULT_MODEL, auto: g.auto };
+  const a = settings.ai();
+  return {
+    provider: a.provider, auto: a.auto,
+    configured: a.provider === 'manual' || !!(a.provider === 'gemini' ? a.gemini.key : a.pollinations.key),
+    gemini: { configured: !!a.gemini.key, source: a.gemini.source, model: a.gemini.model, default_model: require('./arts/gemini').DEFAULT_MODEL },
+    pollinations: { configured: !!a.pollinations.key, source: a.pollinations.source, model: a.pollinations.model, default_model: require('./arts/pollinations').DEFAULT_MODEL },
+  };
 }
 app.get('/api/admin/ai', requireAdmin, (req, res) => res.json(aiInfo()));
 app.put('/api/admin/ai', requireAdmin, wrap(async (req, res) => {
   const b = req.body || {};
-  const key = b.key !== undefined ? String(b.key).trim() : undefined;
-  if (key) {
-    if (!/^[A-Za-z0-9_.\-]{20,120}$/.test(key)) throw fail(400, 'Essa não parece uma chave da IA do Google. Copie de novo no Google AI Studio (botão "Copiar" ao lado da chave).');
-    try { await require('./arts/gemini').checkKey(key); }
+  const provider = b.provider === undefined ? undefined : String(b.provider);
+  if (provider !== undefined && !['manual', 'pollinations', 'gemini'].includes(provider)) throw fail(400, 'Escolha manual, Pollinations ou Gemini.');
+  const clean = (x) => (x === undefined ? undefined : String(x).trim());
+  const geminiKey = clean(b.gemini_key ?? b.key);
+  const pollinationsKey = clean(b.pollinations_key);
+  const model = (x) => { const m = clean(x); if (m && !/^[a-z0-9./\-]+$/i.test(m)) throw fail(400, 'Nome de modelo inválido.'); return m === undefined ? undefined : m.replace(/^models\//, '').slice(0, 80); };
+  if (geminiKey) {
+    if (!/^[A-Za-z0-9_.\-]{20,120}$/.test(geminiKey)) throw fail(400, 'Essa não parece uma chave da IA do Google. Copie de novo no Google AI Studio (botão "Copiar" ao lado da chave).');
+    try { await require('./arts/gemini').checkKey(geminiKey); }
     catch (e) { throw fail(400, `O Google não aceitou a chave: ${e.message}`); }
   }
-  const model = b.model !== undefined ? String(b.model).trim().replace(/^models\//, '').slice(0, 80) : undefined;
-  if (model && !/^[a-z0-9.\-]+$/.test(model)) throw fail(400, 'Nome de modelo inválido.');
-  settings.saveGemini({ key, model, auto: b.auto === undefined ? undefined : !!b.auto });
-  if (key || b.auto) arts.backfill();
+  if (pollinationsKey && !/^(sk|pk)_[A-Za-z0-9_\-]{8,200}$/.test(pollinationsKey)) throw fail(400, 'A chave da Pollinations começa com "sk_". Crie em enter.pollinations.ai > API keys.');
+  const cur = settings.ai();
+  if (provider === 'pollinations' && !pollinationsKey && !cur.pollinations.key) throw fail(400, 'Cole a chave da Pollinations (começa com "sk_").');
+  if (provider === 'gemini' && !geminiKey && !cur.gemini.key) throw fail(400, 'Cole a chave da API do Google.');
+  settings.saveAi({ provider, geminiKey, pollinationsKey, geminiModel: model(b.gemini_model ?? b.model), pollinationsModel: model(b.pollinations_model), auto: b.auto === undefined ? undefined : !!b.auto });
+  arts.backfill();
   logEvent(req.user.storeId, 'IA de imagens configurada no painel');
   res.json(aiInfo());
 }));
@@ -269,6 +281,9 @@ const upload = multer({
   fileFilter: (_req, file, cb) => cb(null, ['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)),
 });
 
+// Dados para o preenchimento no Facebook: preço de oferta (se houver) e descrição com os avisos de transparência.
+const forAd = (v) => v && ({ ...v, preco: v.preco_anuncio, descricao: v.descricao_anuncio });
+
 const own = (req) => {
   const v = V.findVehicle(req.user.storeId, req.params.id);
   if (!v) throw fail(404, 'Veículo não encontrado.');
@@ -282,6 +297,7 @@ app.get('/api/vehicles/:id', auth.requireUser, (req, res) => res.json(V.serializ
 app.post('/api/vehicles', auth.requireUser, (req, res) => {
   const d = V.cleanInput(req.body);
   if (!d.marca || !d.modelo) throw fail(400, 'Informe ao menos marca e modelo.');
+  if (d.preco_oferta) d.oferta_desde = new Date().toISOString().slice(0, 19).replace('T', ' ');
   const cols = Object.keys(d);
   const r = run(`INSERT INTO vehicles (store_id, ${cols.join(',')}) VALUES (?, ${cols.map(() => '?').join(',')})`,
     req.user.storeId, ...cols.map((k) => d[k]));
@@ -294,6 +310,9 @@ app.put('/api/vehicles/:id', auth.requireUser, (req, res) => {
   const v = own(req);
   const d = V.cleanInput(req.body);
   if (!d.marca || !d.modelo) throw fail(400, 'Informe ao menos marca e modelo.');
+  // Nova oferta (ou novo valor de oferta): marca a data para liberar a republicação com o preço novo.
+  if (d.preco_oferta && d.preco_oferta !== v.preco_oferta) d.oferta_desde = new Date().toISOString().slice(0, 19).replace('T', ' ');
+  if (!d.preco_oferta) d.oferta_desde = null;
   const cols = Object.keys(d);
   run(`UPDATE vehicles SET ${cols.map((k) => `${k}=?`).join(',')}, updated_at=datetime('now') WHERE id=?`, ...cols.map((k) => d[k]), v.id);
   arts.schedule(v.id);
@@ -422,7 +441,7 @@ app.get('/api/assist/current', auth.requireUser, (req, res) => {
   const s = get(`SELECT assist_vehicle_id, assist_at FROM stores WHERE id = ? AND assist_at > datetime('now', '-2 hours')`, req.user.storeId);
   const v = s?.assist_vehicle_id && V.findVehicle(req.user.storeId, s.assist_vehicle_id);
   if (!v || v.status === 'vendido') throw fail(404, 'Nenhum veículo escolhido para publicar agora.');
-  res.json({ vehicle: V.serialize(v), version: VERSION });
+  res.json({ vehicle: forAd(V.serialize(v)), version: VERSION });
 });
 
 /* ------------------------------------------------------------------ */
@@ -479,13 +498,27 @@ app.post('/api/vehicles/:id/arts/regenerate', auth.requireUser, (req, res) => {
   if (v.status === 'vendido') throw fail(409, 'Veículo vendido: as imagens não são mais geradas.');
   if (!V.photosOf(v.id).length) throw fail(400, 'Cadastre as fotos do veículo primeiro.');
   const slots = (Array.isArray(req.body?.slots) && req.body.slots.length ? req.body.slots : [1, 2, 3, 4, 5]).map(Number).filter((n) => n >= 1 && n <= 5);
-  if (slots.some((n) => n > 1) && !settings.gemini().key) {
-    if (!slots.includes(1)) throw fail(400, 'Configure a chave da IA do Google em Configurações > Imagens com IA para gerar as fotos no estacionamento.');
+  const g = settings.gemini();
+  if (!slots.includes(1) && (g.provider === 'manual' || !g.key)) {
+    throw fail(400, g.provider === 'manual'
+      ? 'As fotos no estacionamento estão no modo grátis à mão: use "Como fazer" e envie a imagem pronta. Para gerar sozinho, o administrador escolhe uma IA em Configurações > Imagens com IA.'
+      : 'Configure a chave da IA em Configurações > Imagens com IA para gerar as fotos no estacionamento.');
   }
   for (const n of slots) run(`UPDATE arts SET status = 'pendente', error = '' WHERE vehicle_id = ? AND slot = ? AND status != 'gerando'`, v.id, n);
   arts.schedule(v.id, { force: slots, delay: 100 });
   res.json(arts.listArts(v.id));
 });
+
+const uploadArt = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, cb) => cb(null, ['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) });
+app.post('/api/vehicles/:id/arts/:slot/upload', auth.requireUser, uploadArt.single('imagem'), wrap(async (req, res) => {
+  const v = own(req);
+  if (!req.file) throw fail(400, 'Envie a imagem em JPG, PNG ou WEBP de até 15 MB.');
+  await arts.saveManual(v.id, Number(req.params.slot), req.file.buffer);
+  res.json(arts.listArts(v.id));
+}));
+
+app.get('/api/vehicles/:id/arts/prompts', auth.requireUser, (req, res) => res.json(arts.manualPrompts(own(req).id)));
 
 app.put('/api/vehicles/:id/arts/:slot/source', auth.requireUser, (req, res) => {
   const v = own(req);
@@ -498,7 +531,17 @@ app.put('/api/vehicles/:id/arts/:slot/source', auth.requireUser, (req, res) => {
 app.get('/api/vehicles/:id/channel-data', auth.requireUser, (req, res) => {
   const v = own(req);
   const store = get('SELECT * FROM stores WHERE id = ?', req.user.storeId);
-  res.json({ caption: channels.caption(v, store), fields: channels.fields(v, store), listings: channels.listingsOf(v.id), links: Object.fromEntries(Object.entries(channels.CHANNELS).map(([k, c]) => [k, c.url])) });
+  const mc = get('SELECT token_enc, page_name, ig_user_id, ig_username FROM meta_connections WHERE store_id = ?', req.user.storeId);
+  const instagram = {
+    app_configured: meta.isConfigured(),
+    permission_enabled: config.meta.extraScopes.includes('instagram'),
+    connected: !!mc?.token_enc,
+    page_name: mc?.page_name || '',
+    ig_user_id: mc?.ig_user_id || '',
+    ig_username: mc?.ig_username || '',
+    is_admin: !!get('SELECT is_admin FROM users WHERE id = ?', req.user.id)?.is_admin,
+  };
+  res.json({ caption: channels.caption(v, store), fields: channels.fields(v, store), listings: channels.listingsOf(v.id), links: Object.fromEntries(Object.entries(channels.CHANNELS).map(([k, c]) => [k, c.url])), instagram });
 });
 
 app.post('/api/vehicles/:id/instagram', auth.requireUser, wrap(async (req, res) => {
@@ -577,7 +620,7 @@ extRouter.get('/next', auth.requireExtension, (req, res) => {
     return res.json({ job: null, pendentes, limit_reached: true });
   }
   run(`UPDATE ext_jobs SET status='em_andamento', note='', updated_at=datetime('now') WHERE id=?`, job.id);
-  const v = V.serialize(V.findVehicle(req.ext.storeId, job.vehicle_id));
+  const v = forAd(V.serialize(V.findVehicle(req.ext.storeId, job.vehicle_id)));
   res.json({ job: { id: job.id, type: job.type }, vehicle: v, store: { name: st.name, city: st.city, state: st.state }, pendentes,
     settings: { auto_publish: !!st.auto_publish } });
 });

@@ -2,6 +2,26 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v1.8 — 09/10/2026
+
+**Fotos no estacionamento sem custo, destaques do veículo, preço de oferta e guia do Instagram**
+
+- **Fotos no estacionamento: três modos** (Configurações > Imagens com IA):
+  - **Grátis, à mão (padrão)**: em cada imagem, o botão **Fazer grátis** entrega a foto e a instrução prontas para colar no Gemini ou no ChatGPT gratuitos; depois é só enviar a imagem pronta.
+  - **Automático com cota grátis (Pollinations)**: gera sozinho com a cota gratuita diária de uma conta grátis da Pollinations. Quando a cota acaba, continua sozinho mais tarde.
+  - **Automático pago (Google Gemini)**, como na v1.7.
+  - Em qualquer modo, dá para enviar uma imagem própria no lugar de uma gerada.
+- **Destaques e transparência** no cadastro: Perícia aprovada, Perícia premium, Sem retoques, Pneus novos, Pneus seminovos, Único dono, Revisões em dia, Manual e chave reserva, IPVA pago, Garantia da loja, Aceita troca, Financiamento facilitado, Blindado e, para informar o cliente, Ex-locadora ou ex-táxi, Possui leilão, Indício de sinistro e Chassi ou motor remarcado.
+  - Entram na descrição gerada, na legenda do Instagram e nos dados para Webmotors e OLX.
+  - Leilão, sinistro, remarcado e ex-locadora aparecem sempre no anúncio (Marketplace, catálogo, vitrine, Instagram, Webmotors e OLX) como aviso de transparência, se a descrição ainda não citar.
+  - A arte mostra selos (Perícia aprovada/premium e mais um destaque). Com "Revisões em dia", a frase vira "Revisado e pronto para rodar!".
+- **Preço de oferta** (opcional): quando preenchido e menor que o preço, os anúncios, o catálogo (sale_price), as campanhas, a vitrine e o preenchimento no Facebook usam o preço de oferta. A arte mostra "de… por…" com selo OFERTA.
+  - Uma oferta lançada depois da publicação libera **Republicar com oferta** na hora.
+- **Instagram**: na aba Instagram do botão Divulgar, um passo a passo mostra o que falta ligar.
+- A descrição gerada não inclui mais "aceitamos troca e financiamento" sem que esses itens estejam marcados.
+
+Arquivos alterados: `src/arts/pollinations.js` (novo), `src/arts/index.js`, `src/arts/gemini.js`, `src/arts/card.js`, `src/vehicles.js`, `src/channels.js`, `src/server.js`, `src/settings.js`, `src/feed.js`, `src/pages.js`, `src/meta/service.js`, `src/db.js`, `src/start.js`, `public/app.js`, `public/app.css`, `package.json`, `test/api.test.js`, `test/mock-graph.js`, `CHANGELOG.md`, `README.md`.
+
 ## v1.7 — 09/10/2026
 
 **Excluir veículo, imagens de divulgação e novos canais (Instagram, Webmotors e OLX)**

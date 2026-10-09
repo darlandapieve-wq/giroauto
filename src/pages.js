@@ -46,25 +46,26 @@ function storefront(store, vehicles) {
     ${v.photos[0] ? `<img src="${esc(v.photos[0].url)}" alt="${esc(v.titulo)}" loading="lazy">` : ''}
     <div><b>${esc(v.marca)} ${esc(v.modelo)}</b> <span class="muted">${esc(v.versao)}</span>
     <div class="muted">${esc(v.ano_fab || '')}/${esc(v.ano_modelo || '')} · ${km(v.km)}</div>
-    <div class="price">${brl(v.preco)}</div></div></a>`).join('');
+    <div class="price">${v.oferta_ativa ? `<s class="muted" style="font-size:.8em">${brl(v.preco)}</s> ` : ''}${brl(v.preco_anuncio || v.preco)}</div></div></a>`).join('');
   return shell(`${store.name} · Seminovos`, `<h1>${esc(store.name)}</h1>
     <p class="muted">${esc([store.city, store.state].filter(Boolean).join(' - '))}</p>
     <div class="grid">${cards || '<p class="muted">Nenhum veículo disponível no momento.</p>'}</div>`);
 }
 
 function vehiclePage(store, v) {
-  const wa = waLink(store, `Olá! Tenho interesse no ${v.titulo} anunciado por ${brl(v.preco)}.`);
+  const wa = waLink(store, `Olá! Tenho interesse no ${v.titulo} anunciado por ${brl(v.preco_anuncio || v.preco)}.`);
   const sold = v.status === 'vendido';
   return shell(`${v.titulo} · ${store.name}`, `<a href="/v/${esc(store.slug)}" class="muted">← ${esc(store.name)}</a>
     <h1 style="margin-top:8px">${esc(v.marca)} ${esc(v.modelo)} ${esc(v.versao)}</h1>
     <div class="vp"><div class="gal">${v.photos.map((p) => `<img src="${esc(p.url)}" alt="" loading="lazy">`).join('')}</div>
-    <div class="box"><div class="price">${sold ? 'Vendido' : brl(v.preco)}</div>
+    <div class="box"><div class="price">${sold ? 'Vendido' : `${v.oferta_ativa ? `<s class="muted" style="font-size:.7em">${brl(v.preco)}</s><br>Oferta: ` : ''}${brl(v.preco_anuncio || v.preco)}`}</div>
     <dl><dt>Ano</dt><dd>${esc(v.ano_fab || '')}/${esc(v.ano_modelo || '')}</dd><dt>Quilometragem</dt><dd>${km(v.km)}</dd>
     ${v.cambio ? `<dt>Câmbio</dt><dd>${esc(v.cambio)}</dd>` : ''}${v.combustivel ? `<dt>Combustível</dt><dd>${esc(v.combustivel)}</dd>` : ''}
     ${v.cor ? `<dt>Cor</dt><dd>${esc(v.cor)}</dd>` : ''}</dl>
     ${!sold && wa ? `<a class="btn" href="${esc(wa)}">Chamar no WhatsApp</a>` : ''}
-    ${v.descricao ? `<p class="desc">${esc(v.descricao)}</p>` : ''}</div></div>`,
-  { image: v.photos[0]?.url, title: v.titulo, description: `${brl(v.preco)} · ${km(v.km)}` });
+    ${v.destaques?.length ? `<ul class="desc">${v.destaques.map((k) => `<li>${esc(require('./vehicles').DESTAQUE[k]?.texto || '')}</li>`).join('')}</ul>` : ''}
+    ${v.descricao_anuncio ? `<p class="desc">${esc(v.descricao_anuncio)}</p>` : ''}</div></div>`,
+  { image: v.photos[0]?.url, title: v.titulo, description: `${brl(v.preco_anuncio || v.preco)} · ${km(v.km)}` });
 }
 
 const legal = (title, html) => shell(`${title} · GiroAuto`, `<h1>${title}</h1><div style="max-width:68ch;margin-top:16px;display:flex;flex-direction:column;gap:10px">${html}</div>`);
@@ -72,7 +73,7 @@ const legal = (title, html) => shell(`${title} · GiroAuto`, `<h1>${title}</h1><
 const privacy = () => legal('Política de privacidade', `
 <p>O GiroAuto é um painel usado por lojas de veículos para cadastrar o estoque e anunciar no Facebook e no Instagram.</p>
 <p><b>Dados que coletamos.</b> Da loja: nome, e-mail e senha de acesso (guardada com criptografia de mão única), dados de contato, veículos e fotos cadastrados. Quando a loja conecta a conta do Facebook, recebemos um token de acesso, o nome do usuário do Facebook e os identificadores da Página, da conta do Instagram, da conta de anúncios e do portfólio empresarial escolhidos pela loja.</p>
-<p><b>Como usamos.</b> Somente para executar o que a loja pede no painel: criar e acompanhar campanhas de anúncios, publicar os veículos no Facebook e no Instagram, manter o catálogo de veículos, gerar imagens de divulgação e exibir a vitrine pública dos veículos. Não vendemos nem compartilhamos dados com terceiros, exceto com a Meta (anúncios, Facebook e Instagram) e, quando a loja usa as imagens com IA, com o Google, que recebe somente as fotos dos veículos para editá-las.</p>
+<p><b>Como usamos.</b> Somente para executar o que a loja pede no painel: criar e acompanhar campanhas de anúncios, publicar os veículos no Facebook e no Instagram, manter o catálogo de veículos, gerar imagens de divulgação e exibir a vitrine pública dos veículos. Não vendemos nem compartilhamos dados com terceiros, exceto com a Meta (anúncios, Facebook e Instagram) e, quando a loja usa as imagens com IA, com o serviço escolhido (Google ou Pollinations), que recebe somente as fotos dos veículos para editá-las.</p>
 <p><b>Armazenamento.</b> Os dados ficam no servidor do GiroAuto. O token do Facebook é guardado criptografado e pode ser revogado a qualquer momento pela loja no painel (Desconectar) ou nas configurações do Facebook.</p>
 <p><b>Exclusão.</b> Veja como pedir a exclusão em <a href="/exclusao-de-dados">exclusão de dados</a>.</p>`);
 

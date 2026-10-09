@@ -91,4 +91,17 @@ function friendly(e) {
   return msg.slice(0, 300);
 }
 
-module.exports = { parkingShot, checkKey, friendly, DEFAULT_MODEL, SCENES, GeminiError };
+const promptFor = (i) => prompt(SCENES[i % SCENES.length]);
+
+// Instruções em português para usar no ChatGPT ou no Gemini (aplicativos gratuitos), à mão.
+const CENAS_PT = [
+  'um estacionamento aberto vazio, limpo, num dia de sol, com faixas brancas novas no asfalto escuro e algumas árvores e um prédio moderno ao fundo',
+  'um estacionamento vazio no fim da tarde, com luz dourada do sol, sombras longas e céu limpo',
+  'um estacionamento coberto moderno e vazio, com piso de concreto polido, faixas brancas e iluminação suave',
+  'um estacionamento vazio no alto de um prédio, com céu azul e a cidade ao fundo, de dia',
+];
+function promptPt(i) {
+  return `Edite esta foto de um carro usado para um anúncio de loja. Mantenha exatamente o mesmo carro: mesma marca, modelo, cor, rodas, formato, placa e detalhes, sem mudar nada no carro, e o mesmo ângulo da câmera. Troque somente o fundo por ${CENAS_PT[i % CENAS_PT.length]}. Tire outros carros, pessoas, textos e marcas d'água. O resultado deve parecer uma fotografia real, com reflexos e sombra realistas embaixo do carro, no formato vertical 4:5.`;
+}
+
+module.exports = { promptFor, promptPt, parkingShot, checkKey, friendly, DEFAULT_MODEL, SCENES, GeminiError };

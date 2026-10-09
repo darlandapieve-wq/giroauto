@@ -10,6 +10,7 @@ const settings = require('../settings');
 const { get, all, run } = require('../db');
 const card = require('./card');
 const gemini = require('./gemini');
+const pollinations = require('./pollinations');
 
 const SLOTS = [1, 2, 3, 4, 5];
 const PARKING = [2, 3, 4, 5];
@@ -40,8 +41,8 @@ function sourcePhoto(row, photos) {
 }
 
 function cardKey(v, photos, store) {
-  return hash([v.marca, v.modelo, v.versao, v.ano_fab, v.ano_modelo, v.km, v.preco, v.cambio, v.combustivel, v.cor, v.carroceria,
-    photos.slice(0, 4).map((p) => p.filename), store.name, store.whatsapp, store.phone, store.city, 'v1']);
+  return hash([v.marca, v.modelo, v.versao, v.ano_fab, v.ano_modelo, v.km, v.preco, v.preco_oferta, v.destaques, v.cambio, v.combustivel, v.cor, v.carroceria,
+    photos.slice(0, 4).map((p) => p.filename), store.name, store.whatsapp, store.phone, store.city, 'v2']);
 }
 
 async function writeMedia(buffer) {
@@ -126,31 +127,64 @@ async function processVehicle(vehicleId, force = []) {
     }
   }
 
-  /* Imagens 2 a 5: estacionamento (IA) */
-  const g = settings.gemini();
+  /* Imagens 2 a 5: estacionamento (IA ou enviadas pela loja) */
+  const a = settings.ai();
+  const prov = a.provider === 'gemini' ? a.gemini : a.provider === 'pollinations' ? a.pollinations : null;
   for (const slot of PARKING) {
     const row = rowsOf(v.id)[slot - 1];
     const src = sourcePhoto(row, photos);
     const key = hash([src.filename, slot, 'v1']);
     const forced = force.includes(slot);
+    if (!forced && row.source_key === 'manual' && row.status === 'pronta') continue; // enviada pela loja: não substitui
     if (!forced && row.status === 'pronta' && row.source_key === key) continue;
-    if (!forced && row.status === 'erro' && row.source_key === key) continue; // não insiste sozinho em erro
-    if (!g.key) { upsert(v.id, slot, { status: 'sem_chave', error: '', source_key: '' }); continue; }
-    if (!forced && !g.auto) { if (row.status !== 'pronta') upsert(v.id, slot, { status: 'aguardando', error: '' }); continue; }
+    if (!forced && row.status === 'erro' && row.source_key === key && !retryable(row)) continue; // não insiste sozinho em erro
+    if (!prov) { if (row.status !== 'pronta') upsert(v.id, slot, { status: 'manual', error: '', source_key: '' }); continue; }
+    if (!prov.key) { upsert(v.id, slot, { status: 'sem_chave', error: '', source_key: '' }); continue; }
+    if (!forced && !a.auto) { if (row.status !== 'pronta') upsert(v.id, slot, { status: 'aguardando', error: '' }); continue; }
     upsert(v.id, slot, { status: 'gerando', error: '' });
     try {
       const file = await storage.ensureLocal(src.filename);
       if (!file) throw new Error('Foto de origem não encontrada.');
-      const { image } = await gemini.parkingShot({ apiKey: g.key, model: g.model, photo: fs.readFileSync(file), mime: src.mime, sceneIndex: slot - 2 });
+      const photo = fs.readFileSync(file);
+      const { image } = a.provider === 'gemini'
+        ? await gemini.parkingShot({ apiKey: prov.key, model: prov.model, photo, mime: src.mime, sceneIndex: slot - 2 })
+        : await pollinations.edit({ apiKey: prov.key, model: prov.model, photo, mime: src.mime, prompt: gemini.promptFor(slot - 2), photoUrl: mediaUrl(src.filename) });
       const name = await writeMedia(await card.normalizeJpeg(image));
       if (!get('SELECT 1 FROM vehicles WHERE id = ?', v.id)) { dropFile(name); return; }
       upsert(v.id, slot, { filename: name, status: 'pronta', error: '', source_key: key });
       if (row.filename && row.filename !== name) dropFile(row.filename);
     } catch (e) {
-      upsert(v.id, slot, { status: 'erro', error: gemini.friendly(e), source_key: key });
-      if (e.status === 401 || e.status === 403 || e.status === 429) break; // problema na chave: para as demais
+      const msg = a.provider === 'gemini' ? gemini.friendly(e) : pollinations.friendly(e);
+      upsert(v.id, slot, { status: 'erro', error: msg, source_key: key });
+      if ([401, 402, 403, 429].includes(e.status)) break; // chave ou cota: para as demais
     }
   }
+}
+
+// Erro de cota (limite do dia) volta a ser tentado depois de 6 horas.
+function retryable(row) {
+  if (!/cota|limite/i.test(row.error || '')) return false;
+  const t = Date.parse(String(row.updated_at || '').replace(' ', 'T') + 'Z');
+  return Number.isFinite(t) && Date.now() - t > 6 * 3600e3;
+}
+
+// Imagem enviada pela loja (feita no ChatGPT, no Gemini ou em outro editor).
+async function saveManual(vehicleId, slot, buffer) {
+  if (!PARKING.includes(slot)) throw Object.assign(new Error('Envie imagens só para as posições 2 a 5.'), { status: 400 });
+  let jpg;
+  try { jpg = await card.normalizeJpeg(buffer); } catch { throw Object.assign(new Error('Não foi possível ler a imagem. Envie JPG, PNG ou WEBP.'), { status: 400 }); }
+  const row = rowsOf(vehicleId)[slot - 1];
+  const name = await writeMedia(jpg);
+  upsert(vehicleId, slot, { filename: name, status: 'pronta', error: '', source_key: 'manual' });
+  if (row.filename && row.filename !== name) dropFile(row.filename);
+}
+
+function manualPrompts(vehicleId) {
+  const photos = photosOf(vehicleId);
+  return rowsOf(vehicleId).filter((r) => PARKING.includes(r.slot)).map((r) => {
+    const src = photos.length ? sourcePhoto(r, photos) : null;
+    return { slot: r.slot, prompt: gemini.promptPt(r.slot - 2), source_url: src ? mediaUrl(src.filename) : '' };
+  });
 }
 
 /* ---------------- Consulta e manutenção ---------------- */
@@ -161,6 +195,7 @@ function listArts(vehicleId) {
     slot: r.slot,
     kind: r.slot === 1 ? 'arte' : 'estacionamento',
     status: r.status === 'pendente' && inQueue ? 'na_fila' : r.status,
+    manual: r.source_key === 'manual',
     error: r.error || '',
     url: r.filename ? mediaUrl(r.filename) : '',
     filename: r.filename || '',
@@ -193,4 +228,12 @@ function backfill() {
   return ids.length;
 }
 
-module.exports = { schedule, listArts, readyFiles, setSource, filesOf, backfill, idle, processVehicle, PARKING };
+// Confere de 6 em 6 horas (retoma o que parou por cota diária).
+let timer;
+function startTimer() {
+  clearInterval(timer);
+  timer = setInterval(() => { try { backfill(); } catch { /* tenta na próxima */ } }, 6 * 3600e3);
+  if (timer.unref) timer.unref();
+}
+
+module.exports = { schedule, listArts, readyFiles, setSource, filesOf, backfill, startTimer, idle, processVehicle, saveManual, manualPrompts, PARKING };

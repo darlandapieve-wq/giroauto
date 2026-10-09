@@ -46,25 +46,36 @@ function clearMetaApp() {
   applyMetaApp();
 }
 
-/* IA de imagens (Google Gemini) */
-function gemini() {
-  const enc = read('gemini_key_enc');
+/* IA de imagens: 'manual' (ChatGPT/Gemini à mão, grátis), 'pollinations' (cota grátis diária) ou 'gemini' (pago) */
+function secret(name, envName) {
+  const enc = read(name);
   let key = '';
   try { key = enc ? decrypt(enc) : ''; } catch { key = ''; }
-  return {
-    key: key || process.env.GEMINI_API_KEY || '',
-    source: key ? 'painel' : (process.env.GEMINI_API_KEY ? 'env' : ''),
-    model: read('gemini_model') || process.env.GEMINI_MODEL || '',
-    auto: read('gemini_auto') !== '0',
-  };
+  return { key: key || process.env[envName] || '', source: key ? 'painel' : (process.env[envName] ? 'env' : '') };
 }
-function saveGemini({ key, model, auto }) {
-  if (key !== undefined) write('gemini_key_enc', key ? encrypt(key) : '');
-  if (model !== undefined) write('gemini_model', model || '');
+function ai() {
+  const gemini = { ...secret('gemini_key_enc', 'GEMINI_API_KEY'), model: read('gemini_model') || process.env.GEMINI_MODEL || '' };
+  const pollinations = { ...secret('pollinations_key_enc', 'POLLINATIONS_API_KEY'), model: read('pollinations_model') || '' };
+  let provider = read('ai_provider') || '';
+  if (!provider) provider = gemini.key ? 'gemini' : pollinations.key ? 'pollinations' : 'manual'; // instalações da v1.7
+  return { provider, auto: read('gemini_auto') !== '0', gemini, pollinations };
+}
+// Compatibilidade com a v1.7.
+function gemini() {
+  const a = ai();
+  const cur = a.provider === 'gemini' ? a.gemini : a.provider === 'pollinations' ? a.pollinations : { key: '', source: '', model: '' };
+  return { ...cur, provider: a.provider, auto: a.auto };
+}
+function saveAi({ provider, geminiKey, geminiModel, pollinationsKey, pollinationsModel, auto }) {
+  if (provider !== undefined) write('ai_provider', provider);
+  if (geminiKey !== undefined) write('gemini_key_enc', geminiKey ? encrypt(geminiKey) : '');
+  if (geminiModel !== undefined) write('gemini_model', geminiModel || '');
+  if (pollinationsKey !== undefined) write('pollinations_key_enc', pollinationsKey ? encrypt(pollinationsKey) : '');
+  if (pollinationsModel !== undefined) write('pollinations_model', pollinationsModel || '');
   if (auto !== undefined) write('gemini_auto', auto ? '1' : '0');
 }
 
 applyMetaApp();
 applyScopes();
 
-module.exports = { applyMetaApp, saveMetaApp, clearMetaApp, saveExtraScopes, applyScopes, gemini, saveGemini };
+module.exports = { applyMetaApp, saveMetaApp, clearMetaApp, saveExtraScopes, applyScopes, gemini, ai, saveAi };

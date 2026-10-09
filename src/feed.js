@@ -1,6 +1,6 @@
 // Feed CSV do catálogo de veículos da Meta (vertical "vehicles").
 const { all } = require('./db');
-const { photosOf, title } = require('./vehicles');
+const { photosOf, title, ofertaAtiva, descricaoAnuncio } = require('./vehicles');
 const config = require('./config');
 
 const BODY = {
@@ -37,7 +37,7 @@ function feedRows(store) {
       const row = {
         vehicle_id: `giro-${v.id}`,
         title: title(v).slice(0, 150),
-        description: (v.descricao || title(v)).slice(0, 5000),
+        description: descricaoAnuncio(v).slice(0, 5000),
         url: vehicleUrl(store, v),
         make: v.marca,
         model: v.modelo,
@@ -46,6 +46,7 @@ function feedRows(store) {
         'mileage.value': v.km,
         'mileage.unit': 'KM',
         price: `${v.preco} BRL`,
+        sale_price: ofertaAtiva(v) ? `${v.preco_oferta} BRL` : '',
         state_of_vehicle: 'USED',
         availability: 'AVAILABLE',
         body_style: BODY[v.carroceria] || 'OTHER',
@@ -70,7 +71,7 @@ function buildCsv(store) {
   const rows = feedRows(store);
   const base = [
     'vehicle_id', 'title', 'description', 'url', 'make', 'model', 'year', 'trim',
-    'mileage.value', 'mileage.unit', 'price', 'state_of_vehicle', 'availability', 'body_style',
+    'mileage.value', 'mileage.unit', 'price', 'sale_price', 'state_of_vehicle', 'availability', 'body_style',
     'fuel_type', 'transmission', 'exterior_color', 'interior_color', 'dealer_name', 'dealer_phone',
     'address.addr1', 'address.city', 'address.region', 'address.postal_code', 'address.country',
   ];

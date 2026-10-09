@@ -374,7 +374,18 @@ test('v1.7: imagens geradas (arte e estacionamento com IA)', async () => {
   r = await api('GET', `/api/vehicles/${id}/arts`);
   assert.equal(r.body[0].status, 'pronta', JSON.stringify(r.body[0]));
   assert.match(r.body[0].url, /\/media\/[a-f0-9]{32}\.jpg$/);
-  assert.ok(r.body.slice(1).every((a) => a.status === 'sem_chave'), 'sem a chave da IA, as fotos no estacionamento aguardam');
+  assert.ok(r.body.slice(1).every((a) => a.status === 'manual'), 'sem IA configurada, as fotos no estacionamento ficam no modo à mão (grátis)');
+  // Modo à mão: instruções prontas e envio da imagem feita no ChatGPT/Gemini.
+  let pr = await api('GET', `/api/vehicles/${id}/arts/prompts`);
+  assert.equal(pr.body.length, 4);
+  assert.match(pr.body[0].prompt, /Mantenha exatamente o mesmo carro/);
+  assert.match(pr.body[0].source_url, /\/media\//);
+  const up = new FormData(); up.append('imagem', new Blob([JPG], { type: 'image/jpeg' }), 'feita-no-chatgpt.jpg');
+  pr = await api('POST', `/api/vehicles/${id}/arts/2/upload`, up);
+  assert.equal(pr.status, 200, JSON.stringify(pr.body));
+  assert.equal(pr.body[1].status, 'pronta');
+  assert.equal(pr.body[1].manual, true);
+  const manualFile = pr.body[1].filename;
   const card1 = r.body[0].filename;
   const img = await fetch(base + '/media/' + card1);
   assert.equal(img.status, 200);
@@ -394,11 +405,15 @@ test('v1.7: imagens geradas (arte e estacionamento com IA)', async () => {
   r = await api('PUT', '/api/admin/ai', { key: 'AIzaTESTKEY1234567890123456789012345', auto: true });
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.equal(r.body.configured, true);
+  await arts.idle();
+  r = await api('GET', `/api/vehicles/${id}/arts`);
+  assert.equal(r.body[1].filename, manualFile, 'a imagem enviada pela loja não é substituída sozinha');
   r = await api('POST', `/api/vehicles/${id}/arts/regenerate`, { slots: [2, 3, 4, 5] });
   assert.equal(r.status, 200);
   await arts.idle();
   r = await api('GET', `/api/vehicles/${id}/arts`);
   assert.ok(r.body.every((a) => a.status === 'pronta'), JSON.stringify(r.body));
+  assert.notEqual(r.body[1].filename, manualFile, 'Refazer troca a imagem enviada');
   const calls = mock.state.geminiCalls;
   assert.ok(calls.length >= 4, 'gera as 4 imagens (e as dos outros veículos em estoque)');
   assert.equal(calls[0].model, 'gemini-nano-banana-2.1');
@@ -420,6 +435,29 @@ test('v1.7: imagens geradas (arte e estacionamento com IA)', async () => {
   assert.equal(r.body[2].photo_id, v.body.photos[2].id);
   assert.equal(r.body[1].status, 'pronta');
   mock.state.geminiFail = false;
+
+  // Pollinations (cota gratuita): mesma geração por outro serviço.
+  r = await api('PUT', '/api/admin/ai', { provider: 'pollinations', pollinations_key: 'chave-errada' });
+  assert.equal(r.status, 400);
+  r = await api('PUT', '/api/admin/ai', { provider: 'pollinations', pollinations_key: 'sk_teste1234567890' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.provider, 'pollinations');
+  process.env.POLLINATIONS_URL = process.env.GEMINI_URL;
+  mock.state.pollCalls = [];
+  r = await api('POST', `/api/vehicles/${id}/arts/regenerate`, { slots: [4] });
+  await arts.idle();
+  r = await api('GET', `/api/vehicles/${id}/arts`);
+  assert.equal(r.body[3].status, 'pronta', JSON.stringify(r.body[3]));
+  assert.equal(mock.state.pollCalls.length, 1);
+  assert.equal(mock.state.pollCalls[0].auth, 'Bearer sk_teste1234567890');
+  assert.equal(mock.state.pollCalls[0].model, 'kontext');
+  mock.state.pollFail = 402;
+  r = await api('POST', `/api/vehicles/${id}/arts/regenerate`, { slots: [5] });
+  await arts.idle();
+  r = await api('GET', `/api/vehicles/${id}/arts`);
+  assert.match(r.body[4].error, /Cota gratuita do dia/);
+  mock.state.pollFail = 0;
+  await api('PUT', '/api/admin/ai', { provider: 'gemini' });
 
   // Zip com as imagens geradas.
   const z = await fetch(`${base}/api/vehicles/${id}/photos.zip?so=artes`, { headers: { cookie } });
@@ -448,10 +486,10 @@ test('v1.7: Instagram, Webmotors, OLX e exclusão do veículo', async () => {
   assert.equal(r.body.canais.instagram.status, 'publicado', JSON.stringify(r.body.canais));
   assert.equal(r.body.canais.instagram.url, 'https://www.instagram.com/p/TESTE123/');
   const items = mock.calls.filter((c) => c.path === '/ig_1/media' && c.params.is_carousel_item);
-  assert.equal(items.length, 7, 'arte + 3 imagens no estacionamento prontas (uma deu erro) + 3 fotos');
+  assert.equal(items.length, 6, 'arte + 2 imagens no estacionamento prontas (duas deram erro) + 3 fotos');
   assert.match(items[0].params.image_url, /\/media\/[a-f0-9]{32}\.jpg$/);
   const carousel = mock.calls.find((c) => c.path === '/ig_1/media' && c.params.media_type === 'CAROUSEL');
-  assert.equal(carousel.params.children.split(',').length, 7);
+  assert.equal(carousel.params.children.split(',').length, 6);
   assert.match(carousel.params.caption, /#volkswagen/);
   assert.ok(mock.calls.find((c) => c.path === '/ig_1/media_publish'));
 
@@ -486,4 +524,51 @@ test('v1.7: Instagram, Webmotors, OLX e exclusão do veículo', async () => {
   assert.equal(r.status, 200);
   assert.equal(r.body.remover[0].channel, 'marketplace');
   assert.equal(r.body.remover[0].url, 'https://www.facebook.com/marketplace/item/123/');
+});
+
+test('v1.8: destaques, transparência e preço de oferta', async () => {
+  const base1 = { marca: 'Honda', modelo: 'Civic', versao: 'EXL 2.0', ano_fab: 2018, ano_modelo: 2019, km: 70000, preco: 99900, cambio: 'CVT', combustivel: 'Flex', cor: 'Preto', carroceria: 'Sedã', descricao: 'Carro muito conservado.' };
+  let r = await api('POST', '/api/vehicles', { ...base1, destaques: ['pericia_aprovada', 'pericia_premium', 'pneus_novos', 'pneus_seminovos', 'leilao', 'xyz'] });
+  assert.equal(r.status, 201);
+  const id = r.body.id;
+  assert.deepEqual(r.body.destaques, ['pericia_aprovada', 'pneus_novos', 'leilao'], 'um por grupo e só itens conhecidos');
+  assert.match(r.body.descricao_anuncio, /Carro muito conservado\.\n\n⚠️ Transparência: Veículo com passagem por leilão\./);
+  r = await api('GET', '/api/me');
+  assert.ok(r.body.options.destaques.find((d) => d.key === 'sinistro' && d.alerta));
+
+  // Se a descrição já cita o leilão, não repete.
+  r = await api('PUT', `/api/vehicles/${id}`, { ...base1, descricao: 'Veículo de leilão, laudo aprovado.', destaques: ['leilao', 'sem_retoques'] });
+  assert.equal(r.body.descricao_anuncio, 'Veículo de leilão, laudo aprovado.');
+  let cd = await api('GET', `/api/vehicles/${id}/channel-data`);
+  assert.match(cd.body.caption, /✅ Pintura original, sem retoques/);
+  assert.ok(cd.body.fields.find((f) => f.label === 'Descrição').value.includes('✔ Pintura original, sem retoques'));
+  assert.equal(cd.body.instagram.ig_user_id, 'ig_1');
+
+  // Preço de oferta: vale só se menor que o preço; vai para os anúncios, o catálogo e o preenchimento.
+  r = await api('PUT', `/api/vehicles/${id}`, { ...base1, preco_oferta: 120000 });
+  assert.equal(r.body.oferta_ativa, false, 'oferta maior que o preço é ignorada');
+  await api('POST', `/api/vehicles/${id}/photos`, (() => { const f = new FormData(); f.append('fotos', new Blob([JPG], { type: 'image/jpeg' }), 'a.jpg'); return f; })());
+  await api('POST', `/api/vehicles/${id}/mark-published`, {});
+  r = await api('GET', `/api/vehicles/${id}`);
+  assert.equal(r.body.pode_republicar, false);
+  await new Promise((res) => setTimeout(res, 1100));
+  r = await api('PUT', `/api/vehicles/${id}`, { ...base1, preco_oferta: '94.900', catalogo: true });
+  assert.equal(r.body.oferta_ativa, true);
+  assert.equal(r.body.preco_anuncio, 94900);
+  assert.equal(r.body.pode_republicar, true, 'oferta nova libera republicar com o preço de ocasião');
+  assert.equal(r.body.oferta_nova, true);
+  cd = await api('GET', `/api/vehicles/${id}/channel-data`);
+  assert.match(cd.body.caption, /OFERTA: de R\$ 99\.900 por R\$ 94\.900/);
+  assert.equal(cd.body.fields.find((f) => f.label === 'Preço').value, '94900');
+  const store = require('../src/db').get('SELECT * FROM stores WHERE id = (SELECT store_id FROM vehicles WHERE id = ?)', id);
+  const csv = await (await fetch(`${base}/feed/${store.slug}.csv?k=${store.feed_key}`)).text();
+  assert.match(csv, /sale_price/);
+  assert.match(csv, /94900 BRL/);
+  await api('POST', '/api/assist/start', { vehicle_id: id });
+  const cur = await api('GET', '/api/assist/current');
+  assert.equal(cur.body.vehicle.preco, 94900, 'o preenchimento no Facebook usa o preço de oferta');
+  // Tirar a oferta volta ao preço normal.
+  r = await api('PUT', `/api/vehicles/${id}`, { ...base1, preco_oferta: '' });
+  assert.equal(r.body.oferta_ativa, false);
+  assert.equal(r.body.preco_anuncio, 99900);
 });

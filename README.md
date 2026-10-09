@@ -126,7 +126,9 @@ A Meta precisa acessar esse endereço e as fotos pela internet, então o catálo
 Cada veículo com fotos ganha 5 imagens (1080×1350), geradas em segundo plano:
 
 1. **Arte com preço**: foto principal, marca, modelo, motor e ano, preço, itens do veículo e três fotos menores. Feita no próprio servidor (`src/arts/card.js`, fontes Oswald e Montserrat em `assets/fonts`, licença OFL), sem custo. É refeita quando o preço, os dados ou as primeiras fotos mudam.
-2. a 5. **O carro num estacionamento vazio**, editado pela IA de imagens do Google (Gemini). A loja escolhe qual foto vai em cada imagem. Exige a chave da API do Google AI Studio com faturamento ativo (Configurações > Imagens com IA, só administrador). Variáveis opcionais: `GEMINI_API_KEY`, `GEMINI_MODEL`.
+2. a 5. **O carro num estacionamento vazio**. A loja escolhe qual foto vai em cada imagem. Três modos (Configurações > Imagens com IA): grátis à mão (instrução pronta para o Gemini/ChatGPT e envio do resultado), Pollinations (cota grátis diária, `src/arts/pollinations.js`) ou Google Gemini (pago). Variáveis opcionais: `GEMINI_API_KEY`, `GEMINI_MODEL`, `POLLINATIONS_API_KEY`.
+
+Destaques do veículo (`DESTAQUES` em `src/vehicles.js`) e preço de oferta (`preco_oferta`) entram nos textos dos anúncios; os avisos de transparência (leilão, sinistro, remarcado, ex-locadora) são acrescentados sempre que a descrição não os cita.
 
 ## Outros canais (v1.7)
 
