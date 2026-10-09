@@ -692,6 +692,13 @@ app.post('/api/meta/disconnect', auth.requireUser, (req, res) => {
   res.json({ ok: true });
 });
 
+// Permissões que o Facebook concedeu ao GiroAuto (diagnóstico).
+app.get('/api/meta/permissions', auth.requireUser, wrap(async (req, res) => {
+  const { token } = meta.tokenFor(req.user.storeId);
+  const p = await channels.grantedPermissions(token);
+  res.json({ ...p, requested: [...new Set([...config.meta.scopes, ...config.meta.extraScopes.flatMap((k) => config.meta.optionalScopes[k]?.scopes || [])])] });
+}));
+
 app.get('/api/meta/assets', auth.requireUser, wrap(async (req, res) => res.json(await meta.listAssets(req.user.storeId))));
 app.put('/api/meta/settings', auth.requireUser, wrap(async (req, res) => res.json(await meta.saveSettings(req.user.storeId, req.body || {}))));
 app.get('/api/meta/cities', auth.requireUser, wrap(async (req, res) => {

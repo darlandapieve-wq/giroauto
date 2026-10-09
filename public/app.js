@@ -1240,14 +1240,15 @@
           <li><b>No app da Meta</b> (developers.facebook.com &gt; Meus apps &gt; GiroAuto): <b>Casos de uso &gt; Adicionar caso de uso</b>, escolha <b>Gerenciar mensagens e conteúdo no Instagram</b> e salve. Depois, em <b>Personalizar</b> desse caso de uso, clique em <b>Adicionar</b> ao lado de <b>instagram_basic</b> e <b>instagram_content_publish</b>.</li>
           <li>${ok(i.permission_enabled)} <b>No GiroAuto</b>: ${i.is_admin ? '<a class="link" href="#config" data-close>Configurações</a>' : 'Configurações (administrador)'} &gt; App da Meta &gt; Permissões extras, marque <b>Publicar no Instagram</b> e clique em <b>Salvar permissões</b>.</li>
           <li>${ok(!!i.ig_user_id)} <b>Conectar de novo</b>: Configurações &gt; Facebook e Instagram &gt; <b>Conectar Facebook</b>. Na janela do Facebook, clique em <b>Editar acesso</b> e confira que a Página e o Instagram da loja estão marcados. Volte, escolha a Página e salve: o @ do Instagram aparece ao lado dela.</li>
-        </ol>`;
+        </ol>
+        ${permBoxHtml()}`;
     };
     const igSec = () => {
       const st = L.instagram;
       if (!data.instagram.ig_user_id) return igSetup(data.instagram);
       return `<div class="okbox">Publica em <b>${esc(data.instagram.ig_username ? '@' + data.instagram.ig_username : 'Instagram ligado à Página ' + data.instagram.page_name)}</b>.</div>
         ${st?.status === 'publicado' ? `<div class="okbox">Publicado no Instagram${st.url ? ` · <a class="link" href="${esc(st.url)}" target="_blank" rel="noopener">ver post</a>` : ''}. Publicar de novo cria outro post.</div>` : ''}
-        ${st?.status === 'erro' ? `<div class="err">${esc(st.error)}</div>` : ''}
+        ${st?.status === 'erro' ? `<div class="err">${esc(st.error)}</div>${permBoxHtml()}` : ''}
         ${st?.status === 'publicando' ? '<div class="infobox">Publicando… o Instagram leva até um minuto para processar as imagens.</div>' : ''}
         <p class="note">Vai como carrossel no perfil ligado à Página da loja: a arte, as fotos no estacionamento e as fotos do carro (até 10). O Instagram não permite apagar posts pelo painel: quando vender, arquive o post no aplicativo.</p>
         <div class="f"><label for="igCap">Legenda</label><textarea id="igCap" rows="9">${esc(data.caption)}</textarea></div>
@@ -1275,6 +1276,17 @@
       <div class="err" id="chErr" hidden></div>
       <div class="modal-foot"><button class="btn" data-close type="button">Fechar</button></div>`, true);
     const showErr = (m) => { const e = $('#chErr'); e.textContent = m; e.hidden = false; };
+    const pc = $('#permCheck');
+    if (pc) pc.onclick = async () => {
+      pc.disabled = true; pc.textContent = 'Consultando o Facebook…';
+      try {
+        const r = await api('GET', '/api/meta/permissions');
+        const need = ['instagram_basic', 'instagram_content_publish', 'pages_show_list', 'pages_read_engagement'];
+        $('#permOut').innerHTML = `<div class="cfields">${need.map((p) => `<div class="cf"><span class="k">${p}</span><span class="v">${r.granted.includes(p) ? '<span class="pill p-ok">concedida</span>' : r.declined.includes(p) ? '<span class="pill p-bad">recusada na conexão</span>' : r.requested.includes(p) ? '<span class="pill p-warn">o Facebook não entregou</span>' : '<span class="pill p-warn">não pedida (ligue "Publicar no Instagram")</span>'}</span><span></span></div>`).join('')}</div>
+          <p class="note">"Recusada na conexão": conecte de novo e, em Editar acesso, deixe tudo marcado. "O Facebook não entregou": falta adicionar a permissão no caso de uso de Instagram do app da Meta (opção com login do Facebook).</p>`;
+      } catch (e) { $('#permOut').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+      pc.disabled = false; pc.textContent = 'Verificar permissões de novo';
+    };
     $$('[data-ctab]').forEach((b) => { b.onclick = () => channelsModal(v, b.dataset.ctab); });
     $$('[data-cpf]').forEach((b) => { b.onclick = () => copyText(data.fields[Number(b.dataset.cpf)].value, b); });
     $$('[data-mark]').forEach((b) => {
@@ -1297,6 +1309,9 @@
       } catch (e) { showErr(e.message); ig.disabled = false; ig.textContent = 'Publicar no Instagram'; }
     };
     if (cur === 'instagram' && L.instagram?.status === 'publicando') watchInstagram(v);
+  }
+  function permBoxHtml() {
+    return `<div><button class="btn sm" type="button" id="permCheck">Verificar permissões no Facebook</button><div id="permOut" style="margin-top:8px"></div></div>`;
   }
   let igTimer;
   function watchInstagram(v) {

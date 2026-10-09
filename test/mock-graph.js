@@ -60,6 +60,7 @@ function createMock() {
 
   app.get('/:v/oauth/access_token', (req, res) => res.json({ access_token: req.p.grant_type ? 'long-token' : 'short-token', expires_in: 5184000 }));
   app.get('/:v/me', (req, res) => res.json({ id: '9001', name: 'Darlan Teste' }));
+  app.get('/:v/me/permissions', (req, res) => res.json({ data: (state.permissions || ['ads_management', 'instagram_basic', 'instagram_content_publish', 'pages_show_list', 'pages_read_engagement']).map((p) => ({ permission: p.replace(/^-/, ''), status: p.startsWith('-') ? 'declined' : 'granted' })) }));
   app.get('/:v/me/adaccounts', (req, res) => res.json({ data: [{ id: 'act_111', name: 'Loja Ads', currency: 'BRL', account_status: 1 }] }));
   app.get('/:v/me/accounts', (req, res) => res.json({ data: [{ id: 'page_1', name: 'Autos Teste', instagram_business_account: { id: 'ig_1', username: 'autosteste' } }] }));
   app.get('/:v/me/businesses', (req, res) => res.json({ data: [{ id: 'biz_1', name: 'Autos Teste Ltda' }] }));

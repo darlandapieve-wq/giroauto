@@ -2,6 +2,13 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v1.8.1 — 09/10/2026
+
+- **Verificar permissões no Facebook** (Divulgar > Instagram): mostra quais permissões o Facebook entregou ao GiroAuto, quais foram recusadas na conexão e quais o app da Meta não liberou.
+- Quando o Instagram recusa por falta de permissão (#10/#200), o erro já diz qual permissão falta e o que fazer.
+
+Arquivos alterados: `src/channels.js`, `src/server.js`, `public/app.js`, `package.json`, `test/api.test.js`, `test/mock-graph.js`, `CHANGELOG.md`.
+
 ## v1.8 — 09/10/2026
 
 **Fotos no estacionamento sem custo, destaques do veículo, preço de oferta e guia do Instagram**

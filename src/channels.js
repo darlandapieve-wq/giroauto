@@ -159,8 +159,13 @@ async function publishInstagram(storeId, vehicleId, { caption: custom } = {}) {
       upsert(v.id, 'instagram', { status: 'publicado', url: permalink, external_id: String(pub.id || ''), error: '', published_at: new Date().toISOString().slice(0, 19).replace('T', ' ') });
       logEvent(storeId, `${v.marca} ${v.modelo} publicado no Instagram`);
     } catch (e) {
-      const msg = e instanceof graph.MetaError ? `${e.title ? e.title + ': ' : ''}${e.message}` : e.message;
-      upsert(v.id, 'instagram', { status: 'erro', error: String(msg).slice(0, 400) });
+      let msg = e instanceof graph.MetaError ? `${e.title ? e.title + ': ' : ''}${e.message}` : e.message;
+      // Sem permissão (#10/#200): confere na Meta o que o token recebeu e diz o que falta.
+      if (e instanceof graph.MetaError && [10, 200].includes(Number(e.code))) {
+        const p = await grantedPermissions(token).catch(() => null);
+        msg = permissionHelp(p) || msg;
+      }
+      upsert(v.id, 'instagram', { status: 'erro', error: String(msg).slice(0, 900) });
     } finally {
       running.delete(v.id);
       // As cópias temporárias ficam alguns minutos para o Instagram terminar de baixar.
@@ -169,6 +174,28 @@ async function publishInstagram(storeId, vehicleId, { caption: custom } = {}) {
     }
   })();
   return listingsOf(v.id);
+}
+
+// Permissões concedidas ao token da loja: { granted: [...], declined: [...] }.
+async function grantedPermissions(token) {
+  const r = await graph.get('/me/permissions', token, {});
+  const out = { granted: [], declined: [] };
+  for (const p of r.data || []) (p.status === 'granted' ? out.granted : out.declined).push(p.permission);
+  return out;
+}
+
+function permissionHelp(p) {
+  if (!p) return '';
+  const need = ['instagram_basic', 'instagram_content_publish', 'pages_read_engagement', 'pages_show_list'];
+  const falta = need.filter((x) => !p.granted.includes(x));
+  if (!falta.length) {
+    return 'A Meta recusou a publicação mesmo com as permissões concedidas. Confira se o Instagram é uma conta profissional ligada à Página escolhida e se você tem função de administrador na Página.';
+  }
+  const recusada = falta.filter((x) => p.declined.includes(x));
+  if (recusada.length) {
+    return `Na hora de conectar, a permissão ${recusada.join(', ')} ficou desmarcada. Clique em Conectar Facebook de novo, depois em "Editar acesso", e deixe marcados a Página e o Instagram da loja.`;
+  }
+  return `O Facebook não entregou a permissão ${falta.join(', ')} para o GiroAuto. No app da Meta (developers.facebook.com > GiroAuto > Casos de uso), o caso de uso de Instagram precisa estar na opção "com login do Facebook" e ter ${falta.join(' e ')} adicionadas (botão Adicionar em Personalizar > Permissões). Depois clique em Conectar Facebook de novo no GiroAuto.`;
 }
 
 /* ---------------- Webmotors e OLX (assistidos) ---------------- */
@@ -203,4 +230,4 @@ function manualRemovals(vehicleId) {
     .map((r) => ({ channel: r.channel, label: CHANNELS[r.channel]?.label || r.channel, url: r.url || CHANNELS[r.channel]?.url || '' }));
 }
 
-module.exports = { CHANNELS, listingsOf, caption, fields, publishInstagram, markPublished, unmark, manualRemovals, adTitle };
+module.exports = { grantedPermissions, permissionHelp, CHANNELS, listingsOf, caption, fields, publishInstagram, markPublished, unmark, manualRemovals, adTitle };

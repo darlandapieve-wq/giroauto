@@ -493,6 +493,13 @@ test('v1.7: Instagram, Webmotors, OLX e exclusão do veículo', async () => {
   assert.match(carousel.params.caption, /#volkswagen/);
   assert.ok(mock.calls.find((c) => c.path === '/ig_1/media_publish'));
 
+  // Permissões: lista o que foi concedido; sem permissão de publicar, explica o que falta.
+  r = await api('GET', '/api/meta/permissions');
+  assert.ok(r.body.granted.includes('instagram_content_publish'));
+  const ch = require('../src/channels');
+  assert.match(ch.permissionHelp({ granted: ['instagram_basic'], declined: [] }), /instagram_content_publish/);
+  assert.match(ch.permissionHelp({ granted: ['instagram_basic'], declined: ['instagram_content_publish'] }), /Editar acesso/);
+
   r = await api('POST', `/api/vehicles/${id}/listings/olx`, { url: 'https://www.webmotors.com.br/x' });
   assert.equal(r.status, 400, 'link de outro site é recusado');
   r = await api('POST', `/api/vehicles/${id}/listings/olx`, { url: 'https://pr.olx.com.br/regiao-de-maringa/autos/fox-123' });
