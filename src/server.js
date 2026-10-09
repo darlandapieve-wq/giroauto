@@ -13,6 +13,8 @@ const { MetaError } = require('./meta/graph');
 const pages = require('./pages');
 const settings = require('./settings');
 const storage = require('./storage');
+const arts = require('./arts');
+const channels = require('./channels');
 
 const app = express();
 app.disable('x-powered-by');
@@ -165,7 +167,7 @@ function metaAppInfo() {
     terms_url: `${config.publicUrl}/termos`,
     https: config.publicUrl.startsWith('https://'),
     scopes: config.meta.scopes,
-    optional_scopes: Object.entries(config.meta.optionalScopes).map(([key, label]) => ({ key, label, enabled: config.meta.extraScopes.includes(key) })),
+    optional_scopes: Object.entries(config.meta.optionalScopes).map(([key, o]) => ({ key, label: o.label, scopes: o.scopes, enabled: config.meta.extraScopes.includes(key) })),
   };
 }
 
@@ -185,6 +187,28 @@ app.put('/api/admin/meta-app', requireAdmin, wrap(async (req, res) => {
   settings.saveMetaApp(appId, appSecret);
   logEvent(req.user.storeId, 'App da Meta configurado no painel');
   res.json(metaAppInfo());
+}));
+
+/* ---- IA de imagens (Google Gemini) ---- */
+function aiInfo() {
+  const g = settings.gemini();
+  return { configured: !!g.key, source: g.source, model: g.model, default_model: require('./arts/gemini').DEFAULT_MODEL, auto: g.auto };
+}
+app.get('/api/admin/ai', requireAdmin, (req, res) => res.json(aiInfo()));
+app.put('/api/admin/ai', requireAdmin, wrap(async (req, res) => {
+  const b = req.body || {};
+  const key = b.key !== undefined ? String(b.key).trim() : undefined;
+  if (key) {
+    if (!/^[A-Za-z0-9_.\-]{20,120}$/.test(key)) throw fail(400, 'Essa não parece uma chave da IA do Google. Copie de novo no Google AI Studio (botão "Copiar" ao lado da chave).');
+    try { await require('./arts/gemini').checkKey(key); }
+    catch (e) { throw fail(400, `O Google não aceitou a chave: ${e.message}`); }
+  }
+  const model = b.model !== undefined ? String(b.model).trim().replace(/^models\//, '').slice(0, 80) : undefined;
+  if (model && !/^[a-z0-9.\-]+$/.test(model)) throw fail(400, 'Nome de modelo inválido.');
+  settings.saveGemini({ key, model, auto: b.auto === undefined ? undefined : !!b.auto });
+  if (key || b.auto) arts.backfill();
+  logEvent(req.user.storeId, 'IA de imagens configurada no painel');
+  res.json(aiInfo());
 }));
 
 app.get('/api/admin/storage', requireAdmin, (req, res) => res.json(storage.status()));
@@ -262,6 +286,7 @@ app.post('/api/vehicles', auth.requireUser, (req, res) => {
   const r = run(`INSERT INTO vehicles (store_id, ${cols.join(',')}) VALUES (?, ${cols.map(() => '?').join(',')})`,
     req.user.storeId, ...cols.map((k) => d[k]));
   logEvent(req.user.storeId, `${d.marca} ${d.modelo} cadastrado`);
+  arts.schedule(r.lastInsertRowid);
   res.status(201).json(V.serialize(V.findVehicle(req.user.storeId, r.lastInsertRowid)));
 });
 
@@ -271,17 +296,22 @@ app.put('/api/vehicles/:id', auth.requireUser, (req, res) => {
   if (!d.marca || !d.modelo) throw fail(400, 'Informe ao menos marca e modelo.');
   const cols = Object.keys(d);
   run(`UPDATE vehicles SET ${cols.map((k) => `${k}=?`).join(',')}, updated_at=datetime('now') WHERE id=?`, ...cols.map((k) => d[k]), v.id);
+  arts.schedule(v.id);
   res.json(V.serialize(V.findVehicle(req.user.storeId, v.id)));
 });
 
+// Exclui o veículo (em estoque, rascunho ou vendido) com fotos e imagens geradas.
+// Anúncios que continuam no ar em outros sites são devolvidos para a loja retirar.
 app.delete('/api/vehicles/:id', auth.requireUser, wrap(async (req, res) => {
   const v = own(req);
-  if (v.status === 'publicado') throw fail(409, 'Este veículo está publicado. Marque como vendido para retirar o anúncio.');
-  const names = all('SELECT filename FROM photos WHERE vehicle_id = ?', v.id).map((p) => p.filename);
+  const remover = v.status === 'vendido' ? [] : channels.manualRemovals(v.id);
+  if (v.status === 'publicado') remover.unshift({ channel: 'marketplace', label: 'Facebook Marketplace', url: v.fb_listing_url || 'https://www.facebook.com/marketplace/you/selling' });
+  const names = [...all('SELECT filename FROM photos WHERE vehicle_id = ?', v.id).map((p) => p.filename), ...arts.filesOf(v.id)];
   run('DELETE FROM vehicles WHERE id = ?', v.id);
   names.forEach((n) => require('node:fs').rm(path.join(config.dataDir, 'media', n), () => {}));
   await storage.removeMedia(names).catch(() => {});
-  res.json({ ok: true });
+  logEvent(req.user.storeId, `${v.marca} ${v.modelo} ${v.versao} excluído`);
+  res.json({ ok: true, remover });
 }));
 
 // Marca como "pronto para publicar" quando o cadastro está completo.
@@ -312,6 +342,7 @@ app.post('/api/vehicles/:id/photos', auth.requireUser, upload.array('fotos', 20)
   let pos = (get('SELECT MAX(position) m FROM photos WHERE vehicle_id = ?', v.id).m ?? -1) + 1;
   for (const f of files) run('INSERT INTO photos (vehicle_id, filename, mime, position) VALUES (?, ?, ?, ?)', v.id, f.filename, f.mimetype, pos++);
   run(`UPDATE vehicles SET updated_at=datetime('now') WHERE id=?`, v.id);
+  arts.schedule(v.id);
   res.json(V.serialize(V.findVehicle(req.user.storeId, v.id)));
 }));
 
@@ -321,6 +352,7 @@ app.put('/api/vehicles/:id/photos/order', auth.requireUser, (req, res) => {
   const existing = new Set(V.photosOf(v.id).map((p) => p.id));
   if (ids.length !== existing.size || !ids.every((i) => existing.has(i))) throw fail(400, 'Lista de fotos inválida.');
   tx(() => ids.forEach((pid, i) => run('UPDATE photos SET position = ? WHERE id = ?', i, pid)));
+  arts.schedule(v.id);
   res.json(V.serialize(V.findVehicle(req.user.storeId, v.id)));
 });
 
@@ -331,6 +363,8 @@ app.delete('/api/vehicles/:id/photos/:pid', auth.requireUser, (req, res) => {
   run('DELETE FROM photos WHERE id = ?', p.id);
   require('node:fs').rm(path.join(config.dataDir, 'media', p.filename), () => {});
   storage.removeMedia([p.filename]).catch(() => {});
+  run('UPDATE arts SET photo_id = NULL WHERE vehicle_id = ? AND photo_id = ?', v.id, p.id);
+  arts.schedule(v.id);
   res.json(V.serialize(V.findVehicle(req.user.storeId, v.id)));
 });
 
@@ -341,9 +375,16 @@ app.get('/api/vehicles/:id/photos.zip', auth.requireUser, wrap(async (req, res) 
   if (!photos.length) throw fail(404, 'Este veículo não tem fotos.');
   const fs = require('node:fs');
   const files = [];
-  for (const [i, p] of photos.entries()) {
+  // ?artes=1: a arte e as imagens no estacionamento vêm primeiro; ?so=artes: só elas.
+  if (req.query.artes === '1' || req.query.so === 'artes') {
+    for (const [i, f] of arts.readyFiles(v.id).entries()) {
+      const file = await storage.ensureLocal(f);
+      if (file) files.push({ name: `${i === 0 ? 'arte' : 'estacionamento'}-${String(i + 1).padStart(2, '0')}.jpg`, data: fs.readFileSync(file) });
+    }
+  }
+  if (req.query.so !== 'artes') for (const [i, p] of photos.entries()) {
     const file = await storage.ensureLocal(p.filename);
-    if (file) files.push({ name: `${String(i + 1).padStart(2, '0')}${path.extname(p.filename)}`, data: fs.readFileSync(file) });
+    if (file) files.push({ name: `foto-${String(i + 1).padStart(2, '0')}${path.extname(p.filename)}`, data: fs.readFileSync(file) });
   }
   if (!files.length) throw fail(404, 'As fotos deste veículo não foram encontradas.');
   const base = `${v.marca}-${v.modelo}-${v.ano_modelo || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -426,7 +467,51 @@ app.post('/api/vehicles/:id/sold', auth.requireUser, (req, res) => {
   logEvent(req.user.storeId, `${v.marca} ${v.modelo} ${v.versao} marcado como vendido`);
   const campanhas = all(`SELECT c.id, c.name FROM campaigns c JOIN campaign_vehicles cv ON cv.campaign_id = c.id
     WHERE cv.vehicle_id = ? AND c.status IN ('ativa','analise')`, v.id);
-  res.json({ ok: true, campanhas_ativas: campanhas, excluir_manual: wasPublished && pubMode !== 'extensao', listing_url: v.fb_listing_url || '' });
+  res.json({ ok: true, campanhas_ativas: campanhas, excluir_manual: wasPublished && pubMode !== 'extensao', listing_url: v.fb_listing_url || '', remover: channels.manualRemovals(v.id) });
+});
+
+/* ---- Imagens geradas (arte + estacionamento) ---- */
+
+app.get('/api/vehicles/:id/arts', auth.requireUser, (req, res) => res.json(arts.listArts(own(req).id)));
+
+app.post('/api/vehicles/:id/arts/regenerate', auth.requireUser, (req, res) => {
+  const v = own(req);
+  if (v.status === 'vendido') throw fail(409, 'Veículo vendido: as imagens não são mais geradas.');
+  if (!V.photosOf(v.id).length) throw fail(400, 'Cadastre as fotos do veículo primeiro.');
+  const slots = (Array.isArray(req.body?.slots) && req.body.slots.length ? req.body.slots : [1, 2, 3, 4, 5]).map(Number).filter((n) => n >= 1 && n <= 5);
+  if (slots.some((n) => n > 1) && !settings.gemini().key) {
+    if (!slots.includes(1)) throw fail(400, 'Configure a chave da IA do Google em Configurações > Imagens com IA para gerar as fotos no estacionamento.');
+  }
+  for (const n of slots) run(`UPDATE arts SET status = 'pendente', error = '' WHERE vehicle_id = ? AND slot = ? AND status != 'gerando'`, v.id, n);
+  arts.schedule(v.id, { force: slots, delay: 100 });
+  res.json(arts.listArts(v.id));
+});
+
+app.put('/api/vehicles/:id/arts/:slot/source', auth.requireUser, (req, res) => {
+  const v = own(req);
+  arts.setSource(v.id, Number(req.params.slot), req.body?.photo_id ? Number(req.body.photo_id) : null);
+  res.json(arts.listArts(v.id));
+});
+
+/* ---- Outros canais: Instagram, Webmotors e OLX ---- */
+
+app.get('/api/vehicles/:id/channel-data', auth.requireUser, (req, res) => {
+  const v = own(req);
+  const store = get('SELECT * FROM stores WHERE id = ?', req.user.storeId);
+  res.json({ caption: channels.caption(v, store), fields: channels.fields(v, store), listings: channels.listingsOf(v.id), links: Object.fromEntries(Object.entries(channels.CHANNELS).map(([k, c]) => [k, c.url])) });
+});
+
+app.post('/api/vehicles/:id/instagram', auth.requireUser, wrap(async (req, res) => {
+  const v = own(req);
+  res.json(await channels.publishInstagram(req.user.storeId, v.id, { caption: req.body?.caption }));
+}));
+
+app.post('/api/vehicles/:id/listings/:channel', auth.requireUser, (req, res) => {
+  res.json(channels.markPublished(req.user.storeId, own(req).id, req.params.channel, req.body?.url));
+});
+
+app.delete('/api/vehicles/:id/listings/:channel', auth.requireUser, (req, res) => {
+  res.json(channels.unmark(req.user.storeId, own(req).id, req.params.channel));
 });
 
 app.get('/api/jobs', auth.requireUser, (req, res) => {

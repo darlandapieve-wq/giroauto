@@ -23,12 +23,14 @@ function applyMetaApp() {
 }
 
 function applyScopes() {
+  const legacy = { catalog_management: 'catalogo', instagram_basic: 'instagram' }; // nomes da v1.6.1
   const v = read('meta_extra_scopes') || '';
-  config.meta.extraScopes = v.split(',').filter((x) => x && config.meta.optionalScopes[x]);
+  config.meta.extraScopes = [...new Set(v.split(',').map((x) => legacy[x] || x).filter((x) => x && config.meta.optionalScopes[x]))];
 }
 
 function saveExtraScopes(list) {
-  const clean = [...new Set((list || []).filter((x) => config.meta.optionalScopes[x]))];
+  const legacy = { catalog_management: 'catalogo', instagram_basic: 'instagram' };
+  const clean = [...new Set((list || []).map((x) => legacy[x] || x).filter((x) => config.meta.optionalScopes[x]))];
   write('meta_extra_scopes', clean.join(','));
   applyScopes();
 }
@@ -44,7 +46,25 @@ function clearMetaApp() {
   applyMetaApp();
 }
 
+/* IA de imagens (Google Gemini) */
+function gemini() {
+  const enc = read('gemini_key_enc');
+  let key = '';
+  try { key = enc ? decrypt(enc) : ''; } catch { key = ''; }
+  return {
+    key: key || process.env.GEMINI_API_KEY || '',
+    source: key ? 'painel' : (process.env.GEMINI_API_KEY ? 'env' : ''),
+    model: read('gemini_model') || process.env.GEMINI_MODEL || '',
+    auto: read('gemini_auto') !== '0',
+  };
+}
+function saveGemini({ key, model, auto }) {
+  if (key !== undefined) write('gemini_key_enc', key ? encrypt(key) : '');
+  if (model !== undefined) write('gemini_model', model || '');
+  if (auto !== undefined) write('gemini_auto', auto ? '1' : '0');
+}
+
 applyMetaApp();
 applyScopes();
 
-module.exports = { applyMetaApp, saveMetaApp, clearMetaApp, saveExtraScopes, applyScopes };
+module.exports = { applyMetaApp, saveMetaApp, clearMetaApp, saveExtraScopes, applyScopes, gemini, saveGemini };

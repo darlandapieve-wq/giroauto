@@ -15,7 +15,7 @@ function isConfigured() {
 }
 
 function scopeList() {
-  return [...config.meta.scopes, ...(config.meta.extraScopes || [])];
+  return [...new Set([...config.meta.scopes, ...(config.meta.extraScopes || []).flatMap((k) => config.meta.optionalScopes[k]?.scopes || [])])];
 }
 
 function connectUrl(state) {
@@ -167,7 +167,7 @@ async function setupCatalog(storeId) {
         vertical: 'vehicles',
       });
     } catch (e) {
-      if (!(config.meta.extraScopes || []).includes('catalog_management') || /permission|permiss|\(#(10|200|294)\)/i.test(e.message)) {
+      if (!(config.meta.extraScopes || []).includes('catalogo') || /permission|permiss|\(#(10|200|294)\)/i.test(e.message)) {
         throw httpError(400, 'O Facebook não deu permissão para criar catálogos. O administrador precisa adicionar o caso de uso "Gerenciar catálogos" no app da Meta, ligar "Catálogo de veículos" em Configurações > App da Meta e conectar o Facebook de novo. Os modos WhatsApp e Messenger funcionam sem catálogo.');
       }
       throw e;
@@ -507,6 +507,6 @@ async function refreshStats(storeId, campaignId) {
 }
 
 module.exports = {
-  MODES, isConfigured, connectUrl, exchangeCode, saveConnection, publicStatus, listAssets, saveSettings,
+  MODES, isConfigured, tokenFor, connectUrl, exchangeCode, saveConnection, publicStatus, listAssets, saveSettings,
   searchCities, searchInterests, reachEstimate, POSITIONS, DEFAULT_POSITIONS, setupCatalog, syncCatalog, launchCampaign, setCampaignStatus, refreshStats, httpError, buildTargeting,
 };

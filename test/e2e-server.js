@@ -11,7 +11,7 @@ const mockServer = mock.app.listen(4555, () => {
   Object.assign(process.env, {
     GIROAUTO_SKIP_ENV: '1', DATA_DIR: tmp, GIROAUTO_DB: path.join(tmp, 'e2e.db'),
     META_APP_ID: 'e2e', META_APP_SECRET: 'e2e', META_GRAPH_URL: 'http://127.0.0.1:4555', META_DIALOG_URL: 'http://127.0.0.1:4555',
-    PUBLIC_URL: 'http://127.0.0.1:4556', PORT: '4556',
+    PUBLIC_URL: 'http://127.0.0.1:4556', PORT: '4556', GEMINI_URL: 'http://127.0.0.1:4555',
   });
   const app = require('../src/server');
   app.listen(4556, () => console.log('e2e pronto em http://127.0.0.1:4556 (Meta simulada na 4555)'));

@@ -180,6 +180,30 @@ addColumn('campaigns', 'interests_json', "TEXT NOT NULL DEFAULT '[]'");
 addColumn('campaigns', 'placements', "TEXT NOT NULL DEFAULT 'manual'");
 addColumn('campaigns', 'positions_json', "TEXT NOT NULL DEFAULT ''");
 addColumn('users', 'is_admin', 'INTEGER NOT NULL DEFAULT 0');
+// Imagens geradas para cada veículo (v1.7): 1 = arte com preço e dados, 2 a 5 = estacionamento (IA).
+db.exec(`CREATE TABLE IF NOT EXISTS arts (
+  vehicle_id INTEGER NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
+  slot INTEGER NOT NULL,
+  filename TEXT DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pendente',
+  error TEXT DEFAULT '',
+  source_key TEXT DEFAULT '',
+  photo_id INTEGER,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (vehicle_id, slot)
+)`);
+// Publicações em outros canais (v1.7): instagram, webmotors, olx.
+db.exec(`CREATE TABLE IF NOT EXISTS listings (
+  vehicle_id INTEGER NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
+  channel TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'publicado',
+  url TEXT DEFAULT '',
+  external_id TEXT DEFAULT '',
+  error TEXT DEFAULT '',
+  published_at TEXT,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (vehicle_id, channel)
+)`);
 db.exec(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')))`);
 if (!db.prepare('SELECT 1 FROM users WHERE is_admin = 1').get()) {
   db.exec('UPDATE users SET is_admin = 1 WHERE id = (SELECT MIN(id) FROM users)');

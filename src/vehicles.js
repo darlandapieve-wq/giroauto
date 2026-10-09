@@ -33,6 +33,8 @@ function serialize(v) {
     titulo: title(v),
     photos,
     dias_publicado: v.status === 'publicado' ? daysSince(v.publicado_em) : 0,
+    artes: require('./arts').listArts(v.id),
+    canais: require('./channels').listingsOf(v.id),
     pode_republicar: v.status === 'publicado' && daysSince(v.publicado_em) >= config.republishDays,
   };
 }

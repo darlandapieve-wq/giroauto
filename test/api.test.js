@@ -143,9 +143,9 @@ test('conexão com a Meta e campanha no WhatsApp', async () => {
   assert.match(loc.searchParams.get('scope'), /ads_management/);
   // O caso de uso "API de Marketing" rejeita estas permissões ("Invalid Scopes"); só vão se o administrador ligar.
   assert.doesNotMatch(loc.searchParams.get('scope'), /catalog_management|pages_manage_ads|instagram_basic/);
-  let sc = await api('PUT', '/api/admin/meta-app/scopes', { scopes: ['catalog_management', 'pages_manage_ads'] });
+  let sc = await api('PUT', '/api/admin/meta-app/scopes', { scopes: ['catalogo', 'pages_manage_ads'] });
   assert.equal(sc.status, 200);
-  assert.deepEqual(sc.body.optional_scopes.filter((o) => o.enabled).map((o) => o.key), ['catalog_management']);
+  assert.deepEqual(sc.body.optional_scopes.filter((o) => o.enabled).map((o) => o.key), ['catalogo']);
   r = await api('GET', '/api/meta/connect');
   assert.match(new URL(r.headers.get('location')).searchParams.get('scope'), /catalog_management/);
   assert.doesNotMatch(new URL(r.headers.get('location')).searchParams.get('scope'), /pages_manage_ads/);
@@ -360,4 +360,130 @@ test('público personalizado, interesses, posicionamentos e alcance estimado', a
   assert.equal(t.age_min, 25, 'idade mínima limitada a 25 no Advantage+');
   assert.equal(t.publisher_platforms, undefined, 'posicionamento automático');
   assert.ok(adset.params.start_time.startsWith(amanha), 'começa na data escolhida');
+});
+
+test('v1.7: imagens geradas (arte e estacionamento com IA)', async () => {
+  const arts = require('../src/arts');
+  process.env.GEMINI_URL = `http://127.0.0.1:${mockServer.address().port}`;
+  let r = await api('POST', '/api/vehicles', { marca: 'Volkswagen', modelo: 'Fox', versao: 'Track 1.6', ano_fab: 2015, ano_modelo: 2016, km: 98500, preco: 54900, cambio: 'Manual', combustivel: 'Flex', cor: 'Prata', carroceria: 'Hatch' });
+  const id = r.body.id;
+  const fd = new FormData();
+  for (const n of ['a', 'b', 'c']) fd.append('fotos', new Blob([JPG], { type: 'image/jpeg' }), `${n}.jpg`);
+  await api('POST', `/api/vehicles/${id}/photos`, fd);
+  await arts.idle();
+  r = await api('GET', `/api/vehicles/${id}/arts`);
+  assert.equal(r.body[0].status, 'pronta', JSON.stringify(r.body[0]));
+  assert.match(r.body[0].url, /\/media\/[a-f0-9]{32}\.jpg$/);
+  assert.ok(r.body.slice(1).every((a) => a.status === 'sem_chave'), 'sem a chave da IA, as fotos no estacionamento aguardam');
+  const card1 = r.body[0].filename;
+  const img = await fetch(base + '/media/' + card1);
+  assert.equal(img.status, 200);
+  const buf = Buffer.from(await img.arrayBuffer());
+  assert.equal(buf.readUInt16BE(0), 0xffd8, 'arte em JPEG');
+
+  // Mudar o preço refaz a arte (e só ela).
+  await api('PUT', `/api/vehicles/${id}`, { marca: 'Volkswagen', modelo: 'Fox', versao: 'Track 1.6', ano_fab: 2015, ano_modelo: 2016, km: 98500, preco: 52900, cambio: 'Manual', combustivel: 'Flex', cor: 'Prata', carroceria: 'Hatch' });
+  await arts.idle();
+  r = await api('GET', `/api/vehicles/${id}/arts`);
+  assert.notEqual(r.body[0].filename, card1);
+  assert.equal((await fetch(base + '/media/' + card1)).status, 404, 'arte antiga apagada');
+
+  // Chave da IA: inválida é recusada; válida libera as imagens 2 a 5.
+  r = await api('PUT', '/api/admin/ai', { key: 'AIzaERRADA12345678901234567890123456' });
+  assert.equal(r.status, 400);
+  r = await api('PUT', '/api/admin/ai', { key: 'AIzaTESTKEY1234567890123456789012345', auto: true });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.configured, true);
+  r = await api('POST', `/api/vehicles/${id}/arts/regenerate`, { slots: [2, 3, 4, 5] });
+  assert.equal(r.status, 200);
+  await arts.idle();
+  r = await api('GET', `/api/vehicles/${id}/arts`);
+  assert.ok(r.body.every((a) => a.status === 'pronta'), JSON.stringify(r.body));
+  const calls = mock.state.geminiCalls;
+  assert.ok(calls.length >= 4, 'gera as 4 imagens (e as dos outros veículos em estoque)');
+  assert.equal(calls[0].model, 'gemini-nano-banana-2.1');
+  const parts = calls[0].body.contents[0].parts;
+  assert.match(parts[0].text, /parking/);
+  assert.match(parts[0].text, /Keep the exact same car/);
+  assert.equal(parts[1].inline_data.mime_type, 'image/jpeg');
+  assert.equal(calls[0].body.generationConfig.responseFormat.image.aspectRatio, '4:5');
+
+  // Trocar a foto de origem de uma imagem refaz só ela; erro de cota aparece para a loja.
+  const v = await api('GET', `/api/vehicles/${id}`);
+  mock.state.geminiFail = true;
+  r = await api('PUT', `/api/vehicles/${id}/arts/3/source`, { photo_id: v.body.photos[2].id });
+  assert.equal(r.status, 200);
+  await arts.idle();
+  r = await api('GET', `/api/vehicles/${id}/arts`);
+  assert.equal(r.body[2].status, 'erro');
+  assert.match(r.body[2].error, /Limite de uso/);
+  assert.equal(r.body[2].photo_id, v.body.photos[2].id);
+  assert.equal(r.body[1].status, 'pronta');
+  mock.state.geminiFail = false;
+
+  // Zip com as imagens geradas.
+  const z = await fetch(`${base}/api/vehicles/${id}/photos.zip?so=artes`, { headers: { cookie } });
+  assert.equal(z.status, 200);
+  assert.match(Buffer.from(await z.arrayBuffer()).toString('latin1'), /arte-01\.jpg/);
+  globalThis.__foxId = id;
+});
+
+test('v1.7: Instagram, Webmotors, OLX e exclusão do veículo', async () => {
+  const id = globalThis.__foxId;
+  process.env.IG_POLL_MS = '10';
+  mock.calls.length = 0;
+  let r = await api('GET', `/api/vehicles/${id}/channel-data`);
+  assert.match(r.body.caption, /Volkswagen Fox/);
+  assert.match(r.body.caption, /R\$ 52\.900/);
+  assert.ok(r.body.fields.find((f) => f.label === 'Quilometragem' && f.value === '98500'));
+
+  r = await api('POST', `/api/vehicles/${id}/instagram`, {});
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.instagram.status, 'publicando');
+  for (let i = 0; i < 100; i++) {
+    r = await api('GET', `/api/vehicles/${id}`);
+    if (r.body.canais.instagram?.status !== 'publicando') break;
+    await new Promise((res) => setTimeout(res, 50));
+  }
+  assert.equal(r.body.canais.instagram.status, 'publicado', JSON.stringify(r.body.canais));
+  assert.equal(r.body.canais.instagram.url, 'https://www.instagram.com/p/TESTE123/');
+  const items = mock.calls.filter((c) => c.path === '/ig_1/media' && c.params.is_carousel_item);
+  assert.equal(items.length, 7, 'arte + 3 imagens no estacionamento prontas (uma deu erro) + 3 fotos');
+  assert.match(items[0].params.image_url, /\/media\/[a-f0-9]{32}\.jpg$/);
+  const carousel = mock.calls.find((c) => c.path === '/ig_1/media' && c.params.media_type === 'CAROUSEL');
+  assert.equal(carousel.params.children.split(',').length, 7);
+  assert.match(carousel.params.caption, /#volkswagen/);
+  assert.ok(mock.calls.find((c) => c.path === '/ig_1/media_publish'));
+
+  r = await api('POST', `/api/vehicles/${id}/listings/olx`, { url: 'https://www.webmotors.com.br/x' });
+  assert.equal(r.status, 400, 'link de outro site é recusado');
+  r = await api('POST', `/api/vehicles/${id}/listings/olx`, { url: 'https://pr.olx.com.br/regiao-de-maringa/autos/fox-123' });
+  assert.equal(r.status, 200);
+  r = await api('POST', `/api/vehicles/${id}/listings/webmotors`, { url: '' });
+  assert.equal(r.status, 200);
+  r = await api('GET', `/api/vehicles/${id}`);
+  assert.deepEqual(Object.keys(r.body.canais).sort(), ['instagram', 'olx', 'webmotors']);
+  r = await api('DELETE', `/api/vehicles/${id}/listings/webmotors`);
+  assert.equal(r.body.webmotors, undefined);
+
+  // Vendido: lembra de retirar os anúncios dos outros sites.
+  r = await api('POST', `/api/vehicles/${id}/sold`);
+  assert.deepEqual(r.body.remover.map((x) => x.channel).sort(), ['instagram', 'olx']);
+
+  // Excluir o vendido apaga tudo, inclusive as imagens geradas.
+  const artFile = (await api('GET', `/api/vehicles/${id}/arts`)).body[0].filename;
+  r = await api('DELETE', `/api/vehicles/${id}`);
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.remover, []);
+  assert.equal((await api('GET', `/api/vehicles/${id}`)).status, 404);
+  assert.equal((await fetch(base + '/media/' + artFile)).status, 404);
+
+  // Excluir um veículo publicado é permitido e devolve o anúncio do Marketplace para retirar.
+  r = await api('POST', '/api/vehicles', { marca: 'Fiat', modelo: 'Uno', ano_modelo: 2015, km: 1000, preco: 30000 });
+  const uno = r.body.id;
+  await api('POST', `/api/vehicles/${uno}/mark-published`, { listing_url: 'https://www.facebook.com/marketplace/item/123/' });
+  r = await api('DELETE', `/api/vehicles/${uno}`);
+  assert.equal(r.status, 200);
+  assert.equal(r.body.remover[0].channel, 'marketplace');
+  assert.equal(r.body.remover[0].url, 'https://www.facebook.com/marketplace/item/123/');
 });

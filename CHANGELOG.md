@@ -2,6 +2,23 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v1.7 — 09/10/2026
+
+**Excluir veículo, imagens de divulgação e novos canais (Instagram, Webmotors e OLX)**
+
+- **Excluir** veículos em estoque, rascunhos e vendidos, com janela de confirmação. Fotos e imagens geradas são apagadas junto. Se o carro ainda tiver anúncio no ar, o painel mostra os links para retirar.
+- **Pacote de 5 imagens** para cada veículo, gerado sozinho depois de salvar com fotos:
+  - **Imagem 1: arte com preço** no estilo de post de loja (marca, modelo, motor e ano, preço em destaque, itens do veículo, três fotos menores e contato da loja). Atualiza sozinha quando o preço ou os dados mudam. Sem custo.
+  - **Imagens 2 a 5: o carro num estacionamento vazio**, editadas pela IA de imagens do Google (cerca de US$ 0,034 por imagem). A loja escolhe a foto de origem de cada uma e pode refazer.
+  - Download de todas em .zip. Administrador configura a chave em **Configurações > Imagens com IA**.
+- **Divulgar** (novo botão no estoque):
+  - **Instagram**: publica um carrossel (arte, imagens geradas e fotos, até 10) com legenda pronta e editável.
+  - **Webmotors e OLX**: fotos e imagens em .zip, dados prontos para copiar, link para o site e registro do link do anúncio.
+- Etiquetas INSTAGRAM, WEBMOTORS e OLX no estoque. Ao marcar como vendido, lembrete com os links para retirar os anúncios.
+- Nova permissão opcional "Publicar no Instagram" em Configurações > App da Meta.
+
+Arquivos alterados: `src/arts/card.js` (novo), `src/arts/gemini.js` (novo), `src/arts/index.js` (novo), `src/channels.js` (novo), `assets/fonts/` (novo), `src/server.js`, `src/db.js`, `src/settings.js`, `src/config.js`, `src/vehicles.js`, `src/meta/service.js`, `src/start.js`, `src/pages.js`, `public/app.js`, `public/app.css`, `Dockerfile`, `package.json`, `test/api.test.js`, `test/mock-graph.js`, `test/e2e-server.js`, `CHANGELOG.md`, `README.md`.
+
 ## v1.6.2 — 06/10/2026
 
 - Quando a Meta recusa um anúncio porque o app ainda está em **modo de desenvolvimento**, o painel explica como mudar o app para o modo Ativo e tentar de novo.

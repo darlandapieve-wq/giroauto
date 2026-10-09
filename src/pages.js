@@ -72,7 +72,7 @@ const legal = (title, html) => shell(`${title} · GiroAuto`, `<h1>${title}</h1><
 const privacy = () => legal('Política de privacidade', `
 <p>O GiroAuto é um painel usado por lojas de veículos para cadastrar o estoque e anunciar no Facebook e no Instagram.</p>
 <p><b>Dados que coletamos.</b> Da loja: nome, e-mail e senha de acesso (guardada com criptografia de mão única), dados de contato, veículos e fotos cadastrados. Quando a loja conecta a conta do Facebook, recebemos um token de acesso, o nome do usuário do Facebook e os identificadores da Página, da conta do Instagram, da conta de anúncios e do portfólio empresarial escolhidos pela loja.</p>
-<p><b>Como usamos.</b> Somente para executar o que a loja pede no painel: criar e acompanhar campanhas de anúncios, manter o catálogo de veículos e exibir a vitrine pública dos veículos. Não vendemos nem compartilhamos dados com terceiros, exceto com a Meta, para executar essas ações.</p>
+<p><b>Como usamos.</b> Somente para executar o que a loja pede no painel: criar e acompanhar campanhas de anúncios, publicar os veículos no Facebook e no Instagram, manter o catálogo de veículos, gerar imagens de divulgação e exibir a vitrine pública dos veículos. Não vendemos nem compartilhamos dados com terceiros, exceto com a Meta (anúncios, Facebook e Instagram) e, quando a loja usa as imagens com IA, com o Google, que recebe somente as fotos dos veículos para editá-las.</p>
 <p><b>Armazenamento.</b> Os dados ficam no servidor do GiroAuto. O token do Facebook é guardado criptografado e pode ser revogado a qualquer momento pela loja no painel (Desconectar) ou nas configurações do Facebook.</p>
 <p><b>Exclusão.</b> Veja como pedir a exclusão em <a href="/exclusao-de-dados">exclusão de dados</a>.</p>`);
 

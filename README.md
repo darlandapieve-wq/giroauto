@@ -94,7 +94,7 @@ Crie a conta da loja na tela inicial ("Criar conta"). Os dados ficam na pasta `d
 2. Adicione o produto **Login do Facebook para Empresas**. Em "URIs de redirecionamento do OAuth válidos", cadastre:
    `PUBLIC_URL/api/meta/callback` (por exemplo `http://localhost:3333/api/meta/callback` no teste local).
 3. Copie o **ID do app** e a **Chave secreta do app** (Configurações > Básico) para `META_APP_ID` e `META_APP_SECRET` no `.env`.
-4. Permissões pedidas no login: `ads_management`, `ads_read`, `business_management`, `pages_show_list`, `pages_read_engagement` (aceitas pelo caso de uso "API de Marketing"). Opcionais, ligadas pelo administrador em Configurações > App da Meta depois de adicionar o caso de uso correspondente: `catalog_management` (catálogo dinâmico) e `instagram_basic` (nome do perfil do Instagram).
+4. Permissões pedidas no login: `ads_management`, `ads_read`, `business_management`, `pages_show_list`, `pages_read_engagement` (aceitas pelo caso de uso "API de Marketing"). Opcionais, ligadas pelo administrador em Configurações > App da Meta depois de adicionar o caso de uso correspondente: `catalog_management` (catálogo dinâmico) e `instagram_basic` + `instagram_content_publish` (publicar posts no Instagram).
    Se preferir uma "configuração" do Login para Empresas, informe o ID em `META_LOGIN_CONFIG_ID`.
 
 **Modo de desenvolvimento:** enquanto o app estiver em desenvolvimento, só contas com função no app (administrador, desenvolvedor ou testador) conseguem conectar. Para testar com a sua própria loja isso basta. Para vender o GiroAuto para outras lojas, a Meta exige verificação da empresa e análise do app (acesso avançado a `ads_management` e às demais permissões).
@@ -120,6 +120,19 @@ Em todos os tipos: posicionamentos no Facebook (feed, Marketplace, stories) e no
 O botão "Criar catálogo de veículos" cria um catálogo com vertical `vehicles` no portfólio empresarial e um feed que a Meta lê a cada hora em `PUBLIC_URL/feed/<loja>.csv?k=<chave>`. Só entram no feed os veículos marcados "Catálogo para campanhas", com status pronto ou publicado e ao menos uma foto.
 
 A Meta precisa acessar esse endereço e as fotos pela internet, então o catálogo só funciona com `PUBLIC_URL` público em HTTPS (servidor publicado ou um túnel, por exemplo `cloudflared tunnel --url http://localhost:3333`). As campanhas de WhatsApp e Messenger funcionam também no teste local, porque as fotos são enviadas para a Meta pelo próprio servidor.
+
+## Imagens para divulgação (v1.7)
+
+Cada veículo com fotos ganha 5 imagens (1080×1350), geradas em segundo plano:
+
+1. **Arte com preço**: foto principal, marca, modelo, motor e ano, preço, itens do veículo e três fotos menores. Feita no próprio servidor (`src/arts/card.js`, fontes Oswald e Montserrat em `assets/fonts`, licença OFL), sem custo. É refeita quando o preço, os dados ou as primeiras fotos mudam.
+2. a 5. **O carro num estacionamento vazio**, editado pela IA de imagens do Google (Gemini). A loja escolhe qual foto vai em cada imagem. Exige a chave da API do Google AI Studio com faturamento ativo (Configurações > Imagens com IA, só administrador). Variáveis opcionais: `GEMINI_API_KEY`, `GEMINI_MODEL`.
+
+## Outros canais (v1.7)
+
+- **Instagram**: carrossel com a arte, as imagens geradas e as fotos (até 10), publicado pela API da Meta no perfil ligado à Página. Exige ligar "Publicar no Instagram" em Configurações > App da Meta (caso de uso de Instagram no app) e conectar o Facebook de novo.
+- **Webmotors e OLX**: publicação assistida (fotos em .zip, dados prontos para copiar, link do site) e registro do link do anúncio. A integração automática exige cadastro como integrador nessas plataformas (OLX: suporteintegrador@olxbr.com).
+- Ao vender ou excluir um veículo, o painel lista os anúncios que continuam no ar para a loja retirar.
 
 ## Publicação automática com um clique (v1.5)
 

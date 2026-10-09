@@ -233,6 +233,7 @@
         if (S.meta.connected && !S.meta.expired && S.meta.configured) S.assets = await api('GET', '/api/meta/assets').catch((e) => ({ error: e.message }));
         S.metaApp = S.me.user.is_admin ? await api('GET', '/api/admin/meta-app').catch(() => null) : null;
         S.storage = S.me.user.is_admin ? await api('GET', '/api/admin/storage').catch(() => null) : null;
+        S.ai = S.me.user.is_admin ? await api('GET', '/api/admin/ai').catch(() => null) : null;
         m.innerHTML = viewConfig();
       }
     } catch (e) { m.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
@@ -310,14 +311,14 @@
     if (v.status === 'publicado') acts += `<button class="btn sm ${v.pode_republicar ? 'primary' : ''}" data-act="republicar" data-id="${v.id}" type="button" ${busy ? 'disabled' : ''}>Republicar</button>`;
     if (v.status === 'pronto' && v.organico) acts += `<button class="btn sm primary" data-act="publicar" data-id="${v.id}" type="button" ${busy ? 'disabled' : ''}>Publicar</button>`;
     if (v.status === 'rascunho') acts += `<button class="btn sm" data-act="editar" data-id="${v.id}" type="button">Completar cadastro</button>`;
-    if (v.status !== 'vendido' && v.status !== 'rascunho') acts += `<button class="btn sm" data-act="editar" data-id="${v.id}" type="button">Editar</button><button class="btn sm danger" data-act="vendido" data-id="${v.id}" type="button">Vendido</button>`;
-    if (v.status === 'rascunho') acts += `<button class="btn sm ghost danger" data-act="excluir" data-id="${v.id}" type="button">Excluir</button>`;
+    if (v.status !== 'vendido' && v.status !== 'rascunho') acts += `<button class="btn sm" data-act="divulgar" data-id="${v.id}" type="button">Divulgar</button><button class="btn sm" data-act="editar" data-id="${v.id}" type="button">Editar</button><button class="btn sm danger" data-act="vendido" data-id="${v.id}" type="button">Vendido</button>`;
+    acts += `<button class="btn sm ghost danger" data-act="excluir" data-id="${v.id}" type="button" title="Excluir veículo">Excluir</button>`;
     return `<div class="row ${v.status === 'vendido' ? 'sold' : ''}">
       ${thumb(v)}
       <div style="min-width:0">
         <div class="title">${esc(v.marca)} ${esc(v.modelo)} <span class="sub">${esc(v.versao)}</span></div>
         <div class="meta-line">${plate(v.placa)}<span class="sub num">${esc(v.ano_fab || '?')}/${esc(v.ano_modelo || '?')} · ${km(v.km)}${v.cambio ? ' · ' + esc(v.cambio) : ''}</span></div>
-        <div class="meta-line"><span class="chan"><i class="${v.organico ? 'on' : ''}">ORGÂNICO</i><i class="${v.catalogo ? 'on' : ''}">CATÁLOGO</i></span>
+        <div class="meta-line"><span class="chan"><i class="${v.organico ? 'on' : ''}">ORGÂNICO</i><i class="${v.catalogo ? 'on' : ''}">CATÁLOGO</i>${CANAIS.map(([k, l]) => v.canais?.[k]?.status === 'publicado' ? `<i class="on">${l.toUpperCase()}</i>` : v.canais?.[k]?.status === 'publicando' ? `<i>${l.toUpperCase()}…</i>` : '').join('')}</span>
         ${v.fb_listing_url && v.status === 'publicado' ? `<a class="link sub" href="${esc(v.fb_listing_url)}" target="_blank" rel="noopener">Ver anúncio</a>` : ''}</div>
       </div>
       <div class="c-price"><div class="price">${brl(v.preco)}</div>${diff !== null ? `<div class="sub num">FIPE ${brl(v.fipe)} · ${diff < 0 ? '' : '+'}${brl(diff)}</div>` : ''}</div>
@@ -355,23 +356,38 @@
         await Promise.all([loadVehicles(), loadJobs()]);
         if (!manualMode() && v.status === 'publicado') extGo('A extensão está excluindo o anúncio do Marketplace.');
         render();
+        const extra = r.remover?.length ? `<p style="margin-top:4px">Retire também dos outros sites:</p>${removerHtml(r.remover)}` : '';
         if (r.excluir_manual) {
           modal(`<h3>Exclua o anúncio no Facebook</h3><p>O veículo foi marcado como vendido no painel. Agora retire o anúncio do Marketplace para não receber mais mensagens sobre ele.</p>
             <div class="btnrow"><a class="btn primary" href="${esc(r.listing_url || FB_SELLING)}" target="_blank" rel="noopener">${r.listing_url ? 'Abrir o anúncio' : 'Abrir Seus anúncios'}</a></div>
             <p class="note">No anúncio, toque em <b>…</b> e depois em <b>Excluir anúncio</b> (ou em <b>Marcar como vendido</b>).</p>
             ${r.campanhas_ativas?.length ? `<div class="warnbox">Ele também aparece na campanha: <b>${r.campanhas_ativas.map((c) => esc(c.name)).join(', ')}</b>. Pause a campanha ou crie outra sem ele.</div>` : ''}
+            ${extra}
             <div class="modal-foot"><button class="btn" data-close type="button">Pronto</button></div>`);
           return;
         }
+        if (extra && !r.campanhas_ativas?.length) {
+          modal(`<h3>Veículo vendido</h3><p>Marcado como vendido no painel.</p>${extra}<div class="modal-foot"><button class="btn primary" data-close type="button">Pronto</button></div>`);
+          return;
+        }
         if (r.campanhas_ativas?.length) {
-          setTimeout(() => modal(`<h3>Campanha ainda ativa</h3><p>Este veículo aparece em: <b>${r.campanhas_ativas.map((c) => esc(c.name)).join(', ')}</b>. Pause a campanha ou crie outra sem ele.</p><div class="modal-foot"><button class="btn" data-close type="button">Depois</button><button class="btn primary" id="toCamp" type="button">Ir para campanhas</button></div>`), 50);
+          setTimeout(() => modal(`<h3>Campanha ainda ativa</h3><p>Este veículo aparece em: <b>${r.campanhas_ativas.map((c) => esc(c.name)).join(', ')}</b>. Pause a campanha ou crie outra sem ele.</p>${extra}<div class="modal-foot"><button class="btn" data-close type="button">Depois</button><button class="btn primary" id="toCamp" type="button">Ir para campanhas</button></div>`), 50);
           setTimeout(() => { const b = $('#toCamp'); if (b) b.onclick = () => { closeModal(); go('campanhas'); }; }, 80);
         } else toast('Veículo marcado como vendido');
       });
     }
+    if (a === 'divulgar') return channelsModal(v);
     if (a === 'excluir') {
-      return confirmBox('Excluir rascunho?', `${esc(v.marca)} ${esc(v.modelo)} será apagado com as fotos.`, 'Excluir', async () => {
-        await api('DELETE', `/api/vehicles/${id}`); await loadVehicles(); render(); toast('Rascunho excluído');
+      const nome = `<b>${esc(v.marca)} ${esc(v.modelo)} ${esc(v.versao)}</b>`;
+      const noAr = v.status === 'publicado' || Object.values(v.canais || {}).some((c) => c.status === 'publicado');
+      const texto = v.status === 'rascunho' ? `${nome} será apagado com as fotos.`
+        : v.status === 'vendido' ? `${nome} sai do histórico de vendidos. As fotos e as imagens geradas também são apagadas.<br><br>Isso não pode ser desfeito.`
+        : `${nome} será apagado do estoque com as fotos e as imagens geradas.<br><br>${noAr ? 'Os anúncios que já estão no ar não são apagados sozinhos: depois de excluir, mostramos os links para você retirar. ' : ''}Se o carro foi vendido, prefira <b>Vendido</b>, que mantém o histórico.<br><br>Isso não pode ser desfeito.`;
+      return confirmBox(v.status === 'rascunho' ? 'Excluir rascunho?' : 'Excluir veículo?', texto, 'Excluir', async () => {
+        const r = await api('DELETE', `/api/vehicles/${id}`);
+        await Promise.all([loadVehicles(), loadJobs()]); render();
+        if (r.remover?.length) setTimeout(() => modal(`<h3>Retire os anúncios</h3><p>O veículo foi excluído do GiroAuto. Estes anúncios continuam no ar:</p>${removerHtml(r.remover)}<div class="modal-foot"><button class="btn primary" data-close type="button">Pronto</button></div>`), 60);
+        else toast('Veículo excluído');
       }, true);
     }
   }
@@ -412,6 +428,7 @@
           <label class="drop" id="drop" for="v-fotos"><b>Arraste as fotos aqui</b><br>ou toque para escolher no aparelho<input id="v-fotos" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden></label>
           <div class="photos" id="photos">${photosHtml()}</div>
         </div>
+        <div class="panel" id="artsPanel">${artsHtml()}</div>
         <div class="panel">
           <h2>Onde anunciar</h2>
           <div class="checks">
@@ -1036,6 +1053,7 @@
       <div class="stack">
         ${S.storage ? storagePanel(S.storage) : ''}
         ${S.metaApp ? metaAppPanel(S.metaApp) : ''}
+        ${S.ai ? aiPanel(S.ai) : ''}
         <div class="panel">
           <h2>Publicação no Marketplace</h2>
           <div class="modes">
@@ -1086,6 +1104,171 @@
         <div><span class="k">Cópias diárias</span><span class="v">pasta <code>copias</code> no Supabase</span></div>
       </div>
       <div class="form-foot"><button class="btn" id="stBackup" type="button">Fazer cópia agora</button></div></div>`;
+  }
+
+  /* ---------------- v1.7: imagens geradas, outros canais ---------------- */
+  const CANAIS = [['instagram', 'Instagram'], ['webmotors', 'Webmotors'], ['olx', 'OLX']];
+  const ART_STATUS = { pronta: '', na_fila: 'Na fila', pendente: 'Na fila', gerando: 'Gerando…', erro: 'Erro', sem_chave: 'Falta a chave da IA', aguardando: 'Clique em Gerar' };
+  const artBusy = (a) => ['na_fila', 'pendente', 'gerando'].includes(a.status);
+
+  function removerHtml(list) {
+    return `<div class="cfields">${list.map((x) => `<div class="cf"><span class="k">${esc(x.label)}</span><span class="v" style="font-size:12.5px;word-break:break-all">${esc(x.url)}</span><a class="btn sm" href="${esc(x.url)}" target="_blank" rel="noopener">Abrir</a></div>`).join('')}</div>`;
+  }
+
+  function artsHtml() {
+    const d = S.draft;
+    const head = '<h2>Imagens para divulgação</h2>';
+    if (!d.id || !d.photos.length) return `${head}<p class="lead">Depois de salvar o veículo com fotos, o GiroAuto gera 5 imagens: uma arte com preço e dados do carro e quatro fotos dele num estacionamento vazio.</p>`;
+    const A = d.artes || [];
+    const semChave = A.some((a) => a.status === 'sem_chave');
+    const opts = (a) => d.photos.map((p, i) => `<option value="${p.id}" ${(a.photo_id ? a.photo_id === p.id : i === (a.slot - 2) % Math.min(d.photos.length, 4)) ? 'selected' : ''}>Foto ${i + 1}</option>`).join('');
+    const tile = (a) => `<div class="art">
+        <div class="art-img">${a.url && a.status !== 'gerando' ? `<a href="${esc(a.url)}" target="_blank" rel="noopener"><img src="${esc(a.url)}" alt="Imagem ${a.slot}" loading="lazy"></a>` : ''}
+          ${ART_STATUS[a.status] ? `<span class="art-st ${a.status === 'erro' ? 'bad' : ''}">${ART_STATUS[a.status]}</span>` : ''}</div>
+        <div class="art-cap"><b>${a.slot}</b> ${a.slot === 1 ? 'Arte com preço' : 'Estacionamento'}</div>
+        ${a.status === 'erro' && a.error ? `<div class="note" style="color:var(--bad)">${esc(a.error)}</div>` : ''}
+        <div class="art-tools">
+          ${a.slot > 1 ? `<select data-artsrc="${a.slot}" aria-label="Foto de origem da imagem ${a.slot}" ${artBusy(a) || a.status === 'sem_chave' ? 'disabled' : ''}>${opts(a)}</select>` : ''}
+          <button class="btn sm" type="button" data-artregen="${a.slot}" ${artBusy(a) || a.status === 'sem_chave' ? 'disabled' : ''}>${a.status === 'aguardando' || (!a.url && a.status === 'erro') ? 'Gerar' : 'Refazer'}</button>
+        </div>
+      </div>`;
+    return `${head}
+      <p class="lead">Geradas sozinhas a cada veículo. A arte se atualiza quando o preço ou os dados mudam. Nas imagens 2 a 5, escolha qual foto vai para o estacionamento.</p>
+      ${semChave ? `<div class="infobox">As fotos no estacionamento usam a IA de imagens do Google. ${S.me.user.is_admin ? 'Configure a chave em <a class="link" href="#config">Configurações &gt; Imagens com IA</a>.' : 'Peça ao administrador para configurar a chave da IA.'}</div>` : ''}
+      <div class="arts">${A.map(tile).join('')}</div>
+      <div class="form-foot" style="justify-content:flex-start;flex-wrap:wrap">
+        <a class="btn sm" href="/api/vehicles/${d.id}/photos.zip?so=artes" ${A.some((a) => a.url) ? '' : 'aria-disabled="true" style="pointer-events:none;opacity:.5"'}>Baixar imagens (.zip)</a>
+        <button class="btn sm" type="button" data-artregen="all" ${A.some(artBusy) ? 'disabled' : ''}>Refazer todas</button>
+      </div>
+      <p class="note">As fotos no estacionamento são editadas por IA: confira se o carro ficou igual ao real antes de usar.</p>`;
+  }
+
+  let artsTimer;
+  function bindArts() {
+    clearTimeout(artsTimer);
+    const d = S.draft; if (!d?.id) return;
+    $$('[data-artregen]').forEach((b) => {
+      b.onclick = async () => {
+        const slots = b.dataset.artregen === 'all' ? [1, 2, 3, 4, 5] : [Number(b.dataset.artregen)];
+        b.disabled = true;
+        try { d.artes = await api('POST', `/api/vehicles/${d.id}/arts/regenerate`, { slots }); refreshArts(); }
+        catch (e) { toast(e.message, 6000); b.disabled = false; }
+      };
+    });
+    $$('[data-artsrc]').forEach((sel) => {
+      sel.onchange = async () => {
+        try { d.artes = await api('PUT', `/api/vehicles/${d.id}/arts/${sel.dataset.artsrc}/source`, { photo_id: Number(sel.value) }); refreshArts(); }
+        catch (e) { toast(e.message, 6000); }
+      };
+    });
+    if ((d.artes || []).some(artBusy) || !(d.artes || []).length) {
+      artsTimer = setTimeout(async () => {
+        if (S.view !== 'novo' || S.draft !== d) return;
+        try { d.artes = await api('GET', `/api/vehicles/${d.id}/arts`); refreshArts(); } catch { /* tenta de novo depois */ }
+      }, 3000);
+    }
+  }
+  function refreshArts() { const p = $('#artsPanel'); if (p) { p.innerHTML = artsHtml(); bindArts(); } }
+
+  /* Divulgar: Instagram (direto pela Meta), Webmotors e OLX (assistido) */
+  async function channelsModal(v, tab) {
+    let data;
+    try { data = await api('GET', `/api/vehicles/${v.id}/channel-data`); } catch (e) { return toast(e.message, 6000); }
+    const cur = tab || S.chanTab || 'instagram';
+    S.chanTab = cur;
+    const L = data.listings;
+    const pill = (k) => L[k]?.status === 'publicado' ? '<span class="pill p-ok">Publicado</span>' : L[k]?.status === 'publicando' ? '<span class="pill p-info">Publicando…</span>' : L[k]?.status === 'erro' ? '<span class="pill p-bad">Erro</span>' : '';
+    const igSec = () => {
+      const st = L.instagram;
+      return `${st?.status === 'publicado' ? `<div class="okbox">Publicado no Instagram${st.url ? ` · <a class="link" href="${esc(st.url)}" target="_blank" rel="noopener">ver post</a>` : ''}. Publicar de novo cria outro post.</div>` : ''}
+        ${st?.status === 'erro' ? `<div class="err">${esc(st.error)}</div>` : ''}
+        ${st?.status === 'publicando' ? '<div class="infobox">Publicando… o Instagram leva até um minuto para processar as imagens.</div>' : ''}
+        <p class="note">Vai como carrossel no perfil ligado à Página da loja: a arte, as fotos no estacionamento e as fotos do carro (até 10). O Instagram não permite apagar posts pelo painel: quando vender, arquive o post no aplicativo.</p>
+        <div class="f"><label for="igCap">Legenda</label><textarea id="igCap" rows="9">${esc(data.caption)}</textarea></div>
+        <div class="form-foot"><button class="btn primary" id="igPub" type="button" ${st?.status === 'publicando' ? 'disabled' : ''}>Publicar no Instagram</button></div>`;
+    };
+    const siteSec = (k, nome) => {
+      const st = L[k];
+      return `${st?.status === 'publicado' ? `<div class="okbox conn-row"><span>Registrado como publicado na ${nome}${st.url ? ` · <a class="link" href="${esc(st.url)}" target="_blank" rel="noopener">ver anúncio</a>` : ''}.</span><button class="btn sm ghost" type="button" data-unmark="${k}">Remover registro</button></div>` : ''}
+        <p class="note">A ${nome} não libera publicação automática para lojas sem contrato de integração. O painel deixa tudo pronto:</p>
+        <ol class="steps-list">
+          <li><a class="btn sm" href="/api/vehicles/${v.id}/photos.zip?artes=1">Baixar fotos e imagens (.zip)</a></li>
+          <li><a class="btn sm" href="${esc(data.links[k])}" target="_blank" rel="noopener">Abrir a ${nome}</a> e comece um anúncio de carro (no portal de lojista, se a loja tiver plano).</li>
+          <li>Copie os dados abaixo para o formulário e envie as fotos.</li>
+          <li>Depois de publicar, cole o link do anúncio aqui:
+            <div class="conn-row" style="margin-top:6px"><input id="lk-${k}" placeholder="https://…" value="${esc(st?.url || '')}" style="flex:1;min-width:0"><button class="btn primary sm" type="button" data-mark="${k}">Registrar</button></div></li>
+        </ol>
+        <details ${st?.status === 'publicado' ? '' : 'open'}><summary style="cursor:pointer;font-weight:600">Dados para copiar</summary>
+          <div class="cfields" style="margin-top:8px">${data.fields.map((f, i) => `<div class="cf"><span class="k">${esc(f.label)}</span><span class="v" style="white-space:pre-line;max-height:4.5em;overflow:hidden">${esc(f.value)}</span><button class="btn sm" type="button" data-cpf="${i}">Copiar</button></div>`).join('')}</div>
+        </details>`;
+    };
+    const body = cur === 'instagram' ? igSec() : siteSec(cur, cur === 'olx' ? 'OLX' : 'Webmotors');
+    modal(`<h3>Divulgar ${esc(v.marca)} ${esc(v.modelo)}</h3>
+      <div class="chips" role="tablist">${CANAIS.map(([k, l]) => `<button class="chip" type="button" role="tab" data-ctab="${k}" aria-pressed="${k === cur}">${l} ${pill(k)}</button>`).join('')}</div>
+      <div class="stack" style="gap:12px">${body}</div>
+      <div class="err" id="chErr" hidden></div>
+      <div class="modal-foot"><button class="btn" data-close type="button">Fechar</button></div>`, true);
+    const showErr = (m) => { const e = $('#chErr'); e.textContent = m; e.hidden = false; };
+    $$('[data-ctab]').forEach((b) => { b.onclick = () => channelsModal(v, b.dataset.ctab); });
+    $$('[data-cpf]').forEach((b) => { b.onclick = () => copyText(data.fields[Number(b.dataset.cpf)].value, b); });
+    $$('[data-mark]').forEach((b) => {
+      b.onclick = async () => {
+        b.disabled = true;
+        try { await api('POST', `/api/vehicles/${v.id}/listings/${b.dataset.mark}`, { url: $('#lk-' + b.dataset.mark).value }); await loadVehicles(); toast('Publicação registrada'); render(); channelsModal(v, cur); }
+        catch (e) { showErr(e.message); b.disabled = false; }
+      };
+    });
+    $$('[data-unmark]').forEach((b) => {
+      b.onclick = async () => { await api('DELETE', `/api/vehicles/${v.id}/listings/${b.dataset.unmark}`); await loadVehicles(); render(); channelsModal(v, cur); };
+    });
+    const ig = $('#igPub');
+    if (ig) ig.onclick = async () => {
+      ig.disabled = true; ig.textContent = 'Enviando…';
+      try {
+        await api('POST', `/api/vehicles/${v.id}/instagram`, { caption: $('#igCap').value });
+        channelsModal(v, 'instagram');
+        watchInstagram(v);
+      } catch (e) { showErr(e.message); ig.disabled = false; ig.textContent = 'Publicar no Instagram'; }
+    };
+    if (cur === 'instagram' && L.instagram?.status === 'publicando') watchInstagram(v);
+  }
+  let igTimer;
+  function watchInstagram(v) {
+    clearTimeout(igTimer);
+    igTimer = setTimeout(async () => {
+      let fresh;
+      try { fresh = await api('GET', `/api/vehicles/${v.id}`); } catch { return; }
+      const st = fresh.canais?.instagram?.status;
+      if (st === 'publicando') return watchInstagram(v);
+      await loadVehicles(); if (S.view === 'estoque') render();
+      if (st === 'publicado') toast(`${v.marca} ${v.modelo} publicado no Instagram`, 5000);
+      if (st === 'erro') toast('O Instagram recusou a publicação. Abra Divulgar para ver o motivo.', 7000);
+      if ($('#igCap') || $('#scrim')?.querySelector('[data-ctab]')) channelsModal(v, 'instagram');
+    }, 4000);
+  }
+
+  /* ---------------- IA de imagens (administrador) ---------------- */
+  function aiPanel(a) {
+    return `<div class="panel" id="config-ai">
+      <h2>Imagens com IA</h2>
+      ${a.configured ? `<div class="okbox">Chave configurada${a.source === 'env' ? ' pelas variáveis do servidor' : ''}. As fotos no estacionamento são geradas ${a.auto ? 'sozinhas para cada veículo' : 'só quando a loja clica em Gerar'}.</div>`
+        : '<p class="lead">A arte com preço é gerada sem custo. As quatro fotos do carro num estacionamento vazio usam a IA de imagens do Google (Gemini), que é paga por imagem.</p>'}
+      <details ${a.configured ? '' : 'open'}><summary style="cursor:pointer;font-weight:600">Como conseguir a chave</summary>
+        <ol class="note" style="padding-left:18px;display:flex;flex-direction:column;gap:6px;margin:10px 0 0">
+          <li>Abra <a class="link" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> com sua conta Google.</li>
+          <li>Clique em <b>Criar chave de API</b> (Create API key) e escolha ou crie um projeto.</li>
+          <li>Ative o <b>faturamento</b> do projeto (a IA de imagens não tem cota gratuita). Custo de referência: cerca de US$ 0,034 por imagem, perto de R$ 0,75 pelas quatro imagens de um carro.</li>
+          <li>Copie a chave e cole abaixo.</li>
+        </ol>
+      </details>
+      <div class="fields">
+        <div class="f w3"><label for="ai-key">Chave da API do Google</label><input id="ai-key" type="password" placeholder="${a.configured ? '•••••••• (guardada)' : 'AIza…'}" autocomplete="new-password"></div>
+        <div class="f w3"><label for="ai-model">Modelo</label><input id="ai-model" value="${esc(a.model || '')}" placeholder="${esc(a.default_model)}"><span class="hint">Deixe vazio para usar o recomendado.</span></div>
+      </div>
+      <label class="check"><input type="checkbox" id="ai-auto" ${a.auto ? 'checked' : ''}><div><b>Gerar sozinho para cada veículo</b><span>Desmarcado, a loja gera quando quiser, pelo botão Gerar no cadastro do veículo.</span></div></label>
+      <div class="err" id="aiErr" hidden></div>
+      <div class="form-foot">${a.source === 'painel' ? '<button class="btn ghost danger" id="aiClear" type="button">Remover chave</button>' : ''}<button class="btn primary" id="aiSave" type="button">${a.configured ? 'Salvar' : 'Salvar e testar'}</button></div>
+    </div>`;
   }
 
   /* ---------------- App da Meta (administrador da plataforma) ---------------- */
@@ -1143,7 +1326,7 @@
     const ea = $('#enableAuto');
     if (ea) ea.onclick = async () => { await api('PUT', '/api/store/pub-mode', { mode: 'extensao' }); S.me.store.pub_mode = 'extensao'; await loadExt(); toast('Publicação automática ativada'); render(); };
 
-    if (S.view === 'novo') {
+    if (S.view === 'novo' && $('#v-fotos')) {
       const drop = $('#drop'); const inp = $('#v-fotos');
       inp.onchange = () => { addFiles(inp.files); inp.value = ''; };
       ['dragenter', 'dragover'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); }));
@@ -1153,6 +1336,7 @@
       $('#gerarDesc').onclick = gerarDescricao;
       $('#salvar').onclick = () => saveVehicle(false);
       const sp = $('#salvarPub'); if (sp) sp.onclick = () => saveVehicle(true);
+      bindArts();
     }
     if (S.view === 'republicacao') {
       const b = $('#repTodos'); if (b) b.onclick = republicarTodos;
@@ -1225,6 +1409,16 @@
           toast('Permissões salvas. Clique em Conectar Facebook de novo para aplicar.', 5000);
         } catch (e) { toast(e.message); }
       };
+      const ais = $('#aiSave');
+      if (ais) ais.onclick = async () => {
+        ais.disabled = true; $('#aiErr').hidden = true;
+        const body = { model: $('#ai-model').value, auto: $('#ai-auto').checked };
+        if ($('#ai-key').value.trim()) body.key = $('#ai-key').value.trim();
+        try { S.ai = await api('PUT', '/api/admin/ai', body); toast('IA de imagens configurada. As imagens dos veículos em estoque vão ser geradas.', 5000); render(); }
+        catch (e) { $('#aiErr').textContent = e.message; $('#aiErr').hidden = false; ais.disabled = false; }
+      };
+      const aic = $('#aiClear');
+      if (aic) aic.onclick = () => confirmBox('Remover a chave da IA?', 'As fotos no estacionamento deixam de ser geradas. As que já existem continuam.', 'Remover', async () => { await api('PUT', '/api/admin/ai', { key: '' }); render(); }, true);
       const mac = $('#maClear');
       if (mac) mac.onclick = () => confirmBox('Remover credenciais do app?', 'As lojas não vão conseguir criar campanhas até o app ser configurado de novo.', 'Remover', async () => { await api('DELETE', '/api/admin/meta-app'); render(); }, true);
       const md = $('#mDisc');

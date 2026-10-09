@@ -30,8 +30,8 @@ const config = {
     ],
     // Permissões opcionais: só pedidas se o administrador ligar no painel (exigem outro caso de uso no app).
     optionalScopes: {
-      catalog_management: 'Catálogo de veículos (caso de uso "Gerenciar catálogos" no app da Meta)',
-      instagram_basic: 'Nome do perfil do Instagram (caso de uso "Instagram" no app da Meta)',
+      catalogo: { label: 'Catálogo de veículos (caso de uso "Gerenciar catálogos" no app da Meta)', scopes: ['catalog_management'] },
+      instagram: { label: 'Publicar no Instagram (caso de uso "Gerenciar mensagens e conteúdo no Instagram" no app da Meta)', scopes: ['instagram_basic', 'instagram_content_publish'] },
     },
     extraScopes: [],
   },

@@ -19,7 +19,11 @@ const storage = require('./storage');
 
   const app = require('./server');
   storage.markDirty(); // envia a primeira cópia (inclui migrações de versão)
-  const server = app.listen(config.port, () => console.log(`GiroAuto rodando em ${config.publicUrl} (porta ${config.port})`));
+  const server = app.listen(config.port, () => {
+    console.log(`GiroAuto rodando em ${config.publicUrl} (porta ${config.port})`);
+    // Gera as imagens que faltam para os veículos em estoque (arte e, com a chave da IA, estacionamento).
+    try { const n = require('./arts').backfill(); if (n) console.log(`Conferindo imagens de ${n} veículo(s).`); } catch (e) { console.error('Imagens:', e.message); }
+  });
 
   let closing = false;
   const shutdown = async (sig) => {

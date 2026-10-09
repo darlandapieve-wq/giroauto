@@ -1,6 +1,6 @@
 {
   "name": "giroauto",
-  "version": "1.6.2",
+  "version": "1.7.0",
   "private": true,
   "description": "Painel para lojas de veículos: estoque, anúncios orgânicos no Marketplace (via extensão) e campanhas no Facebook e Instagram (API de Marketing da Meta).",
   "main": "src/start.js",
@@ -15,6 +15,7 @@
     "build:bookmarklet": "esbuild assist/filler.src.js --minify --target=chrome100 --charset=utf8 --outfile=public/bookmarklet.js"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^1.0.10",
     "express": "^4.21.2",
     "multer": "^2.0.2"
   },

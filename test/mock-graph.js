@@ -24,6 +24,30 @@ function createMock() {
     next();
   });
 
+  /* IA de imagens do Google (Gemini) */
+  app.use(express.json({ limit: '30mb' }));
+  state.geminiCalls = [];
+  app.get('/v1beta/models', (req, res) => {
+    if (req.get('x-goog-api-key') !== 'AIzaTESTKEY1234567890123456789012345') return res.status(400).json({ error: { message: 'API key not valid.' } });
+    res.json({ models: [{ name: 'models/gemini-nano-banana-2.1' }] });
+  });
+  app.post(/^\/(v1|v1beta)\/models\/([^/:]+):generateContent$/, async (req, res) => {
+    state.geminiCalls.push({ version: req.params[0], model: req.params[1], body: req.body });
+    if (state.geminiFail) return res.status(429).json({ error: { message: 'Resource has been exhausted (e.g. check quota).' } });
+    const { createCanvas, loadImage } = require('@napi-rs/canvas');
+    const c = createCanvas(864, 1080); const ctx = c.getContext('2d'); ctx.fillStyle = '#556677'; ctx.fillRect(0, 0, 864, 1080);
+    // Devolve a própria foto enviada (recortada em 4:5) com um tom azulado, para parecer uma edição.
+    try {
+      const part = req.body.contents[0].parts.find((p) => p.inline_data || p.inlineData);
+      const img = await loadImage(Buffer.from((part.inline_data || part.inlineData).data, 'base64'));
+      const sc = Math.max(864 / img.width, 1080 / img.height);
+      ctx.drawImage(img, (864 - img.width * sc) / 2, (1080 - img.height * sc) / 2, img.width * sc, img.height * sc);
+      ctx.fillStyle = 'rgba(40,90,160,0.25)'; ctx.fillRect(0, 0, 864, 1080);
+    } catch { /* imagem inválida: fica o fundo cinza */ }
+    const png = await c.encode('png');
+    res.json({ candidates: [{ content: { parts: [{ text: 'ok' }, { inlineData: { mimeType: 'image/png', data: png.toString('base64') } }] } }] });
+  });
+
   app.get('/:v/oauth/access_token', (req, res) => res.json({ access_token: req.p.grant_type ? 'long-token' : 'short-token', expires_in: 5184000 }));
   app.get('/:v/me', (req, res) => res.json({ id: '9001', name: 'Darlan Teste' }));
   app.get('/:v/me/adaccounts', (req, res) => res.json({ data: [{ id: 'act_111', name: 'Loja Ads', currency: 'BRL', account_status: 1 }] }));
@@ -38,7 +62,12 @@ function createMock() {
   app.post('/:v/:node/:edge', (req, res) => res.json({ id: id() }));
   app.post('/:v/:node', (req, res) => res.json({ success: true }));
   app.get('/:v/:node/insights', (req, res) => res.json({ data: [{ impressions: '1200', reach: '900', clicks: '45', spend: '31.50', actions: [{ action_type: 'onsite_conversion.messaging_conversation_started_7d', value: '7' }] }] }));
-  app.get('/:v/:node', (req, res) => res.json({ id: req.params.node, effective_status: 'ACTIVE' }));
+  app.get('/:v/:node', (req, res) => {
+    const f = String(req.p.fields || '');
+    if (f.includes('status_code')) return res.json({ id: req.params.node, status_code: 'FINISHED' });
+    if (f.includes('permalink')) return res.json({ id: req.params.node, permalink: 'https://www.instagram.com/p/TESTE123/' });
+    res.json({ id: req.params.node, effective_status: 'ACTIVE' });
+  });
   app.delete('/:v/:node', (req, res) => res.json({ success: true }));
 
   return { app, calls, state };
