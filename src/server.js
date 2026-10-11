@@ -15,6 +15,7 @@ const settings = require('./settings');
 const storage = require('./storage');
 const arts = require('./arts');
 const channels = require('./channels');
+const instagram = require('./instagram');
 
 const app = express();
 app.disable('x-powered-by');
@@ -536,7 +537,7 @@ app.get('/api/vehicles/:id/channel-data', auth.requireUser, wrap(async (req, res
   const pre = get('SELECT token_enc, page_id, ig_user_id FROM meta_connections WHERE store_id = ?', req.user.storeId);
   if (pre?.token_enc && pre.page_id && !pre.ig_user_id) lookup = await meta.refreshInstagram(req.user.storeId).catch((e) => e.message);
   const mc = get('SELECT token_enc, page_id, page_name, ig_user_id, ig_username FROM meta_connections WHERE store_id = ?', req.user.storeId);
-  const instagram = {
+  const igInfo = {
     app_configured: meta.isConfigured(),
     permission_enabled: config.meta.extraScopes.includes('instagram'),
     connected: !!mc?.token_enc,
@@ -546,8 +547,9 @@ app.get('/api/vehicles/:id/channel-data', auth.requireUser, wrap(async (req, res
     is_admin: !!get('SELECT is_admin FROM users WHERE id = ?', req.user.id)?.is_admin,
     page_chosen: !!mc?.page_id,
     lookup,
+    direct: instagram.status(req.user.storeId),
   };
-  res.json({ caption: channels.caption(v, store), fields: channels.fields(v, store), listings: channels.listingsOf(v.id), links: Object.fromEntries(Object.entries(channels.CHANNELS).map(([k, c]) => [k, c.url])), instagram });
+  res.json({ caption: channels.caption(v, store), fields: channels.fields(v, store), listings: channels.listingsOf(v.id), links: Object.fromEntries(Object.entries(channels.CHANNELS).map(([k, c]) => [k, c.url])), instagram: igInfo });
 }));
 
 app.post('/api/vehicles/:id/instagram', auth.requireUser, wrap(async (req, res) => {
@@ -690,6 +692,38 @@ app.get('/api/meta/callback', wrap(async (req, res) => {
     console.error('Meta OAuth:', e.message);
     res.redirect('/#config?meta=erro&msg=' + encodeURIComponent(e.message.slice(0, 200)));
   }
+}));
+
+/* ---- Instagram direto (login do Instagram) ---- */
+app.get('/api/instagram/connect', auth.requireUser, (req, res) => {
+  if (!instagram.app().configured) throw fail(400, 'O administrador precisa colar o ID e a chave secreta do app do Instagram em Configurações > App da Meta.');
+  const state = randomToken(16);
+  run('INSERT INTO oauth_states (state, store_id, expires_at) VALUES (?, ?, ?)', state, req.user.storeId, Date.now() + 15 * 60e3);
+  res.redirect(instagram.connectUrl(state));
+});
+app.get('/api/instagram/callback', wrap(async (req, res) => {
+  const st = get('SELECT * FROM oauth_states WHERE state = ? AND expires_at > ?', String(req.query.state || ''), Date.now());
+  if (!st) return res.redirect('/#estoque?ig=erro&msg=' + encodeURIComponent('A conexão expirou. Tente de novo.'));
+  run('DELETE FROM oauth_states WHERE state = ?', st.state);
+  if (req.query.error || !req.query.code) return res.redirect('/#estoque?ig=cancelado');
+  try {
+    instagram.saveConnection(st.store_id, await instagram.exchangeCode(String(req.query.code)));
+    res.redirect('/#estoque?ig=ok');
+  } catch (e) {
+    console.error('Instagram OAuth:', e.message);
+    res.redirect('/#estoque?ig=erro&msg=' + encodeURIComponent(e.message.slice(0, 200)));
+  }
+}));
+app.post('/api/instagram/disconnect', auth.requireUser, (req, res) => { instagram.disconnect(req.user.storeId); res.json({ ok: true }); });
+app.get('/api/admin/instagram-app', requireAdmin, (req, res) => res.json({ ...instagram.status(req.user.storeId), app_id: instagram.app().id }));
+app.put('/api/admin/instagram-app', requireAdmin, wrap(async (req, res) => {
+  const id = String(req.body?.app_id || '').trim();
+  const secret = String(req.body?.app_secret || '').trim();
+  if (!/^\d{6,20}$/.test(id)) throw fail(400, 'O ID do app do Instagram tem só números (em Casos de uso > Instagram > Configuração da API com login do Instagram).');
+  if (!/^[a-f0-9]{32}$/i.test(secret)) throw fail(400, 'A chave secreta do app do Instagram tem 32 caracteres. Clique em Mostrar ao lado dela e copie de novo.');
+  settings.saveInstagramApp(id, secret);
+  logEvent(req.user.storeId, 'App do Instagram configurado no painel');
+  res.json({ ...instagram.status(req.user.storeId), app_id: id });
 }));
 
 app.post('/api/meta/disconnect', auth.requireUser, (req, res) => {

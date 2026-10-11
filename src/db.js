@@ -208,6 +208,15 @@ db.exec(`CREATE TABLE IF NOT EXISTS listings (
 addColumn('vehicles', 'destaques', "TEXT NOT NULL DEFAULT '[]'");
 addColumn('vehicles', 'preco_oferta', 'INTEGER NOT NULL DEFAULT 0');
 addColumn('vehicles', 'oferta_desde', 'TEXT');
+// Conexão direta com o Instagram (v1.9).
+db.exec(`CREATE TABLE IF NOT EXISTS ig_connections (
+  store_id INTEGER PRIMARY KEY REFERENCES stores(id) ON DELETE CASCADE,
+  ig_user_id TEXT NOT NULL,
+  username TEXT DEFAULT '',
+  token_enc TEXT NOT NULL,
+  expires_at INTEGER,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`);
 db.exec(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')))`);
 if (!db.prepare('SELECT 1 FROM users WHERE is_admin = 1').get()) {
   db.exec('UPDATE users SET is_admin = 1 WHERE id = (SELECT MIN(id) FROM users)');

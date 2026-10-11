@@ -2,6 +2,18 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v1.9 — 11/10/2026
+
+**Instagram conectado direto (login do Instagram)**
+
+- Novo botão **Conectar Instagram** em Divulgar > Instagram: a loja entra com o usuário e a senha do Instagram e o GiroAuto recebe as permissões de publicar (`instagram_business_basic` e `instagram_business_content_publish`), sem depender da Página do Facebook.
+- O administrador configura uma vez o **app do Instagram** (ID e chave secreta próprios) em Configurações > App da Meta > Instagram, com passo a passo e a URI de redirecionamento pronta para copiar.
+- A publicação usa a conexão direta quando existe; senão, continua pelo Instagram ligado à Página.
+- O token do Instagram é renovado sozinho antes de vencer.
+- A conexão pelo Facebook passa a pedir de novo permissões recusadas antes (`auth_type=rerequest`).
+
+Arquivos alterados: `src/instagram.js` (novo), `src/channels.js`, `src/server.js`, `src/settings.js`, `src/db.js`, `src/meta/service.js`, `public/app.js`, `package.json`, `test/api.test.js`, `test/mock-graph.js`, `CHANGELOG.md`.
+
 ## v1.8.2 — 11/10/2026
 
 - Quando o Instagram não aparece ligado, o GiroAuto procura de novo o perfil profissional na Página escolhida (ao abrir Divulgar e ao salvar a Página) e mostra o motivo exato se o Facebook não entregar.

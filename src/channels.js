@@ -10,6 +10,7 @@ const arts = require('./arts');
 const card = require('./arts/card');
 const { get, all, run, logEvent } = require('./db');
 const V = require('./vehicles');
+const ig = require('./instagram');
 
 const CHANNELS = {
   instagram: { label: 'Instagram', url: 'https://www.instagram.com/' },
@@ -93,9 +94,13 @@ function fields(v, store) {
 
 const running = new Set();
 
-async function waitContainer(id, token) {
+// Cliente usado na publicação: pelo Facebook (Graph API) ou direto pelo Instagram (login do Instagram).
+function fbApi(token) { return { get: (p, q) => graph.get(p, token, q), post: (p, q) => graph.post(p, token, q), via: 'facebook' }; }
+function igApi(token) { return { get: (p, q) => ig.call('GET', p, token, q), post: (p, q) => ig.call('POST', p, token, q), via: 'instagram' }; }
+
+async function waitContainer(id, api) {
   for (let i = 0; i < 40; i++) {
-    const r = await graph.get(`/${id}`, token, { fields: 'status_code,status' });
+    const r = await api.get(`/${id}`, { fields: 'status_code,status' });
     if (!r.status_code || r.status_code === 'FINISHED') return;
     if (r.status_code === 'ERROR' || r.status_code === 'EXPIRED') throw httpError(502, `O Instagram não aceitou a imagem: ${r.status || r.status_code}`);
     await new Promise((res) => setTimeout(res, Number(process.env.IG_POLL_MS || 3000)));
@@ -125,9 +130,16 @@ async function publishInstagram(storeId, vehicleId, { caption: custom } = {}) {
   const v = get('SELECT * FROM vehicles WHERE id = ? AND store_id = ?', vehicleId, storeId);
   if (!v) throw httpError(404, 'Veículo não encontrado.');
   if (v.status === 'vendido') throw httpError(409, 'Veículo vendido não pode ser publicado.');
-  const { conn, token } = meta.tokenFor(storeId);
-  if (!conn.ig_user_id) {
-    throw httpError(400, 'Nenhum perfil do Instagram ligado. O administrador precisa ligar "Publicar no Instagram" em Configurações > App da Meta, conectar o Facebook de novo e escolher a Página que tem o Instagram da loja.');
+  // Preferência: conexão direta com o Instagram; senão, o Instagram ligado à Página do Facebook.
+  let api; let igUser; let token = null;
+  const direct = await ig.tokenFor(storeId);
+  if (direct) { api = igApi(direct.token); igUser = direct.igUserId; }
+  else {
+    const fb = meta.tokenFor(storeId);
+    if (!fb.conn.ig_user_id) {
+      throw httpError(400, 'Nenhum perfil do Instagram ligado. Em Divulgar > Instagram, clique em Conectar Instagram (ou ligue o Instagram pela Página do Facebook).');
+    }
+    token = fb.token; api = fbApi(token); igUser = fb.conn.ig_user_id;
   }
   if (!all('SELECT 1 FROM photos WHERE vehicle_id = ?', v.id).length) throw httpError(400, 'Cadastre ao menos uma foto do veículo.');
   if (running.has(v.id)) throw httpError(409, 'Este veículo já está sendo publicado no Instagram.');
@@ -145,23 +157,23 @@ async function publishInstagram(storeId, vehicleId, { caption: custom } = {}) {
       const urls = files.map((f) => `${config.publicUrl}/media/${f}`);
       let creationId;
       if (urls.length === 1) {
-        creationId = (await graph.post(`/${conn.ig_user_id}/media`, token, { image_url: urls[0], caption: text })).id;
+        creationId = (await api.post(`/${igUser}/media`, { image_url: urls[0], caption: text })).id;
       } else {
         const children = [];
-        for (const u of urls) children.push((await graph.post(`/${conn.ig_user_id}/media`, token, { image_url: u, is_carousel_item: true })).id);
-        for (const c of children) await waitContainer(c, token);
-        creationId = (await graph.post(`/${conn.ig_user_id}/media`, token, { media_type: 'CAROUSEL', children: children.join(','), caption: text })).id;
+        for (const u of urls) children.push((await api.post(`/${igUser}/media`, { image_url: u, is_carousel_item: true })).id);
+        for (const c of children) await waitContainer(c, api);
+        creationId = (await api.post(`/${igUser}/media`, { media_type: 'CAROUSEL', children: children.join(','), caption: text })).id;
       }
-      await waitContainer(creationId, token);
-      const pub = await graph.post(`/${conn.ig_user_id}/media_publish`, token, { creation_id: creationId });
+      await waitContainer(creationId, api);
+      const pub = await api.post(`/${igUser}/media_publish`, { creation_id: creationId });
       let permalink = '';
-      try { permalink = (await graph.get(`/${pub.id}`, token, { fields: 'permalink' })).permalink || ''; } catch { /* sem link: segue */ }
+      try { permalink = (await api.get(`/${pub.id}`, { fields: 'permalink' })).permalink || ''; } catch { /* sem link: segue */ }
       upsert(v.id, 'instagram', { status: 'publicado', url: permalink, external_id: String(pub.id || ''), error: '', published_at: new Date().toISOString().slice(0, 19).replace('T', ' ') });
       logEvent(storeId, `${v.marca} ${v.modelo} publicado no Instagram`);
     } catch (e) {
-      let msg = e instanceof graph.MetaError ? `${e.title ? e.title + ': ' : ''}${e.message}` : e.message;
-      // Sem permissão (#10/#200): confere na Meta o que o token recebeu e diz o que falta.
-      if (e instanceof graph.MetaError && [10, 200].includes(Number(e.code))) {
+      let msg = (e instanceof graph.MetaError || e instanceof ig.IgError) ? `${e.title ? e.title + ': ' : ''}${e.message}` : e.message;
+      // Sem permissão (#10/#200) pelo Facebook: confere na Meta o que o token recebeu e diz o que falta.
+      if (api.via === 'facebook' && e instanceof graph.MetaError && [10, 200].includes(Number(e.code))) {
         const p = await grantedPermissions(token).catch(() => null);
         msg = permissionHelp(p) || msg;
       }

@@ -26,6 +26,7 @@ function connectUrl(state) {
   u.searchParams.set('response_type', 'code');
   if (config.meta.loginConfigId) u.searchParams.set('config_id', config.meta.loginConfigId);
   else u.searchParams.set('scope', scopeList().join(','));
+  u.searchParams.set('auth_type', 'rerequest'); // pede de novo permissões recusadas antes
   return u.toString();
 }
 

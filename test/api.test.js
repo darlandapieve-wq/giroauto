@@ -500,6 +500,33 @@ test('v1.7: Instagram, Webmotors, OLX e exclusão do veículo', async () => {
   assert.match(ch.permissionHelp({ granted: ['instagram_basic'], declined: [] }), /instagram_content_publish/);
   assert.match(ch.permissionHelp({ granted: ['instagram_basic'], declined: ['instagram_content_publish'] }), /Editar acesso/);
 
+  // Instagram direto (login do Instagram): conecta e publica sem passar pela Página.
+  const mp = `http://127.0.0.1:${mockServer.address().port}`;
+  Object.assign(process.env, { INSTAGRAM_AUTH_URL: `${mp}/igauth`, INSTAGRAM_API_URL: `${mp}/igapi`, INSTAGRAM_GRAPH_URL: `${mp}/ig` });
+  r = await api('GET', '/api/instagram/connect');
+  assert.equal(r.status, 400, 'sem o app do Instagram configurado');
+  r = await api('PUT', '/api/admin/instagram-app', { app_id: '998877', app_secret: 'c'.repeat(32) });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  r = await api('GET', '/api/instagram/connect');
+  const igLoc = new URL(r.headers.get('location'));
+  assert.equal(igLoc.searchParams.get('client_id'), '998877');
+  assert.match(igLoc.searchParams.get('scope'), /instagram_business_content_publish/);
+  assert.match(igLoc.searchParams.get('redirect_uri'), /\/api\/instagram\/callback$/);
+  r = await api('GET', `/api/instagram/callback?code=igcode&state=${igLoc.searchParams.get('state')}`);
+  assert.match(r.headers.get('location'), /ig=ok/);
+  const cdIg = await api('GET', `/api/vehicles/${id}/channel-data`);
+  assert.equal(cdIg.body.instagram.direct.username, '_box85_');
+  r = await api('POST', `/api/vehicles/${id}/instagram`, {});
+  for (let i = 0; i < 100; i++) {
+    r = await api('GET', `/api/vehicles/${id}`);
+    if (r.body.canais.instagram?.status !== 'publicando') break;
+    await new Promise((res) => setTimeout(res, 50));
+  }
+  assert.equal(r.body.canais.instagram.status, 'publicado', JSON.stringify(r.body.canais));
+  assert.equal(r.body.canais.instagram.url, 'https://www.instagram.com/p/DIRETO/');
+  assert.ok(mock.state.igCalls.find((c) => c.path === '/1789/media_publish'), 'publicou pela API do Instagram');
+  await api('POST', '/api/instagram/disconnect');
+
   r = await api('POST', `/api/vehicles/${id}/listings/olx`, { url: 'https://www.webmotors.com.br/x' });
   assert.equal(r.status, 400, 'link de outro site é recusado');
   r = await api('POST', `/api/vehicles/${id}/listings/olx`, { url: 'https://pr.olx.com.br/regiao-de-maringa/autos/fox-123' });

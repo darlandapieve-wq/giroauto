@@ -48,6 +48,22 @@ function createMock() {
     res.json({ candidates: [{ content: { parts: [{ text: 'ok' }, { inlineData: { mimeType: 'image/png', data: png.toString('base64') } }] } }] });
   });
 
+  /* Instagram direto (login do Instagram) */
+  state.igCalls = [];
+  app.post('/igapi/oauth/access_token', (req, res) => {
+    if (req.body.client_secret !== 'c'.repeat(32) || req.body.code !== 'igcode') return res.status(400).json({ error_type: 'OAuthException', code: 400, error_message: 'Invalid code' });
+    res.json({ data: [{ access_token: 'ig-short', user_id: '1789', permissions: 'instagram_business_basic,instagram_business_content_publish' }] });
+  });
+  app.get('/ig/access_token', (req, res) => res.json({ access_token: 'ig-long', token_type: 'bearer', expires_in: 5184000 }));
+  app.get('/ig/v24.0/me', (req, res) => res.json({ user_id: '1789', username: '_box85_', account_type: 'BUSINESS' }));
+  app.post('/ig/v24.0/:node/:edge', (req, res) => { state.igCalls.push({ path: `/${req.params.node}/${req.params.edge}`, params: req.body }); res.json({ id: 'igc' + (state.seq++) }); });
+  app.get('/ig/v24.0/:node', (req, res) => {
+    const f = String(req.query.fields || '');
+    if (req.query.access_token !== 'ig-long') return res.status(400).json({ error: { message: 'bad token', code: 190 } });
+    if (f.includes('status_code')) return res.json({ status_code: 'FINISHED' });
+    return res.json({ id: req.params.node, permalink: 'https://www.instagram.com/p/DIRETO/' });
+  });
+
   /* Pollinations (edição de imagem compatível com a OpenAI) */
   const multer = require('multer');
   app.post('/v1/images/edits', multer({ storage: multer.memoryStorage() }).single('image'), async (req, res) => {

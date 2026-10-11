@@ -193,6 +193,9 @@
     if (params.get('meta') === 'ok') toast('Conta do Facebook conectada. Escolha a conta de anúncios e a Página.');
     if (params.get('meta') === 'erro') toast('Não foi possível conectar: ' + (params.get('msg') || 'tente de novo'), 7000);
     if (params.get('meta') === 'cancelado') toast('Conexão com o Facebook cancelada.');
+    if (params.get('ig') === 'ok') toast('Instagram conectado. Já dá para publicar pelo botão Divulgar.', 6000);
+    if (params.get('ig') === 'erro') toast('Não foi possível conectar o Instagram: ' + (params.get('msg') || 'tente de novo'), 9000);
+    if (params.get('ig') === 'cancelado') toast('Conexão com o Instagram cancelada.');
     if (name?.startsWith('editar-')) {
       if (!S.vehicles.some((x) => x.id === Number(name.slice(7)))) { loadVehicles().then(() => { if (S.vehicles.some((x) => x.id === Number(name.slice(7)))) route(); }); }
       const v = S.vehicles.find((x) => x.id === Number(name.slice(7)));
@@ -234,6 +237,7 @@
         S.metaApp = S.me.user.is_admin ? await api('GET', '/api/admin/meta-app').catch(() => null) : null;
         S.storage = S.me.user.is_admin ? await api('GET', '/api/admin/storage').catch(() => null) : null;
         S.ai = S.me.user.is_admin ? await api('GET', '/api/admin/ai').catch(() => null) : null;
+        S.igApp = S.me.user.is_admin ? await api('GET', '/api/admin/instagram-app').catch(() => null) : null;
         m.innerHTML = viewConfig();
       }
     } catch (e) { m.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
@@ -1244,10 +1248,18 @@
         </ol>
         ${permBoxHtml()}`;
     };
+    const igDirect = (i) => {
+      const d = i.direct || {};
+      if (!d.app_configured) {
+        return `<div class="infobox"><b>Jeito mais simples: conectar o Instagram direto.</b> ${i.is_admin ? 'Falta uma configuração única do administrador em <a class="link" href="#config" data-close>Configurações &gt; App da Meta &gt; Instagram</a> (o passo a passo está lá).' : 'Peça ao administrador para configurar o app do Instagram em Configurações.'}</div>`;
+      }
+      return `<div class="infobox conn-row"><span><b>Conecte o Instagram da loja</b> entrando com o usuário e a senha do Instagram (@_box85_). Não precisa da Página do Facebook.</span><a class="btn primary" href="/api/instagram/connect">Conectar Instagram</a></div>`;
+    };
     const igSec = () => {
       const st = L.instagram;
-      if (!data.instagram.ig_user_id) return igSetup(data.instagram);
-      return `<div class="okbox">Publica em <b>${esc(data.instagram.ig_username ? '@' + data.instagram.ig_username : 'Instagram ligado à Página ' + data.instagram.page_name)}</b>.</div>
+      const d = data.instagram.direct || {};
+      if (!d.connected && !data.instagram.ig_user_id) return `${igDirect(data.instagram)}<details><summary style="cursor:pointer;font-weight:600">Ou ligar pelo Facebook (Página)</summary>${igSetup(data.instagram)}</details>`;
+      return `<div class="okbox conn-row"><span>Publica em <b>${esc(d.connected ? '@' + (d.username || d.ig_user_id) : data.instagram.ig_username ? '@' + data.instagram.ig_username : 'Instagram ligado à Página ' + data.instagram.page_name)}</b>${d.connected ? ' (conexão direta)' : ' (pela Página do Facebook)'}.</span>${d.connected ? '<button class="btn sm ghost" type="button" id="igDisc">Desconectar</button>' : ''}</div>
         ${st?.status === 'publicado' ? `<div class="okbox">Publicado no Instagram${st.url ? ` · <a class="link" href="${esc(st.url)}" target="_blank" rel="noopener">ver post</a>` : ''}. Publicar de novo cria outro post.</div>` : ''}
         ${st?.status === 'erro' ? `<div class="err">${esc(st.error)}</div>${permBoxHtml()}` : ''}
         ${st?.status === 'publicando' ? '<div class="infobox">Publicando… o Instagram leva até um minuto para processar as imagens.</div>' : ''}
@@ -1277,6 +1289,8 @@
       <div class="err" id="chErr" hidden></div>
       <div class="modal-foot"><button class="btn" data-close type="button">Fechar</button></div>`, true);
     const showErr = (m) => { const e = $('#chErr'); e.textContent = m; e.hidden = false; };
+    const igd = $('#igDisc');
+    if (igd) igd.onclick = async () => { await api('POST', '/api/instagram/disconnect'); channelsModal(v, 'instagram'); };
     const pc = $('#permCheck');
     if (pc) pc.onclick = async () => {
       pc.disabled = true; pc.textContent = 'Consultando o Facebook…';
@@ -1406,6 +1420,25 @@
       <p class="note">A chave fica guardada criptografada no servidor. Ao salvar, o GiroAuto confere as credenciais na Meta.</p>
       <div class="err" id="maErr" hidden></div>
       <div class="form-foot">${a.source === 'painel' ? '<button class="btn ghost danger" id="maClear" type="button">Remover</button>' : ''}<button class="btn primary" id="maSave" type="button">${ok ? 'Atualizar credenciais' : 'Salvar e testar'}</button></div>
+      <h3 style="margin:18px 0 6px;font-size:15px">Instagram (conexão direta)</h3>
+      ${S.igApp?.app_id ? `<div class="okbox">App do Instagram configurado. ID: <b>${esc(S.igApp.app_id)}</b></div>` : ''}
+      <details ${S.igApp?.app_id ? '' : 'open'}><summary style="cursor:pointer;font-weight:600">Passo a passo (uma vez só)</summary>
+        <ol class="note" style="padding-left:18px;display:flex;flex-direction:column;gap:6px;margin:10px 0 0">
+          <li>No app GiroAuto da Meta, abra <b>Casos de uso</b> &gt; <b>Gerenciar mensagens e conteúdo no Instagram</b> &gt; <b>Personalizar</b> e escolha <b>Configuração da API com login do Instagram</b>.</li>
+          <li>Em <b>Permissões</b>, deixe adicionadas <b>instagram_business_basic</b> e <b>instagram_business_content_publish</b>.</li>
+          <li>Em <b>Configurar o login empresarial do Instagram</b> (Business login settings), cole a URI abaixo em <b>URIs de redirecionamento do OAuth</b> e salve.</li>
+          <li>Na mesma tela, copie o <b>ID do app do Instagram</b> e a <b>Chave secreta do app do Instagram</b> (são diferentes do ID e da chave do Facebook) e cole abaixo.</li>
+          <li>Se o app estiver em desenvolvimento, adicione o @ da loja em <b>Funções do app &gt; Testadores do Instagram</b> e aceite o convite no Instagram (instagram.com &gt; Configurações &gt; Apps e sites &gt; Convites de testador).</li>
+        </ol>
+      </details>
+      <div class="cfields">${copyRow('URI de redirecionamento do Instagram', S.igApp?.redirect_uri || (location.origin + '/api/instagram/callback'), 'ig')}</div>
+      <div class="fields">
+        <div class="f w3"><label for="ig-id">ID do app do Instagram</label><input id="ig-id" inputmode="numeric" value="${esc(S.igApp?.app_id || '')}" autocomplete="off"></div>
+        <div class="f w3"><label for="ig-secret">Chave secreta do app do Instagram</label><input id="ig-secret" type="password" placeholder="${S.igApp?.app_id ? '•••••••• (guardada)' : '32 caracteres'}" autocomplete="new-password"></div>
+      </div>
+      <div class="err" id="igErr" hidden></div>
+      <div class="form-foot"><button class="btn" id="igSave" type="button">Salvar app do Instagram</button></div>
+
       <h3 style="margin:18px 0 6px;font-size:15px">Permissões extras (opcional)</h3>
       <p class="note">O GiroAuto pede ao Facebook só as permissões de anúncios, que o caso de uso "API de Marketing" aceita. Ligue uma opção abaixo <b>somente depois</b> de adicionar o caso de uso correspondente no app da Meta; senão o Facebook mostra "Invalid Scopes" ao conectar. Depois de mudar, cada loja precisa clicar em Conectar Facebook de novo.</p>
       <div style="display:flex;flex-direction:column;gap:6px;margin:6px 0 10px">${(a.optional_scopes || []).map((o) => `<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-scope="${esc(o.key)}" ${o.enabled ? 'checked' : ''}> ${esc(o.label)}</label>`).join('')}</div>
@@ -1488,7 +1521,13 @@
         } catch (e) { $('#mErr2').textContent = e.message; $('#mErr2').hidden = false; }
         ms.disabled = false;
       };
-      $$('[data-cp]').forEach((b) => { b.onclick = () => copyText(S._cp[Number(b.dataset.cp)], b); });
+      $$('[data-cp]').forEach((b) => { b.onclick = () => copyText(b.dataset.cp === 'ig' ? (S.igApp?.redirect_uri || location.origin + '/api/instagram/callback') : S._cp[Number(b.dataset.cp)], b); });
+      const igs = $('#igSave');
+      if (igs) igs.onclick = async () => {
+        igs.disabled = true; $('#igErr').hidden = true;
+        try { S.igApp = await api('PUT', '/api/admin/instagram-app', { app_id: $('#ig-id').value, app_secret: $('#ig-secret').value }); toast('App do Instagram salvo. Agora use Divulgar > Instagram > Conectar Instagram.', 6000); render(); }
+        catch (e) { $('#igErr').textContent = e.message; $('#igErr').hidden = false; igs.disabled = false; }
+      };
       const gm = $('#goMetaApp'); if (gm) gm.onclick = (e) => { e.preventDefault(); const t = $('#config-meta'); t && t.scrollIntoView({ behavior: 'smooth' }); setTimeout(() => $('#ma-id')?.focus(), 400); };
       const stb = $('#stBackup');
       if (stb) stb.onclick = async () => { stb.disabled = true; try { await api('POST', '/api/admin/storage/backup'); toast('Cópia dos dados feita no Supabase'); render(); } catch (e) { toast(e.message, 6000); stb.disabled = false; } };

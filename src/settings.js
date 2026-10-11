@@ -66,6 +66,19 @@ function gemini() {
   const cur = a.provider === 'gemini' ? a.gemini : a.provider === 'pollinations' ? a.pollinations : { key: '', source: '', model: '' };
   return { ...cur, provider: a.provider, auto: a.auto };
 }
+/* App do Instagram (login do Instagram): ID e chave secreta próprios, na tela do caso de uso */
+function instagramApp() {
+  const id = read('ig_app_id') || process.env.INSTAGRAM_APP_ID || '';
+  const enc = read('ig_app_secret_enc');
+  let secret = '';
+  try { secret = enc ? decrypt(enc) : ''; } catch { secret = ''; }
+  return { id, secret: secret || process.env.INSTAGRAM_APP_SECRET || '' };
+}
+function saveInstagramApp(id, secret) {
+  write('ig_app_id', id || '');
+  write('ig_app_secret_enc', secret ? encrypt(secret) : '');
+}
+
 function saveAi({ provider, geminiKey, geminiModel, pollinationsKey, pollinationsModel, auto }) {
   if (provider !== undefined) write('ai_provider', provider);
   if (geminiKey !== undefined) write('gemini_key_enc', geminiKey ? encrypt(geminiKey) : '');
@@ -78,4 +91,4 @@ function saveAi({ provider, geminiKey, geminiModel, pollinationsKey, pollination
 applyMetaApp();
 applyScopes();
 
-module.exports = { applyMetaApp, saveMetaApp, clearMetaApp, saveExtraScopes, applyScopes, gemini, ai, saveAi };
+module.exports = { applyMetaApp, saveMetaApp, clearMetaApp, saveExtraScopes, applyScopes, gemini, ai, saveAi, instagramApp, saveInstagramApp };
