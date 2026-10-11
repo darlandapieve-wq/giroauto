@@ -2,6 +2,12 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v1.8.2 — 11/10/2026
+
+- Quando o Instagram não aparece ligado, o GiroAuto procura de novo o perfil profissional na Página escolhida (ao abrir Divulgar e ao salvar a Página) e mostra o motivo exato se o Facebook não entregar.
+
+Arquivos alterados: `src/meta/service.js`, `src/server.js`, `public/app.js`, `package.json`, `CHANGELOG.md`.
+
 ## v1.8.1 — 09/10/2026
 
 - **Verificar permissões no Facebook** (Divulgar > Instagram): mostra quais permissões o Facebook entregou ao GiroAuto, quais foram recusadas na conexão e quais o app da Meta não liberou.

@@ -1234,6 +1234,7 @@
     const igSetup = (i) => {
       const ok = (b) => (b ? '<span class="pill p-ok">ok</span>' : '<span class="pill p-warn">falta</span>');
       return `<div class="warnbox">Falta ligar o Instagram da loja ao GiroAuto. Siga os passos abaixo uma vez só.</div>
+        ${!i.connected ? '<div class="err">O Facebook da loja não está conectado. Comece pelo passo 5.</div>' : !i.page_chosen ? '<div class="err">Nenhuma Página escolhida: em Configurações &gt; Facebook e Instagram, escolha a Página Box 85 e clique em Salvar.</div>' : i.lookup ? `<div class="err"><b>O que o Facebook respondeu agora:</b> ${esc(i.lookup)}</div>` : ''}
         <ol class="steps-list">
           <li><b>Instagram profissional</b>: no aplicativo do Instagram, vá em <b>Perfil &gt; ☰ &gt; Configurações &gt; Tipo de conta e ferramentas &gt; Mudar para conta profissional</b> e escolha <b>Empresa</b>. Se já for profissional, pule.</li>
           <li><b>Ligar o Instagram à Página do Facebook</b> da loja: no Instagram, <b>Editar perfil &gt; Página &gt; Conectar</b> e escolha a Página <b>${esc(i.page_name || 'da loja')}</b>. (Ou no Facebook: Página &gt; Configurações &gt; Contas vinculadas &gt; Instagram.)</li>

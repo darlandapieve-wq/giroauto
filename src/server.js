@@ -528,10 +528,14 @@ app.put('/api/vehicles/:id/arts/:slot/source', auth.requireUser, (req, res) => {
 
 /* ---- Outros canais: Instagram, Webmotors e OLX ---- */
 
-app.get('/api/vehicles/:id/channel-data', auth.requireUser, (req, res) => {
+app.get('/api/vehicles/:id/channel-data', auth.requireUser, wrap(async (req, res) => {
   const v = own(req);
   const store = get('SELECT * FROM stores WHERE id = ?', req.user.storeId);
-  const mc = get('SELECT token_enc, page_name, ig_user_id, ig_username FROM meta_connections WHERE store_id = ?', req.user.storeId);
+  // Sem Instagram salvo: procura de novo na Página escolhida (e diz o motivo se não achar).
+  let lookup = '';
+  const pre = get('SELECT token_enc, page_id, ig_user_id FROM meta_connections WHERE store_id = ?', req.user.storeId);
+  if (pre?.token_enc && pre.page_id && !pre.ig_user_id) lookup = await meta.refreshInstagram(req.user.storeId).catch((e) => e.message);
+  const mc = get('SELECT token_enc, page_id, page_name, ig_user_id, ig_username FROM meta_connections WHERE store_id = ?', req.user.storeId);
   const instagram = {
     app_configured: meta.isConfigured(),
     permission_enabled: config.meta.extraScopes.includes('instagram'),
@@ -540,9 +544,11 @@ app.get('/api/vehicles/:id/channel-data', auth.requireUser, (req, res) => {
     ig_user_id: mc?.ig_user_id || '',
     ig_username: mc?.ig_username || '',
     is_admin: !!get('SELECT is_admin FROM users WHERE id = ?', req.user.id)?.is_admin,
+    page_chosen: !!mc?.page_id,
+    lookup,
   };
   res.json({ caption: channels.caption(v, store), fields: channels.fields(v, store), listings: channels.listingsOf(v.id), links: Object.fromEntries(Object.entries(channels.CHANNELS).map(([k, c]) => [k, c.url])), instagram });
-});
+}));
 
 app.post('/api/vehicles/:id/instagram', auth.requireUser, wrap(async (req, res) => {
   const v = own(req);

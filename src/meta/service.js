@@ -141,7 +141,26 @@ async function saveSettings(storeId, body) {
        ig_user_id=?, ig_username=?, business_id=?, whatsapp_number=?, updated_at=datetime('now') WHERE store_id=?`,
     acc?.id || '', acc?.name || '', acc?.currency || 'BRL', page?.id || '', page?.name || '',
     page?.ig_user_id || '', page?.ig_username || '', biz?.id || '', wa, storeId);
+  if (page && !page.ig_user_id) await refreshInstagram(storeId).catch(() => '');
   return publicStatus(storeId);
+}
+
+// Busca o Instagram profissional ligado à Página escolhida. Devolve '' se achou, ou o motivo se não.
+async function refreshInstagram(storeId) {
+  const { conn, token } = tokenFor(storeId);
+  if (!conn.page_id) return 'Nenhuma Página escolhida.';
+  let page;
+  try {
+    page = await graph.get(`/${conn.page_id}`, token, { fields: 'instagram_business_account{id,username},connected_instagram_account{id,username}' });
+  } catch (e) {
+    try { page = await graph.get(`/${conn.page_id}`, token, { fields: 'instagram_business_account' }); }
+    catch (e2) { return `O Facebook não deixou ler o Instagram da Página: ${e2.message}`; }
+  }
+  const ig = page.instagram_business_account || page.connected_instagram_account;
+  if (!ig?.id) return 'A Página escolhida não tem Instagram profissional ligado (ou a permissão do Instagram não foi concedida na conexão).';
+  run(`UPDATE meta_connections SET ig_user_id=?, ig_username=?, updated_at=datetime('now') WHERE store_id=?`, ig.id, ig.username || '', storeId);
+  logEvent(storeId, `Instagram ${ig.username ? '@' + ig.username : ig.id} ligado`);
+  return '';
 }
 
 async function searchCities(storeId, q) {
@@ -507,6 +526,6 @@ async function refreshStats(storeId, campaignId) {
 }
 
 module.exports = {
-  MODES, isConfigured, tokenFor, connectUrl, exchangeCode, saveConnection, publicStatus, listAssets, saveSettings,
+  MODES, isConfigured, tokenFor, refreshInstagram, connectUrl, exchangeCode, saveConnection, publicStatus, listAssets, saveSettings,
   searchCities, searchInterests, reachEstimate, POSITIONS, DEFAULT_POSITIONS, setupCatalog, syncCatalog, launchCampaign, setCampaignStatus, refreshStats, httpError, buildTargeting,
 };
