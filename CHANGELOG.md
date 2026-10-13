@@ -2,6 +2,30 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.1 — 13/10/2026
+
+**Placa que preenche sozinha, gestão no cadastro, venda completa com documento e resultados mais completos**
+
+Cadastro
+- **Busca pela placa corrigida**: o endereço do placafipe estava errado (`.com.br`); agora usa **placafipe.com** e, se falhar, **keplaca.com** (as duas gratuitas). Tenta pelo servidor e depois pelo navegador da loja (extensão **v1.7**). Escolhe sozinho a versão FIPE mais parecida com o documento (motor, câmbio, portas) e mostra as outras versões para trocar com um clique.
+- **Proprietário e documentação separados**: Proprietário (loja, consignado, parceria, repasse, outro) e Documentação (em nome da loja, Renave, procuração, outro), com o campo de observações. Carros antigos marcados como "procuração" viraram consignado + documentação por procuração.
+- **Gestão do veículo no próprio cadastro**: valor de compra (ou repasse, no consignado), data da compra (vem preenchida e pode ajustar), origem da compra, comprado de, **manutenções já feitas** e **custos previstos**, com a **previsão de lucro e margem calculada na hora**. Custo previsto vira "feito" com um clique.
+
+Venda e documento
+- **Vendido** agora abre a venda completa: valor, data, vendedor, comissão, forma de pagamento (entrada e financeira, carro na troca), comprador (nome, CPF, telefone), observações e se o **documento de transferência (ATPV-e/recibo) já foi preenchido**. Mostra o lucro da venda antes de confirmar. Os dados podem ser editados depois (menu Mais > Dados da venda).
+- **Gestão > Documentação**: acompanhamento da transferência de cada carro vendido, por etapas (preenchimento, assinatura/firma, vistoria, transferência, novo CRLV, entregue), com histórico, alerta de mais de 30 dias e **WhatsApp pronto para avisar o comprador**. No estoque, os vendidos mostram a etapa do documento.
+
+Gestão e resultados
+- **Gestão** reorganizada em abas: Estoque e margem, Localização, Documentação, **Despesas da loja** (aluguel, salários, energia… com repetição mensal) e Parceiros.
+- **Resultados**: lucro das vendas, despesas e **resultado líquido**; **DRE do período**; vendas e lucro dos **últimos 12 meses**; **tempo até vender** e **idade do estoque** por faixas; **vendas por marca** com dias médios; **ranking de vendedores**; formas de pagamento; origem da compra; maiores e menores lucros; estoque mais antigo; desconto médio sobre o anúncio; documentos pendentes; filtro por origem; **exportar vendas em planilha**.
+
+Correções
+- **Cadastrar parceiro** dentro do pop-up (localização e custos) não fecha mais a janela: o parceiro é criado ali e já fica selecionado.
+
+Arquivos alterados: `src/plate.js`, `src/gestao.js`, `src/vehicles.js`, `src/db.js`, `src/team.js`, `src/importer.js`, `src/routes2.js`, `src/routes3.js`, `src/server.js`, `public/app.js`, `public/app2.js`, `public/app.css`, `public/sw.js`, `extension/manifest.json`, `extension/background.js`, `package.json`, `test/api.test.js`, `CHANGELOG.md`, `README.md`.
+
+**Extensão:** atualize para a v1.7 (consulta da placa nas duas fontes pelo navegador).
+
 ## v2.0 — 13/10/2026
 
 **Cadastro pela placa, app no celular, vender mais e gestão da loja**

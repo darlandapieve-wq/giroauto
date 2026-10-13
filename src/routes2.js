@@ -20,7 +20,7 @@ const own = (req) => {
   return v;
 };
 
-const FIN_KEYS = ['compra_valor', 'compra_data', 'compra_de', 'consig_repasse', 'venda_valor', 'venda_comprador', 'venda_pagamento', 'venda_comissao', 'financeiro'];
+const FIN_KEYS = ['compra_valor', 'compra_data', 'compra_de', 'compra_origem', 'consig_repasse', 'venda_valor', 'venda_comissao', 'venda_entrada', 'venda_troca_valor', 'financeiro'];
 
 // Quem não tem a permissão "financeiro" não recebe valores de compra, custos e margem.
 function stripFinance(req, res, next) {
@@ -130,7 +130,7 @@ function register(app) {
   app.get('/api/vehicles/:id/finance', team.can('financeiro'), (req, res) => {
     const v = own(req);
     const store = get('SELECT * FROM stores WHERE id = ?', req.user.storeId);
-    res.json({ vehicle: V.serialize(v), costs: G.costsOf(v.id).map((c) => ({ ...c, categoria_label: G.COST_CATS[c.categoria] || c.categoria })), finance: G.finance(v, store), categorias: G.COST_CATS, impostos_pct: store.impostos_pct });
+    res.json({ vehicle: V.serialize(v), costs: G.costsOf(v.id), finance: G.finance(v, store), categorias: G.COST_CATS, impostos_pct: store.impostos_pct, origens: V.ORIGEM });
   });
   app.put('/api/vehicles/:id/finance', team.can('financeiro'), (req, res) => {
     G.saveFinance(req.user.storeId, own(req).id, req.body || {});
@@ -140,6 +140,10 @@ function register(app) {
     G.addCost(req.user.storeId, own(req).id, req.body || {}, req.user.id);
     res.status(201).json({ ok: true });
   });
+  app.put('/api/vehicles/:id/costs/:cid', team.can('financeiro'), (req, res) => {
+    G.updateCost(req.user.storeId, own(req).id, req.params.cid, req.body || {});
+    res.json({ ok: true });
+  });
   app.delete('/api/vehicles/:id/costs/:cid', team.can('financeiro'), (req, res) => {
     G.deleteCost(req.user.storeId, own(req).id, req.params.cid);
     res.json({ ok: true });
@@ -147,7 +151,11 @@ function register(app) {
 
   /* ---------------- Parceiros e localização ---------------- */
   app.get('/api/partners', auth.requireUser, (req, res) => res.json({ partners: G.partners(req.user.storeId, req.query.todos === '1'), tipos: G.PARTNER_TYPES, locais: G.LOCAL }));
-  app.post('/api/partners', team.can('parceiros'), (req, res) => { G.savePartner(req.user.storeId, null, req.body || {}); res.status(201).json({ partners: G.partners(req.user.storeId) }); });
+  // Cadastro rápido também a partir do custo do carro (quem lança custos pode criar o parceiro ali mesmo).
+  app.post('/api/partners', team.canAny('parceiros', 'financeiro'), (req, res) => {
+    const id = G.savePartner(req.user.storeId, null, req.body || {});
+    res.status(201).json({ id: Number(id), partners: G.partners(req.user.storeId) });
+  });
   app.put('/api/partners/:pid', team.can('parceiros'), (req, res) => { G.savePartner(req.user.storeId, req.params.pid, req.body || {}); res.json({ partners: G.partners(req.user.storeId) }); });
   app.put('/api/vehicles/:id/location', team.can('parceiros'), (req, res) => {
     G.setLocation(req.user.storeId, own(req).id, req.body || {}, req.user.id);
@@ -157,6 +165,40 @@ function register(app) {
 
   /* ---------------- Resultados ---------------- */
   app.get('/api/results', team.can('gestao'), (req, res) => res.json(G.results(req.user.storeId, req.query)));
+  app.get('/api/results.csv', team.can('gestao'), (req, res) => {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="vendas-${req.query.from || ''}-${req.query.to || ''}.csv"`);
+    res.send(G.resultsCsv(req.user.storeId, req.query));
+  });
+
+  /* ---------------- Documentação de transferência (v2.1) ---------------- */
+  app.get('/api/docs', team.canAny('vender', 'gestao'), (req, res) => res.json({ docs: G.docList(req.user.storeId), status: G.DOC_STATUS }));
+  app.put('/api/vehicles/:id/doc', team.canAny('vender', 'gestao'), (req, res) => {
+    G.setDocStatus(req.user.storeId, own(req).id, req.body || {}, req.user.id);
+    res.json({ ok: true, docs: G.docList(req.user.storeId) });
+  });
+  app.get('/api/vehicles/:id/doc', team.canAny('vender', 'gestao'), (req, res) => res.json(G.docMoves(own(req).id)));
+
+  // Dados da venda para editar depois (valor, data, comprador, pagamento…).
+  app.put('/api/vehicles/:id/sale', team.can('vender'), (req, res) => {
+    const v = own(req);
+    if (v.status !== 'vendido') throw fail(409, 'O veículo ainda não foi vendido.');
+    const b = { ...(req.body || {}) };
+    if (!req.user.perms.has('financeiro')) delete b.venda_comissao;
+    const f = G.saleFields(req.user.storeId, v, b, true);
+    const cols = Object.keys(f);
+    if (cols.length) run(`UPDATE vehicles SET ${cols.map((c) => `${c}=?`).join(',')}, updated_at=datetime('now') WHERE id=?`, ...cols.map((c) => f[c]), v.id);
+    res.json(V.serialize(V.findVehicle(req.user.storeId, v.id)));
+  });
+
+  /* ---------------- Despesas da loja (v2.1) ---------------- */
+  app.get('/api/expenses', team.can('financeiro'), (req, res) => {
+    const from = /^\d{4}-\d{2}-\d{2}$/.test(req.query.from || '') ? req.query.from : '0000-01-01';
+    const to = /^\d{4}-\d{2}-\d{2}$/.test(req.query.to || '') ? req.query.to : '9999-12-31';
+    res.json({ despesas: G.expenses(req.user.storeId, from, to), categorias: G.EXP_CATS });
+  });
+  app.post('/api/expenses', team.can('financeiro'), (req, res) => { G.addExpense(req.user.storeId, req.body || {}); res.status(201).json({ ok: true }); });
+  app.delete('/api/expenses/:eid', team.can('financeiro'), (req, res) => { G.deleteExpense(req.user.storeId, req.params.eid); res.json({ ok: true }); });
 
   /* ---------------- Ajustes da loja para gestão ---------------- */
   app.put('/api/store/gestao', team.can('config'), (req, res) => {

@@ -1,4 +1,4 @@
-/* GiroAuto v2.0 — cadastro pela placa, proprietário, fotos prontas, importação, vender mais, gestão, equipe e app */
+/* GiroAuto v2.1 — cadastro pela placa, proprietário, fotos prontas, importação, vender mais, gestão, equipe e app */
 (function () {
   'use strict';
   const X = window.GiroExt;
@@ -31,7 +31,18 @@
     if (d.fipe_ref) { $('#v-fipe_ref') && ($('#v-fipe_ref').value = d.fipe_ref); }
     if (d.municipio_placa) { $('#v-municipio_placa') && ($('#v-municipio_placa').value = d.municipio_placa); }
     const info = $('#plateInfo');
-    if (info) info.innerHTML = `<div class="okbox">Preenchido: <b>${esc([d.marca, d.modelo, d.versao].filter(Boolean).join(' '))}</b>${d.ano_modelo ? ` · ${esc(d.ano_fab || '')}/${esc(d.ano_modelo)}` : ''}${d.fipe ? ` · FIPE ${brl(d.fipe)}${d.fipe_ref ? ` (${esc(d.fipe_ref)})` : ''}` : ''}. <span class="note">Fonte: ${esc(d.fonte || '')}. Confira antes de salvar.</span></div>`;
+    if (info) {
+      const ops = d.fipe_opcoes || [];
+      info.innerHTML = `<div class="okbox">Preenchido: <b>${esc([d.marca, d.modelo, d.versao].filter(Boolean).join(' '))}</b>${d.ano_modelo ? ` · ${esc(d.ano_fab || '')}/${esc(d.ano_modelo)}` : ''}${d.fipe ? ` · FIPE ${brl(d.fipe)}${d.fipe_ref ? ` (${esc(d.fipe_ref)})` : ''}` : ''}. <span class="note">Fonte: ${esc(d.fonte || '')}${d.modelo_documento ? ` · no documento: ${esc(d.modelo_documento)}` : ''}${d.cilindrada ? ` · ${esc(d.cilindrada)}` : ''}. Confira antes de salvar.</span></div>
+        ${ops.length > 1 ? `<div class="f" style="margin-top:8px"><label for="pb-ver">Versão FIPE (a mais parecida já foi escolhida)</label><select id="pb-ver">${ops.map((o, i) => `<option value="${i}">${esc(o.modelo)} · ${brl(o.valor)} · ${esc(o.codigo)}</option>`).join('')}</select></div>` : ''}`;
+      const sel = $('#pb-ver');
+      if (sel) sel.onchange = () => {
+        const o = ops[Number(sel.value)];
+        const parts = o.modelo.split(/\s+/); parts.shift();
+        setField('versao', parts.join(' ')); setField('fipe', o.valor);
+        if ($('#v-fipe_codigo')) $('#v-fipe_codigo').value = o.codigo;
+      };
+    }
     return n;
   }
 
@@ -44,9 +55,13 @@
     try {
       let d = await api('GET', `/api/plate/${p}`);
       if (!d.encontrado && d.precisa_extensao) {
-        if (info) info.innerHTML = '<div class="infobox">O site bloqueou a consulta pelo servidor. Tentando pelo seu navegador (extensão do GiroAuto)…</div>';
-        const r = await X.extSend({ cmd: 'plateLookup', url: d.url }, 35000);
-        if (r?.ok && r.html) d = await api('POST', `/api/plate/${p}/html`, { html: r.html }).catch(() => ({ encontrado: false }));
+        if (info) info.innerHTML = '<div class="infobox">Os sites de consulta não responderam ao servidor. Tentando pelo seu navegador (extensão do GiroAuto)…</div>';
+        for (const url of d.urls || [d.url]) {
+          const r = await X.extSend({ cmd: 'plateLookup', url }, 35000);
+          if (!r?.ok || !r.html) continue;
+          const t = await api('POST', `/api/plate/${p}/html`, { html: r.html, url }).catch(() => null);
+          if (t?.encontrado) { d = t; break; }
+        }
       }
       if (d.encontrado) { applyVehicleData(d); return d; }
       if (info) info.innerHTML = `<div class="warnbox">Não consegui os dados desta placa automaticamente${X.S.extInfo ? '' : ' (a extensão do Chrome ajuda quando o site bloqueia o servidor)'}. Use a <b>Tabela FIPE</b> ou preencha à mão.</div>`;
@@ -105,22 +120,29 @@
   /* ======================= Formulário do veículo ======================= */
   function ownerPanelHtml(d) {
     const P = S.me.options.propriedade || [];
+    const D = S.me.options.documentacao || [];
     const tipo = d.proprietario_tipo || 'proprio';
-    const terceiro = tipo !== 'proprio';
+    const doc = d.doc_tipo || 'loja';
+    const radios = (name, list, val) => `<div class="owners">${list.map((p) => `<label class="check"><input type="radio" name="${name}" value="${p.key}" ${p.key === val ? 'checked' : ''}><div><b>${esc(p.label.split(' (')[0])}</b>${p.label.includes('(') ? `<span>${esc(p.label.split('(')[1].replace(')', ''))}</span>` : ''}</div></label>`).join('')}</div>`;
     return `<div class="panel" id="ownerPanel" style="margin-top:16px">
       <h2>Proprietário e documentação</h2>
-      <div class="owners">${P.map((p) => `<label class="check"><input type="radio" name="v-ptipo" value="${p.key}" ${p.key === tipo ? 'checked' : ''}><div><b>${esc(p.label.split(' (')[0])}</b>${p.label.includes('(') ? `<span>${esc(p.label.split('(')[1].replace(')', ''))}</span>` : ''}</div></label>`).join('')}</div>
-      <div id="ownerExtra" ${terceiro ? '' : 'hidden'}>
+      <h3 class="dest-h">Proprietário</h3>
+      ${radios('v-ptipo', P, tipo)}
+      <div id="ownerExtra" ${tipo !== 'proprio' ? '' : 'hidden'}>
         <div class="fields" style="margin-top:12px">
           <div class="f w3"><label for="v-proprietario_nome">Nome do proprietário</label><input id="v-proprietario_nome" value="${esc(d.proprietario_nome || '')}"></div>
           <div class="f w3"><label for="v-proprietario_tel">Telefone / WhatsApp</label><input id="v-proprietario_tel" value="${esc(d.proprietario_tel || '')}" inputmode="tel"></div>
           <div class="f"><label for="v-proprietario_doc">CPF / CNPJ</label><input id="v-proprietario_doc" value="${esc(d.proprietario_doc || '')}" inputmode="numeric"></div>
-          <div class="f"><label for="v-consig_comissao_pct">Comissão da loja (%)</label><input id="v-consig_comissao_pct" value="${esc(d.consig_comissao_pct || '')}" inputmode="decimal" placeholder="ex.: 8"></div>
-          <div class="f" id="procBox" ${tipo === 'procuracao' ? '' : 'hidden'}><label for="v-procuracao_validade">Procuração válida até</label><input id="v-procuracao_validade" type="date" value="${esc(d.procuracao_validade || '')}"></div>
-          <div class="f w6"><label for="v-proprietario_obs">Combinado com o proprietário</label><textarea id="v-proprietario_obs" rows="2" placeholder="Valor mínimo, prazo, quem paga a preparação, chave reserva…">${esc(d.proprietario_obs || '')}</textarea></div>
+          <div class="f" id="consigBox" ${tipo === 'consignado' ? '' : 'hidden'}><label for="v-consig_comissao_pct">Comissão da loja (%)</label><input id="v-consig_comissao_pct" value="${esc(d.consig_comissao_pct || '')}" inputmode="decimal" placeholder="ex.: 8"></div>
         </div>
-        <div id="procUpload" ${tipo === 'procuracao' ? '' : 'hidden'} style="margin-top:8px">${procHtml(d)}</div>
       </div>
+      <h3 class="dest-h">Documentação</h3>
+      ${radios('v-dtipo', D, doc)}
+      <div class="fields" style="margin-top:10px">
+        <div class="f" id="procBox" ${doc === 'procuracao' ? '' : 'hidden'}><label for="v-procuracao_validade">Procuração válida até</label><input id="v-procuracao_validade" type="date" value="${esc(d.procuracao_validade || '')}"></div>
+        <div class="f w6"><label for="v-proprietario_obs">Observações</label><textarea id="v-proprietario_obs" rows="2" placeholder="Valor mínimo combinado, prazo, quem paga a preparação, chave reserva, situação do documento…">${esc(d.proprietario_obs || '')}</textarea></div>
+      </div>
+      <div id="procUpload" ${doc === 'procuracao' ? '' : 'hidden'} style="margin-top:8px">${procHtml(d)}</div>
       <h3 class="dest-h">Identificação</h3>
       <div class="fields">
         <div class="f"><label for="v-renavam">Renavam</label><input id="v-renavam" value="${esc(d.renavam || '')}" inputmode="numeric" maxlength="11"></div>
@@ -140,6 +162,8 @@
 
   X.readDraft = (d) => {
     const t = $('input[name="v-ptipo"]:checked'); if (t) d.proprietario_tipo = t.value;
+    const dt = $('input[name="v-dtipo"]:checked'); if (dt) d.doc_tipo = dt.value;
+    readGestao(d);
     ['proprietario_nome', 'proprietario_tel', 'proprietario_doc', 'consig_comissao_pct', 'procuracao_validade', 'proprietario_obs', 'renavam', 'chassi', 'municipio_placa', 'fipe_codigo', 'fipe_ref']
       .forEach((k) => { const el = $('#v-' + k); if (el) d[k] = el.value; });
   };
@@ -162,8 +186,14 @@
     // Proprietário e identificação
     if (!$('#ownerPanel') && dados) {
       dados.insertAdjacentHTML('beforeend', ownerPanelHtml(d));
-      $$('input[name="v-ptipo"]').forEach((r) => { r.onchange = () => { $('#ownerExtra').hidden = r.value === 'proprio'; $('#procBox').hidden = r.value !== 'procuracao'; $('#procUpload').hidden = r.value !== 'procuracao'; }; });
+      $$('input[name="v-ptipo"]').forEach((r) => { r.onchange = () => { $('#ownerExtra').hidden = r.value === 'proprio'; $('#consigBox').hidden = r.value !== 'consignado'; gestaoSync(); }; });
+      $$('input[name="v-dtipo"]').forEach((r) => { r.onchange = () => { $('#procBox').hidden = r.value !== 'procuracao'; $('#procUpload').hidden = r.value !== 'procuracao'; }; });
       bindProc(d);
+    }
+    // Gestão do veículo: compra, origem, manutenções feitas e custos previstos, com o lucro previsto na hora.
+    if (can('financeiro') && $('#ownerPanel') && !$('#gestaoPanel')) {
+      $('#ownerPanel').insertAdjacentHTML('afterend', '<div class="panel" id="gestaoPanel" style="margin-top:16px"><div class="loading">Carregando…</div></div>');
+      gestaoPanel(d);
     }
     // Câmera no celular e ferramenta de desfoque
     const drop = $('#drop');
@@ -172,13 +202,158 @@
       $('#camInput').onchange = () => { const inp = $('#v-fotos'); const dt = new DataTransfer(); [...$('#camInput').files].forEach((f) => dt.items.add(f)); inp.files = dt.files; inp.dispatchEvent(new Event('change')); $('#camInput').value = ''; };
     }
     decoratePhotos(d);
-    // Custos e margem do carro
-    if (d.id && can('financeiro') && !$('#finBtn')) {
+    // Venda já feita: atalho para editar os dados da venda.
+    if (d.id && d.status === 'vendido' && can('vender') && !$('#saleBtn')) {
       const foot = $('#salvar')?.parentElement;
-      foot?.insertAdjacentHTML('afterbegin', `<button class="btn ghost" id="finBtn" type="button">Custos e margem</button>`);
-      $('#finBtn').onclick = () => financeModal(d.id);
+      foot?.insertAdjacentHTML('afterbegin', `<button class="btn ghost" id="saleBtn" type="button">Dados da venda</button>`);
+      $('#saleBtn').onclick = () => saleEditModal(d.id);
     }
   }
+  /* ---------- Gestão do veículo dentro do cadastro (v2.1) ---------- */
+  const pct = (x) => String(x ?? 0).replace('.', ',');
+  const consigOf = () => ($('input[name="v-ptipo"]:checked')?.value || S.draft?.proprietario_tipo) === 'consignado';
+  async function gestaoPanel(d) {
+    const g = d._g || (d._g = { costs: [], novos: [] });
+    try {
+      if (d.id && !g.loaded) { const F = await api('GET', `/api/vehicles/${d.id}/finance`); g.costs = F.costs; g.loaded = true; }
+      await loadPartners();
+    } catch (e) { $('#gestaoPanel').innerHTML = `<div class="err">${esc(e.message)}</div>`; return; }
+    const O = S.me.options;
+    const dataCompra = d._fin?.compra_data ?? (d.compra_data || (d.created_at ? String(d.created_at).slice(0, 10) : today()));
+    const fin = d._fin || {};
+    const consig = consigOf();
+    const base = fin.base ?? (consig ? (d.consig_repasse || '') : (d.compra_valor || ''));
+    $('#gestaoPanel').innerHTML = `<h2>Gestão do veículo</h2>
+      <p class="lead">Compra, manutenções e custos previstos. O lucro previsto é calculado na hora. Não aparece nos anúncios.</p>
+      <div class="fields">
+        <div class="f"><label for="g-cv" id="g-cv-l">${consig ? 'Repasse ao dono (R$)' : 'Valor de compra (R$)'}</label><input id="g-cv" inputmode="numeric" value="${esc(base || '')}" placeholder="${consig ? 'ou a comissão % acima' : 'ex.: 52000'}"></div>
+        <div class="f"><label for="g-cd">Data da compra</label><input id="g-cd" type="date" value="${esc(dataCompra || '')}"></div>
+        <div class="f"><label for="g-or">Origem da compra</label><select id="g-or"><option value="">Selecione</option>${(O.origem || []).map((o) => `<option value="${o.key}" ${o.key === (fin.compra_origem ?? d.compra_origem) ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}</select></div>
+        <div class="f w3"><label for="g-cf">Comprado de</label><input id="g-cf" value="${esc(fin.compra_de ?? (d.compra_de || ''))}" placeholder="Nome do vendedor, loja ou leilão"></div>
+      </div>
+      <div class="grid2 gcost" style="margin-top:12px">
+        <div><h3 class="dest-h">Manutenções e custos já feitos</h3><div id="g-real"></div></div>
+        <div><h3 class="dest-h">Custos previstos</h3><div id="g-prev"></div></div>
+      </div>
+      <div class="fields addcost">
+        <div class="f"><label for="gc-s">Tipo</label><select id="gc-s"><option value="realizado">Já feito</option><option value="previsto">Previsto</option></select></div>
+        <div class="f"><label for="gc-c">Categoria</label><select id="gc-c">${opt(Object.entries(O.custos || {}), 'mecanica')}</select></div>
+        <div class="f w3"><label for="gc-d">Descrição</label><input id="gc-d" placeholder="Ex.: troca de pastilhas, polimento"></div>
+        <div class="f"><label for="gc-v">Valor (R$)</label><input id="gc-v" inputmode="numeric"></div>
+        <div class="f w3"><label for="gc-p">Parceiro (opcional)</label><select id="gc-p"><option value="">—</option>${PARTNERS.partners.map((p) => `<option value="${p.id}">${esc(p.nome)}</option>`).join('')}</select><span class="hint"><button class="linkbtn" type="button" id="gc-pn">+ Cadastrar parceiro</button></span></div>
+        <div class="f" style="align-self:end"><button class="btn" type="button" id="gc-add">Adicionar custo</button></div>
+      </div>
+      <div id="gc-pbox"></div>
+      <div class="calc" id="g-calc"></div>`;
+    renderCosts(d);
+    ['#g-cv', '#v-preco', '#v-preco_oferta', '#v-consig_comissao_pct'].forEach((s) => { const el = $(s); if (el) el.addEventListener('input', gestaoSync); });
+    $('#gc-pn').onclick = () => partnerInline($('#gc-p'), $('#gc-pbox'), $('#gc-c').value);
+    $('#gc-add').onclick = async () => {
+      const c = { status: $('#gc-s').value, categoria: $('#gc-c').value, descricao: $('#gc-d').value.trim(), valor: num($('#gc-v').value), parceiro_id: $('#gc-p').value, data: today() };
+      if (!c.valor) { toast('Informe o valor do custo.'); $('#gc-v').focus(); return; }
+      if (d.id) {
+        try { await api('POST', `/api/vehicles/${d.id}/costs`, c); g.costs = (await api('GET', `/api/vehicles/${d.id}/finance`)).costs; }
+        catch (e) { return toast(e.message, 6000); }
+      } else g.novos.push({ ...c, tmp: Date.now() });
+      $('#gc-d').value = ''; $('#gc-v').value = '';
+      renderCosts(d);
+    };
+  }
+  function costRow(c, d) {
+    const cat = S.me.options.custos?.[c.categoria] || c.categoria;
+    const parc = c.parceiro_nome || PARTNERS?.partners.find((p) => String(p.id) === String(c.parceiro_id))?.nome || '';
+    const key = c.id ? `id:${c.id}` : `tmp:${c.tmp}`;
+    return `<div class="cf"><span class="k">${esc(cat)}${c.id ? '' : ' <span class="pill p-muted">a salvar</span>'}<br><span class="sub">${esc(c.descricao || '')}${parc ? ' · ' + esc(parc) : ''}</span></span><span class="v">${brl(c.valor)}</span>
+      <span class="btnrow" style="gap:4px">${c.status === 'previsto' ? `<button class="btn sm" type="button" data-cdone="${key}" title="Marcar como feito">Feito</button>` : ''}<button class="btn sm ghost danger" type="button" data-cdel="${key}" aria-label="Excluir custo">×</button></span></div>`;
+  }
+  function renderCosts(d) {
+    const g = d._g; const all_ = [...g.costs, ...g.novos];
+    const real = all_.filter((c) => c.status !== 'previsto'); const prev = all_.filter((c) => c.status === 'previsto');
+    const empty = (t) => `<div class="cfields"><div class="cf"><span class="v sub">${t}</span></div></div>`;
+    $('#g-real').innerHTML = real.length ? `<div class="cfields">${real.map((c) => costRow(c, d)).join('')}</div>` : empty('Nenhuma manutenção lançada.');
+    $('#g-prev').innerHTML = prev.length ? `<div class="cfields">${prev.map((c) => costRow(c, d)).join('')}</div>` : empty('Nada previsto. Lance o que ainda vai gastar (pneus, polimento…) para a previsão ficar certa.');
+    const find = (key) => { const [t, v] = key.split(':'); return t === 'id' ? { c: g.costs.find((x) => String(x.id) === v), saved: true } : { c: g.novos.find((x) => String(x.tmp) === v), saved: false }; };
+    $$('[data-cdel]').forEach((b) => { b.onclick = async () => {
+      const { c, saved } = find(b.dataset.cdel); if (!c) return;
+      if (saved) { try { await api('DELETE', `/api/vehicles/${d.id}/costs/${c.id}`); g.costs = g.costs.filter((x) => x !== c); } catch (e) { return toast(e.message); } }
+      else g.novos = g.novos.filter((x) => x !== c);
+      renderCosts(d);
+    }; });
+    $$('[data-cdone]').forEach((b) => { b.onclick = async () => {
+      const { c, saved } = find(b.dataset.cdone); if (!c) return;
+      if (saved) { try { await api('PUT', `/api/vehicles/${d.id}/costs/${c.id}`, { status: 'realizado' }); } catch (e) { return toast(e.message); } }
+      c.status = 'realizado'; c.previsto = false;
+      renderCosts(d);
+    }; });
+    gestaoSync();
+  }
+  // Recalcula a previsão de lucro com o que está na tela.
+  function gestaoSync() {
+    const box = $('#g-calc'); const d = S.draft; if (!box || !d?._g) return;
+    const consig = consigOf();
+    if ($('#g-cv-l')) { $('#g-cv-l').textContent = consig ? 'Repasse ao dono (R$)' : 'Valor de compra (R$)'; $('#g-cv').placeholder = consig ? 'ou a comissão % acima' : 'ex.: 52000'; }
+    const preco = num($('#v-preco_oferta')?.value) || num($('#v-preco')?.value);
+    const all_ = [...d._g.costs, ...d._g.novos];
+    const feitos = all_.filter((c) => c.status !== 'previsto').reduce((s, c) => s + num(c.valor), 0);
+    const prev = all_.filter((c) => c.status === 'previsto').reduce((s, c) => s + num(c.valor), 0);
+    const pctC = Number(String($('#v-consig_comissao_pct')?.value || '').replace(',', '.')) || 0;
+    const base = num($('#g-cv').value) || (consig && pctC && preco ? Math.round(preco * (1 - pctC / 100)) : 0);
+    const impPct = Number(S.me.store.impostos_pct || 0);
+    const imp = Math.round(preco * impPct / 100);
+    const lucro = preco - base - feitos - prev - imp;
+    const margem = preco ? Math.round((lucro / preco) * 1000) / 10 : 0;
+    const line = (l, v, cls = '') => `<div class="cl ${cls}"><span>${l}</span><b>${v}</b></div>`;
+    box.innerHTML = `<h3 class="dest-h">Previsão de lucro</h3>
+      ${line(`Preço do anúncio${num($('#v-preco_oferta')?.value) ? ' (oferta)' : ''}`, preco ? brl(preco) : '—')}
+      ${line(consig ? '− Repasse ao dono' : '− Valor de compra', base ? brl(base) : '—')}
+      ${line('− Manutenções feitas', brl(feitos))}
+      ${line('− Custos previstos', brl(prev))}
+      ${impPct ? line(`− Impostos (${pct(impPct)}%)`, brl(imp)) : ''}
+      ${preco && base ? line('= Lucro previsto', `${brl(lucro)} <small>${pct(margem)}% de margem</small>`, `tot ${lucro < 0 ? 'neg' : 'pos'}`) : `<p class="note">Informe o preço e ${consig ? 'o repasse (ou a comissão %)' : 'o valor de compra'} para ver o lucro previsto.</p>`}
+      ${consig ? '' : `<p class="note">Investimento total: <b>${brl(base + feitos + prev)}</b> (compra + manutenções + previstos).</p>`}`;
+  }
+  function readGestao(d) {
+    if (!$('#gestaoPanel') || !$('#g-cv')) return;
+    const consig = consigOf();
+    d._fin = { base: $('#g-cv').value, compra_data: $('#g-cd').value, compra_origem: $('#g-or').value, compra_de: $('#g-cf').value };
+    d._fin[consig ? 'consig_repasse' : 'compra_valor'] = num($('#g-cv').value);
+  }
+  X.afterSave = async (v, d) => {
+    if (!can('financeiro') || !d._fin) return;
+    const { base, ...body } = d._fin;
+    await api('PUT', `/api/vehicles/${v.id}/finance`, body);
+    for (const c of d._g?.novos || []) await api('POST', `/api/vehicles/${v.id}/costs`, c);
+    if (d._g) d._g.novos = [];
+  };
+
+  // Cadastro rápido de parceiro dentro do próprio pop-up (sem sair para a aba Parceiros).
+  function partnerInline(select, host, tipoSug) {
+    if (!can('parceiros') && !can('financeiro')) return toast('Seu usuário não pode cadastrar parceiros.');
+    const tipos = Object.entries(PARTNERS?.tipos || {});
+    const guess = { mecanica: 'oficina', eletrica: 'eletrica', funilaria: 'funilaria', estetica: 'estetica', lavagem: 'lavador', pneus: 'pneus', despachante: 'despachante', documentacao: 'despachante', vistoria: 'vistoria', manutencao: 'oficina', loja_parceira: 'loja_parceira' }[tipoSug] || 'oficina';
+    host.innerHTML = `<div class="inline-form"><b>Novo parceiro</b>
+      <div class="fields">
+        <div class="f w3"><label for="ip-n">Nome</label><input id="ip-n" placeholder="Oficina do Zé"></div>
+        <div class="f"><label for="ip-t">Tipo</label><select id="ip-t">${opt(tipos, guess)}</select></div>
+        <div class="f"><label for="ip-w">WhatsApp</label><input id="ip-w" inputmode="tel" placeholder="(44) 99999-0000"></div>
+        <div class="f w3"><label for="ip-c">Contato</label><input id="ip-c" placeholder="José"></div>
+      </div>
+      <div class="err" id="ip-err" hidden></div>
+      <div class="btnrow" style="justify-content:flex-end"><button class="btn sm" type="button" id="ip-x">Cancelar</button><button class="btn sm primary" type="button" id="ip-ok">Salvar parceiro</button></div></div>`;
+    $('#ip-n').focus();
+    $('#ip-x').onclick = () => { host.innerHTML = ''; };
+    $('#ip-ok').onclick = async () => {
+      try {
+        const r = await api('POST', '/api/partners', { nome: $('#ip-n').value, tipo: $('#ip-t').value, whatsapp: $('#ip-w').value, contato: $('#ip-c').value });
+        PARTNERS = { ...PARTNERS, partners: r.partners };
+        const p = r.partners.find((x) => x.id === r.id);
+        select.insertAdjacentHTML('beforeend', `<option value="${r.id}">${esc(p?.nome || $('#ip-n').value)}${p && select.id === 'lc-p' ? ` (${esc(p.tipo_label)})` : ''}</option>`);
+        select.value = String(r.id); select.dispatchEvent(new Event('change'));
+        host.innerHTML = ''; toast('Parceiro cadastrado');
+      } catch (e) { $('#ip-err').textContent = e.message; $('#ip-err').hidden = false; }
+    };
+  }
+
   function bindProc(d) {
     const f = $('#procFile');
     if (f) f.onchange = async () => {
@@ -264,6 +439,7 @@
       if (st) {
         if (v.parado) st.insertAdjacentHTML('beforeend', `<button class="pill p-warn badge-btn" type="button" data-parado="${v.id}" title="Sugerir oferta">Parado ${v.dias_estoque} dias</button>`);
         if (v.local_status && v.local_status !== 'patio') st.insertAdjacentHTML('beforeend', `<span class="pill p-info" title="${esc(v.local_parceiro?.nome || '')}">${esc(v.local_label)}${v.local_parceiro ? ': ' + esc(v.local_parceiro.nome) : ''}</span>`);
+        if (v.status === 'vendido' && !v.doc_concluido) st.insertAdjacentHTML('beforeend', `<button class="pill p-warn badge-btn" type="button" data-docgo="${v.id}" title="Acompanhar em Gestão > Documentação">Doc: ${esc(v.doc_status_label)}</button>`);
         if (v.proprietario_tipo && v.proprietario_tipo !== 'proprio') st.insertAdjacentHTML('beforeend', `<span class="pill p-muted">${esc((S.me.options.propriedade.find((p) => p.key === v.proprietario_tipo)?.label || '').split(' (')[0])}</span>`);
       }
       const acts = row.querySelector('.actions');
@@ -272,6 +448,7 @@
     // Esconde ações sem permissão (o servidor também bloqueia)
     const need = { publicar: 'publicar', republicar: 'publicar', divulgar: 'publicar', vendido: 'vender', excluir: 'excluir', duplicar: 'cadastrar', editar: 'cadastrar' };
     $$('.list [data-act]').forEach((b) => { if (need[b.dataset.act] && !can(need[b.dataset.act])) b.hidden = true; });
+    $$('[data-docgo]').forEach((b) => { b.onclick = () => { gTab = 'docs'; X.go('gestao'); }; });
     $$('[data-parado]').forEach((b) => { b.onclick = () => offerModal(V.find((x) => x.id === Number(b.dataset.parado))); });
     $$('[data-more]').forEach((b) => { b.onclick = (e) => moreMenu(V.find((x) => x.id === Number(b.dataset.more)), e.currentTarget); });
   }
@@ -283,6 +460,7 @@
       can('precos') && v.status !== 'vendido' && ['offer', 'Criar oferta (preço de ocasião)'],
       can('parceiros') && v.status !== 'vendido' && ['loc', 'Localização (oficina, funilaria…)'],
       can('financeiro') && ['fin', 'Custos e margem'],
+      can('vender') && v.status === 'vendido' && ['sale', 'Dados da venda'],
     ].filter(Boolean);
     const r = anchor.getBoundingClientRect();
     document.body.insertAdjacentHTML('beforeend', `<div class="menu" id="moreMenu" style="top:${r.bottom + window.scrollY + 4}px;left:${Math.max(8, r.right + window.scrollX - 260)}px">${items.map(([k, l]) => `<button type="button" data-mi="${k}">${esc(l)}</button>`).join('')}</div>`);
@@ -299,6 +477,7 @@
         if (k === 'offer') offerModal(v);
         if (k === 'loc') locationModal(v);
         if (k === 'fin') financeModal(v.id);
+        if (k === 'sale') saleEditModal(v.id);
       };
     });
   }
@@ -356,14 +535,16 @@
     modal(`<h3>Onde está o ${esc(v.marca)} ${esc(v.modelo)}?</h3>
       <div class="fields">
         <div class="f w3"><label for="lc-st">Situação</label><select id="lc-st">${opt(locais, v.local_status || 'patio')}</select></div>
-        <div class="f w3" id="lc-pbox"><label for="lc-p">Parceiro</label><select id="lc-p"><option value="">Selecione</option>${P.partners.map((p) => `<option value="${p.id}" ${p.id === v.local_parceiro?.id ? 'selected' : ''}>${esc(p.nome)} (${esc(p.tipo_label)})</option>`).join('')}</select><span class="hint"><a class="link" href="#gestao" data-close>Cadastrar parceiro</a></span></div>
+        <div class="f w3" id="lc-pbox"><label for="lc-p">Parceiro</label><select id="lc-p"><option value="">Selecione</option>${P.partners.map((p) => `<option value="${p.id}" ${p.id === v.local_parceiro?.id ? 'selected' : ''}>${esc(p.nome)} (${esc(p.tipo_label)})</option>`).join('')}</select><span class="hint"><button class="linkbtn" type="button" id="lc-pn">+ Cadastrar parceiro</button></span></div>
         <div class="f w3" id="lc-prev"><label for="lc-d">Previsão de retorno</label><input id="lc-d" type="date" value="${esc(v.local_previsao || '')}"></div>
         <div class="f w6"><label for="lc-o">Serviço / observação</label><input id="lc-o" value="${esc(v.local_obs || '')}" placeholder="Ex.: troca de embreagem, polimento"></div>
       </div>
+      <div id="lc-new"></div>
       <div class="err" id="lc-err" hidden></div>
       <div class="modal-foot"><button class="btn" data-close type="button">Cancelar</button><button class="btn primary" id="lc-ok" type="button">Salvar</button></div>`);
-    const sync = () => { const p = $('#lc-st').value === 'patio'; $('#lc-pbox').hidden = p; $('#lc-prev').hidden = p; };
+    const sync = () => { const p = $('#lc-st').value === 'patio'; $('#lc-pbox').hidden = p; $('#lc-prev').hidden = p; if (p) $('#lc-new').innerHTML = ''; };
     $('#lc-st').onchange = sync; sync();
+    $('#lc-pn').onclick = () => partnerInline($('#lc-p'), $('#lc-new'), $('#lc-st').value);
     $('#lc-ok').onclick = async () => {
       try {
         await api('PUT', `/api/vehicles/${v.id}/location`, { status: $('#lc-st').value, parceiro_id: $('#lc-p').value, previsao: $('#lc-d').value, obs: $('#lc-o').value });
@@ -387,71 +568,227 @@
       <div class="modal-foot">${p.id ? '<button class="btn ghost danger" type="button" id="pt-off">Desativar</button>' : ''}<button class="btn" data-close type="button">Cancelar</button><button class="btn primary" id="pt-ok" type="button">Salvar</button></div>`);
     const body = () => ({ nome: $('#pt-n').value, tipo: $('#pt-t').value, contato: $('#pt-c').value, whatsapp: $('#pt-w').value, endereco: $('#pt-e').value, obs: $('#pt-o').value });
     $('#pt-ok').onclick = async () => {
-      try { PARTNERS = { ...PARTNERS, ...(await api(p.id ? 'PUT' : 'POST', p.id ? `/api/partners/${p.id}` : '/api/partners', body())) }; closeModal(); X.render(); }
+      try { const r = await api(p.id ? 'PUT' : 'POST', p.id ? `/api/partners/${p.id}` : '/api/partners', body()); PARTNERS = { ...PARTNERS, partners: r.partners }; closeModal(); X.render(); }
       catch (e) { $('#pt-err').textContent = e.message; $('#pt-err').hidden = false; }
     };
     if ($('#pt-off')) $('#pt-off').onclick = async () => { await api('PUT', `/api/partners/${p.id}`, { ...body(), active: false }); await loadPartners(true); closeModal(); X.render(); };
   }
 
-  /* ======================= Custos e margem ======================= */
+  /* ======================= Venda (v2.1) ======================= */
+  const DOC_INICIAL = [['pendente', 'Ainda não preenchido'], ['preenchido', 'Sim, ATPV-e / recibo preenchido'], ['assinado', 'Preenchido e assinado (firma reconhecida)'], ['nao_aplica', 'Não se aplica']];
+  function saleFieldsHtml(v, sellers, edit) {
+    const pg = S.me.options.pagamentos || [];
+    const val = (k, def = '') => esc(v[k] ?? def);
+    const vend = v.venda_vendedor_id || S.me.user.id;
+    const data = edit ? String(v.vendido_em || '').slice(0, 10) : today();
+    return `<div class="fields">
+        <div class="f"><label for="s-vv">Valor da venda (R$)</label><input id="s-vv" inputmode="numeric" value="${edit ? val('venda_valor') : esc(v.preco_anuncio || '')}" style="font-size:18px"></div>
+        <div class="f"><label for="s-dt">Data da venda</label><input id="s-dt" type="date" value="${esc(data)}" max="${today()}"></div>
+        <div class="f"><label for="s-vs">Vendedor</label><select id="s-vs">${sellers.map((s) => `<option value="${s.id}" ${s.id === vend ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>
+        ${can('financeiro') ? `<div class="f"><label for="s-cm">Comissão do vendedor (R$)</label><input id="s-cm" inputmode="numeric" value="${edit ? val('venda_comissao') : ''}"></div>` : ''}
+        <div class="f"><label for="s-pg">Forma de pagamento</label><select id="s-pg"><option value="">Selecione</option>${pg.map((p) => `<option ${p === v.venda_pagamento ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></div>
+        <div class="f s-fin"><label for="s-en">Entrada (R$)</label><input id="s-en" inputmode="numeric" value="${edit ? val('venda_entrada') : ''}"></div>
+        <div class="f s-fin"><label for="s-fi">Financeira / banco</label><input id="s-fi" value="${edit ? val('venda_financeira') : ''}" placeholder="Ex.: BV, Santander"></div>
+        <div class="f s-tr"><label for="s-tv">Carro na troca (R$)</label><input id="s-tv" inputmode="numeric" value="${edit ? val('venda_troca_valor') : ''}"></div>
+        <div class="f w3 s-tr"><label for="s-td">Qual carro entrou na troca</label><input id="s-td" value="${edit ? val('venda_troca_desc') : ''}" placeholder="Ex.: Gol 2015, placa ABC1234"></div>
+      </div>
+      <h4>Comprador</h4>
+      <div class="fields">
+        <div class="f w3"><label for="s-cn">Nome</label><input id="s-cn" value="${edit ? val('venda_comprador') : ''}"></div>
+        <div class="f"><label for="s-cd">CPF / CNPJ</label><input id="s-cd" inputmode="numeric" value="${edit ? val('comprador_doc') : ''}"></div>
+        <div class="f"><label for="s-ct">Telefone / WhatsApp</label><input id="s-ct" inputmode="tel" value="${edit ? val('comprador_tel') : ''}"></div>
+      </div>
+      ${edit ? '' : `<h4>Documento de transferência</h4>
+      <div class="fields"><div class="f w6"><label for="s-ds">O documento de transferência (ATPV-e / recibo) já foi preenchido?</label><select id="s-ds">${opt(DOC_INICIAL, 'pendente')}</select><span class="hint">Acompanhe as próximas etapas (vistoria, transferência, entrega) em Gestão &gt; Documentação.</span></div></div>`}
+      <div class="fields"><div class="f w6"><label for="s-ob">Observações da venda</label><textarea id="s-ob" rows="2" placeholder="Garantia combinada, itens entregues, pendências…">${edit ? val('venda_obs') : ''}</textarea></div></div>
+      <div class="calc" id="s-calc"></div>`;
+  }
+  function bindSaleFields(v) {
+    const sync = () => {
+      const p = $('#s-pg').value;
+      $$('.s-fin').forEach((e) => { e.hidden = !/Financ|Cons/.test(p); });
+      $$('.s-tr').forEach((e) => { e.hidden = !/Troca/.test(p) && !num($('#s-tv').value); });
+      const f = v.financeiro; const box = $('#s-calc');
+      if (!box) return;
+      if (!can('financeiro') || !f) { box.innerHTML = ''; return; }
+      const venda = num($('#s-vv').value);
+      const consig = v.proprietario_tipo === 'consignado';
+      const base = consig ? (v.consig_repasse || (v.consig_comissao_pct ? Math.round(venda * (1 - v.consig_comissao_pct / 100)) : v.compra_valor || 0)) : (v.compra_valor || 0);
+      if (!venda || !base) { box.innerHTML = `<p class="note">${base ? '' : `Sem ${consig ? 'repasse/comissão' : 'valor de compra'} no cadastro: o lucro desta venda não será calculado até você informar.`}</p>`; return; }
+      const imp = Math.round(venda * Number(S.me.store.impostos_pct || 0) / 100);
+      const com = num($('#s-cm')?.value);
+      const lucro = venda - base - (f.custos_total || 0) - com - imp;
+      box.innerHTML = `<div class="cl tot ${lucro < 0 ? 'neg' : 'pos'}"><span>Lucro desta venda</span><b>${brl(lucro)} <small>${pct(Math.round((lucro / venda) * 1000) / 10)}% · ${consig ? 'repasse' : 'compra'} ${brl(base)} · custos ${brl(f.custos_total || 0)}${com ? ` · comissão ${brl(com)}` : ''}${imp ? ` · impostos ${brl(imp)}` : ''}</small></b></div>
+        ${venda < (v.preco_anuncio || 0) ? `<p class="note">Desconto de ${brl(v.preco_anuncio - venda)} sobre o anúncio (${pct(Math.round((1 - venda / v.preco_anuncio) * 1000) / 10)}%).</p>` : ''}`;
+    };
+    ['#s-pg', '#s-vv', '#s-cm', '#s-tv'].forEach((s) => { const el = $(s); if (el) el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', sync); });
+    sync();
+  }
+  const saleBody = () => ({
+    venda_valor: num($('#s-vv').value), venda_data: $('#s-dt').value, venda_vendedor_id: $('#s-vs').value, venda_pagamento: $('#s-pg').value,
+    venda_entrada: num($('#s-en').value), venda_financeira: $('#s-fi').value, venda_troca_valor: num($('#s-tv').value), venda_troca_desc: $('#s-td').value,
+    venda_comprador: $('#s-cn').value, comprador_doc: $('#s-cd').value, comprador_tel: $('#s-ct').value, venda_obs: $('#s-ob').value,
+    ...($('#s-cm') ? { venda_comissao: num($('#s-cm').value) } : {}),
+  });
+  X.sellModal = async (v, sold) => {
+    const sellers = await api('GET', '/api/team/sellers').catch(() => [{ id: S.me.user.id, name: S.me.user.name }]);
+    modal(`<h3>Vender ${esc(v.marca)} ${esc(v.modelo)} ${esc(v.versao || '')}</h3>
+      <p>${v.status === 'publicado' ? 'A extensão vai excluir o anúncio do Marketplace. ' : ''}O veículo sai do catálogo na próxima sincronização. Só o valor é necessário; o resto pode ser completado depois.</p>
+      ${saleFieldsHtml(v, sellers, false)}
+      <div class="err" id="s-err" hidden></div>
+      <div class="modal-foot"><button class="btn" data-close type="button">Cancelar</button><button class="btn primary" id="s-ok" type="button">Confirmar venda</button></div>`, true);
+    bindSaleFields(v);
+    $('#s-vv').focus();
+    $('#s-ok').onclick = async () => {
+      const b = { ...saleBody(), doc_status: $('#s-ds').value };
+      if (!b.venda_valor) { $('#s-err').textContent = 'Informe o valor da venda.'; $('#s-err').hidden = false; return; }
+      $('#s-ok').disabled = true; $('#s-ok').textContent = 'Salvando…';
+      try { closeModal(); await sold(b); }
+      catch (e) { toast(e.message, 7000); }
+    };
+  };
+  async function saleEditModal(id) {
+    await X.loadVehicles();
+    const v = S.vehicles.find((x) => x.id === id); if (!v) return;
+    const sellers = await api('GET', '/api/team/sellers').catch(() => []);
+    modal(`<h3>Dados da venda: ${esc(v.marca)} ${esc(v.modelo)}</h3>
+      ${saleFieldsHtml(v, sellers, true)}
+      <div class="err" id="s-err" hidden></div>
+      <div class="modal-foot"><button class="btn" data-close type="button">Cancelar</button><button class="btn primary" id="s-ok" type="button">Salvar</button></div>`, true);
+    bindSaleFields(v);
+    $('#s-ok').onclick = async () => {
+      try { await api('PUT', `/api/vehicles/${id}/sale`, saleBody()); closeModal(); await X.loadVehicles(); X.render(); toast('Dados da venda salvos'); }
+      catch (e) { $('#s-err').textContent = e.message; $('#s-err').hidden = false; }
+    };
+  }
+
+  /* ======================= Custos e margem (modal, usado em Gestão e Resultados) ======================= */
   async function financeModal(id) {
     let F;
-    try { F = await api('GET', `/api/vehicles/${id}/finance`); } catch (e) { return toast(e.message); }
+    try { [F] = await Promise.all([api('GET', `/api/vehicles/${id}/finance`), loadPartners()]); } catch (e) { return toast(e.message); }
     const v = F.vehicle; const f = F.finance;
-    const consig = ['consignado', 'procuracao'].includes(v.proprietario_tipo);
-    const sellers = await api('GET', '/api/team/sellers').catch(() => []);
-    const lucro = (x, label) => (x ? `<div class="kpi"><span>${label}</span><b class="${x.liquido < 0 ? 'neg' : ''}">${brl(x.liquido)}</b><em>bruto ${brl(x.bruto)} · ${String(x.margem_pct).replace('.', ',')}% de margem</em></div>` : '');
+    const consig = v.proprietario_tipo === 'consignado';
+    const lucro = (x, label) => (x ? `<div class="kpi"><span>${label}</span><b class="${x.liquido < 0 ? 'neg' : ''}">${brl(x.liquido)}</b><em>bruto ${brl(x.bruto)} · ${pct(x.margem_pct)}% de margem</em></div>` : '');
+    const row = (c) => `<div class="cf"><span class="k">${esc(c.categoria_label)}${c.previsto ? ' <span class="pill p-warn">previsto</span>' : ''}<br><span class="sub">${fmtDate(c.data)}${c.parceiro_nome ? ' · ' + esc(c.parceiro_nome) : ''}</span></span><span class="v">${esc(c.descricao || '')}<br><b>${brl(c.valor)}</b></span><span class="btnrow" style="gap:4px">${c.previsto ? `<button class="btn sm" type="button" data-cf="${c.id}">Feito</button>` : ''}<button class="btn sm ghost danger" type="button" data-dc="${c.id}">Excluir</button></span></div>`;
     modal(`<h3>Custos e margem: ${esc(v.marca)} ${esc(v.modelo)}</h3>
-      <div class="kpis">${f.falta_base ? `<div class="kpi"><span>Lucro previsto</span><b class="warn">—</b><em>Informe ${consig ? 'o repasse ao dono ou a comissão (no cadastro)' : 'o valor de compra'} abaixo para calcular.</em></div>` : ''}${lucro(f.previsto, `Lucro previsto (anúncio ${brl(v.preco_anuncio)})`)}${lucro(f.real, `Lucro real (venda ${brl(f.real?.venda)})`)}<div class="kpi"><span>Custos lançados</span><b>${brl(f.custos_total)}</b><em>${v.dias_estoque} dias no estoque</em></div></div>
+      <div class="kpis">${f.falta_base ? `<div class="kpi"><span>Lucro previsto</span><b class="warn">—</b><em>Informe ${consig ? 'o repasse ao dono ou a comissão (no cadastro)' : 'o valor de compra'} abaixo para calcular.</em></div>` : ''}${v.status !== 'vendido' ? lucro(f.previsto, `Lucro previsto (anúncio ${brl(v.preco_anuncio)})`) : ''}${lucro(f.real, `Lucro real (venda ${brl(f.real?.venda)})`)}<div class="kpi"><span>Custos</span><b>${brl(f.custos_total)}</b><em>${brl(f.custos_realizados)} feitos · ${brl(f.custos_previstos)} previstos</em></div></div>
       <h4>${consig ? 'Consignação' : 'Compra'}</h4>
       <div class="fields">
-        ${consig ? `<div class="f"><label for="fn-rep">Repasse ao dono (R$)</label><input id="fn-rep" inputmode="numeric" value="${v.consig_repasse || ''}" placeholder="${v.consig_comissao_pct ? `ou ${String(v.consig_comissao_pct).replace('.', ',')}% de comissão` : ''}"></div>` : `<div class="f"><label for="fn-cv">Valor de compra (R$)</label><input id="fn-cv" inputmode="numeric" value="${v.compra_valor || ''}"></div>`}
-        <div class="f"><label for="fn-cd">Data de entrada</label><input id="fn-cd" type="date" value="${esc(v.compra_data || '')}"></div>
+        ${consig ? `<div class="f"><label for="fn-rep">Repasse ao dono (R$)</label><input id="fn-rep" inputmode="numeric" value="${v.consig_repasse || ''}" placeholder="${v.consig_comissao_pct ? `ou ${pct(v.consig_comissao_pct)}% de comissão` : ''}"></div>` : `<div class="f"><label for="fn-cv">Valor de compra (R$)</label><input id="fn-cv" inputmode="numeric" value="${v.compra_valor || ''}"></div>`}
+        <div class="f"><label for="fn-cd">Data da compra</label><input id="fn-cd" type="date" value="${esc(v.compra_data || String(v.created_at || '').slice(0, 10))}"></div>
+        <div class="f"><label for="fn-or">Origem</label><select id="fn-or"><option value="">—</option>${(F.origens || []).map((o) => `<option value="${o.key}" ${o.key === v.compra_origem ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}</select></div>
         <div class="f"><label for="fn-cf">Comprado de</label><input id="fn-cf" value="${esc(v.compra_de || v.proprietario_nome || '')}"></div>
+        <div class="f" style="align-self:end"><button class="btn" type="button" id="fn-save">Salvar</button></div>
       </div>
-      ${v.status === 'vendido' ? `<h4>Venda</h4><div class="fields">
-        <div class="f"><label for="fn-vv">Valor de venda (R$)</label><input id="fn-vv" inputmode="numeric" value="${v.venda_valor || ''}"></div>
-        <div class="f"><label for="fn-vc">Comissão do vendedor (R$)</label><input id="fn-vc" inputmode="numeric" value="${v.venda_comissao || ''}"></div>
-        <div class="f"><label for="fn-vs">Vendedor</label><select id="fn-vs"><option value="">—</option>${sellers.map((s) => `<option value="${s.id}" ${s.id === v.venda_vendedor_id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>
-        <div class="f w3"><label for="fn-vb">Comprador</label><input id="fn-vb" value="${esc(v.venda_comprador || '')}"></div>
-        <div class="f w3"><label for="fn-vp">Pagamento</label><input id="fn-vp" value="${esc(v.venda_pagamento || '')}" placeholder="À vista, financiado, troca…"></div>
-      </div>` : ''}
-      <div class="form-foot" style="justify-content:flex-start"><button class="btn" type="button" id="fn-save">Salvar valores</button></div>
-      <h4>Custos (preparação, documentação…)</h4>
-      <div class="cfields">${F.costs.length ? F.costs.map((c) => `<div class="cf"><span class="k">${esc(c.categoria_label)}<br><span class="sub">${fmtDate(c.data)}${c.parceiro_nome ? ' · ' + esc(c.parceiro_nome) : ''}</span></span><span class="v">${esc(c.descricao || '')}<br><b>${brl(c.valor)}</b></span><button class="btn sm ghost danger" type="button" data-dc="${c.id}">Excluir</button></div>`).join('') : '<div class="cf"><span class="v sub">Nenhum custo lançado.</span></div>'}</div>
+      ${v.status === 'vendido' && can('vender') ? `<div class="btnrow" style="margin-top:8px"><button class="btn" type="button" id="fn-sale">Editar dados da venda</button></div>` : ''}
+      <h4>Custos (manutenção, preparação, documentação…)</h4>
+      <div class="cfields">${F.costs.length ? F.costs.map(row).join('') : '<div class="cf"><span class="v sub">Nenhum custo lançado.</span></div>'}</div>
       <div class="fields" style="margin-top:8px">
+        <div class="f"><label for="ct-s">Tipo</label><select id="ct-s"><option value="realizado">Já feito</option><option value="previsto">Previsto</option></select></div>
         <div class="f"><label for="ct-c">Categoria</label><select id="ct-c">${opt(Object.entries(F.categorias), 'mecanica')}</select></div>
         <div class="f w3"><label for="ct-d">Descrição</label><input id="ct-d" placeholder="Ex.: troca de pastilhas"></div>
         <div class="f"><label for="ct-v">Valor (R$)</label><input id="ct-v" inputmode="numeric"></div>
-        <div class="f w3"><label for="ct-p">Parceiro (opcional)</label><select id="ct-p"><option value="">—</option>${(await loadPartners()).partners.map((p) => `<option value="${p.id}" ${p.id === v.local_parceiro?.id ? 'selected' : ''}>${esc(p.nome)}</option>`).join('')}</select></div>
+        <div class="f w3"><label for="ct-p">Parceiro (opcional)</label><select id="ct-p"><option value="">—</option>${PARTNERS.partners.map((p) => `<option value="${p.id}" ${p.id === v.local_parceiro?.id ? 'selected' : ''}>${esc(p.nome)}</option>`).join('')}</select><span class="hint"><button class="linkbtn" type="button" id="ct-pn">+ Cadastrar parceiro</button></span></div>
         <div class="f"><label for="ct-dt">Data</label><input id="ct-dt" type="date" value="${today()}"></div>
         <div class="f" style="align-self:end"><button class="btn primary" type="button" id="ct-add">Lançar custo</button></div>
       </div>
-      ${F.impostos_pct ? `<p class="note">O lucro líquido desconta ${String(F.impostos_pct).replace('.', ',')}% de impostos sobre a venda e a comissão do vendedor (ajuste em Configurações &gt; Gestão).</p>` : '<p class="note">Para descontar impostos sobre a venda no lucro líquido, informe o percentual em Configurações &gt; Gestão.</p>'}
+      <div id="ct-new"></div>
+      ${F.impostos_pct ? `<p class="note">O lucro líquido desconta ${pct(F.impostos_pct)}% de impostos sobre a venda e a comissão do vendedor (ajuste em Configurações &gt; Gestão).</p>` : '<p class="note">Para descontar impostos sobre a venda no lucro líquido, informe o percentual em Configurações &gt; Gestão.</p>'}
       <div class="err" id="fn-err" hidden></div>
-      <div class="modal-foot"><button class="btn primary" data-close type="button">Fechar</button></div>`, true);
+      <div class="modal-foot"><button class="btn primary" type="button" id="fn-close">Fechar</button></div>`, true);
     const err = (m) => { $('#fn-err').textContent = m; $('#fn-err').hidden = false; };
+    $('#fn-close').onclick = () => { closeModal(); if (['gestao', 'resultados'].includes(S.view)) X.render(); };
     $('#fn-save').onclick = async () => {
-      const b = { compra_valor: $('#fn-cv')?.value ?? v.compra_valor, consig_repasse: $('#fn-rep')?.value ?? v.consig_repasse, compra_data: $('#fn-cd').value, compra_de: $('#fn-cf').value };
-      if (v.status === 'vendido') Object.assign(b, { venda_valor: $('#fn-vv').value, venda_comissao: $('#fn-vc').value, venda_vendedor_id: $('#fn-vs').value, venda_comprador: $('#fn-vb').value, venda_pagamento: $('#fn-vp').value });
-      try { await api('PUT', `/api/vehicles/${id}/finance`, b); toast('Valores salvos'); financeModal(id); } catch (e) { err(e.message); }
+      const b = { compra_data: $('#fn-cd').value, compra_de: $('#fn-cf').value, compra_origem: $('#fn-or').value };
+      if ($('#fn-cv')) b.compra_valor = $('#fn-cv').value; else b.consig_repasse = $('#fn-rep').value;
+      try { await api('PUT', `/api/vehicles/${id}/finance`, b); await X.loadVehicles(); toast('Valores salvos'); financeModal(id); } catch (e) { err(e.message); }
     };
+    if ($('#fn-sale')) $('#fn-sale').onclick = () => saleEditModal(id);
+    $('#ct-pn').onclick = () => partnerInline($('#ct-p'), $('#ct-new'), $('#ct-c').value);
     $('#ct-add').onclick = async () => {
-      try { await api('POST', `/api/vehicles/${id}/costs`, { categoria: $('#ct-c').value, descricao: $('#ct-d').value, valor: $('#ct-v').value, parceiro_id: $('#ct-p').value, data: $('#ct-dt').value }); financeModal(id); }
+      try { await api('POST', `/api/vehicles/${id}/costs`, { status: $('#ct-s').value, categoria: $('#ct-c').value, descricao: $('#ct-d').value, valor: $('#ct-v').value, parceiro_id: $('#ct-p').value, data: $('#ct-dt').value }); await X.loadVehicles(); financeModal(id); }
       catch (e) { err(e.message); }
     };
-    $$('[data-dc]').forEach((b) => { b.onclick = async () => { await api('DELETE', `/api/vehicles/${id}/costs/${b.dataset.dc}`); financeModal(id); }; });
+    $$('[data-dc]').forEach((b) => { b.onclick = async () => { await api('DELETE', `/api/vehicles/${id}/costs/${b.dataset.dc}`); await X.loadVehicles(); financeModal(id); }; });
+    $$('[data-cf]').forEach((b) => { b.onclick = async () => { await api('PUT', `/api/vehicles/${id}/costs/${b.dataset.cf}`, { status: 'realizado' }); await X.loadVehicles(); financeModal(id); }; });
+  }
+
+  /* ======================= Documentação de transferência ======================= */
+  async function docModal(item, refresh) {
+    const hist = await api('GET', `/api/vehicles/${item.id}/doc`).catch(() => []);
+    const st = Object.entries(S.me.options.doc_status || {});
+    modal(`<h3>Documento: ${esc(item.titulo)}</h3>
+      <p>${item.placa ? `Placa ${esc(item.placa)} · ` : ''}vendido em ${fmtDate(item.vendido_em)} (${item.dias} dias)${item.comprador ? ` · comprador ${esc(item.comprador)}` : ''}</p>
+      <div class="fields">
+        <div class="f w3"><label for="dc-s">Etapa</label><select id="dc-s">${opt(st, item.status)}</select></div>
+        <div class="f" id="dc-eb"><label for="dc-e">Entregue em</label><input id="dc-e" type="date" value="${esc(item.entrega || today())}"></div>
+        <div class="f w6"><label for="dc-o">Observação</label><input id="dc-o" placeholder="Ex.: vistoria marcada dia 20, aguardando assinatura do comprador"></div>
+      </div>
+      <h4>Histórico</h4>
+      <div class="timeline">${hist.length ? hist.map((h) => `<div><b>${esc(h.status_label)}</b> <span class="sub">${fmtDate(h.created_at)}${h.user_name ? ' · ' + esc(h.user_name) : ''}</span>${h.obs ? `<br>${esc(h.obs)}` : ''}</div>`).join('') : '<p class="sub">Sem registros.</p>'}</div>
+      <div class="err" id="dc-err" hidden></div>
+      <div class="modal-foot">${item.wa_url ? `<a class="btn" href="${esc(item.wa_url)}" target="_blank" rel="noopener">Avisar comprador (WhatsApp)</a>` : ''}<button class="btn" data-close type="button">Cancelar</button><button class="btn primary" id="dc-ok" type="button">Atualizar</button></div>`, true);
+    const sync = () => { $('#dc-eb').hidden = $('#dc-s').value !== 'entregue'; };
+    $('#dc-s').onchange = sync; sync();
+    $('#dc-ok').onclick = async () => {
+      try { await api('PUT', `/api/vehicles/${item.id}/doc`, { status: $('#dc-s').value, obs: $('#dc-o').value, entrega: $('#dc-e').value }); closeModal(); toast('Documento atualizado'); refresh(); }
+      catch (e) { $('#dc-err').textContent = e.message; $('#dc-err').hidden = false; }
+    };
+  }
+  function docSteps(i) {
+    const keys = Object.keys(S.me.options.doc_status || {}).filter((k) => k !== 'nao_aplica');
+    if (i.status === 'nao_aplica') return '<span class="pill p-muted">Não se aplica</span>';
+    const at = keys.indexOf(i.status);
+    return `<div class="dsteps" title="${esc(i.status_label)}">${keys.map((k, n) => `<i class="${n <= at ? 'on' : ''}"></i>`).join('')}</div><span class="sub">${esc(i.status_label)}</span>`;
+  }
+
+  /* ======================= Gráficos simples ======================= */
+  function hbars(list, val, fmt = (x) => x, label = (x) => x.label) {
+    const max = Math.max(1, ...list.map((x) => Math.abs(val(x))));
+    return `<div class="hbars">${list.map((x) => `<div class="hb"><span class="hl">${esc(label(x))}</span><span class="ht"><i style="width:${Math.max(2, Math.round((Math.abs(val(x)) / max) * 100))}%" class="${val(x) < 0 ? 'neg-bg' : ''}"></i></span><b>${fmt(val(x))}</b></div>`).join('')}</div>`;
+  }
+  function bars(meses, fin) {
+    const max = Math.max(1, ...meses.map((m) => m.vendidos));
+    const w = 600 / meses.length;
+    const nome = (k) => new Date(k + '-15').toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
+    const mil = (x) => (Math.abs(x) >= 1000 ? `${Math.round(x / 1000)} mil` : x ? String(x) : '');
+    return `<svg viewBox="0 0 600 ${fin ? 200 : 180}" class="chart" role="img" aria-label="Carros vendidos por mês">${meses.map((m, i) => {
+      const h = Math.round((m.vendidos / max) * 120); const x = i * w + w * 0.18; const bw = w * 0.64;
+      return `<g><rect x="${x}" y="${150 - h}" width="${bw}" height="${h}" rx="4" class="bar"></rect><text x="${x + bw / 2}" y="${144 - h}" text-anchor="middle" class="bv">${m.vendidos || ''}</text><text x="${x + bw / 2}" y="168" text-anchor="middle" class="bl">${nome(m.mes)}</text>${fin ? `<text x="${x + bw / 2}" y="186" text-anchor="middle" class="bs ${m.lucro < 0 ? 'neg' : ''}">${mil(m.lucro)}</text>` : ''}</g>`;
+    }).join('')}</svg>`;
   }
 
   /* ======================= Tela: Gestão ======================= */
-  let gTab = 'local';
+  let gTab = '';
+  let docFiltro = 'andamento';
+  let despMes = today().slice(0, 7);
   X.views.gestao = {
     async html() {
+      const fin = can('financeiro');
+      const tabs = [fin && ['estoque', 'Estoque e margem'], ['local', 'Localização'], (can('vender') || can('gestao')) && ['docs', 'Documentação'], fin && ['desp', 'Despesas da loja'], ['parc', 'Parceiros']].filter(Boolean);
+      if (!tabs.some((t) => t[0] === gTab)) gTab = tabs[0][0];
       const P = await loadPartners(true);
       const V = S.vehicles.filter((v) => v.status !== 'vendido');
-      const tabs = [['local', 'Localização dos carros'], can('financeiro') && ['fin', 'Custos e margem'], ['parc', 'Parceiros']].filter(Boolean);
-      if (!tabs.some((t) => t[0] === gTab)) gTab = 'local';
+      const label = (key, list) => ((list || []).find((p) => p.key === key)?.label || '').split(' (')[0];
       let body = '';
+      if (gTab === 'estoque') {
+        const linhas = V.map((v) => ({ v, f: v.financeiro || {} })).sort((a, b) => b.v.dias_estoque - a.v.dias_estoque);
+        const tot = linhas.reduce((a, { f }) => ({ inv: a.inv + (f.investido || 0), prev: a.prev + (f.custos_previstos || 0), lp: a.lp + (f.previsto?.liquido || 0), sb: a.sb + (f.falta_base ? 1 : 0) }), { inv: 0, prev: 0, lp: 0, sb: 0 });
+        const venda = V.reduce((s, v) => s + (v.preco_anuncio || 0), 0);
+        body = `<div class="kpis">
+            <div class="kpi"><span>Carros no estoque</span><b>${V.length}</b><em>${V.filter((v) => v.parado).length} parado(s) · idade média ${V.length ? Math.round(V.reduce((s, v) => s + v.dias_estoque, 0) / V.length) : 0} dias</em></div>
+            <div class="kpi"><span>Capital investido</span><b>${brl(tot.inv)}</b><em>compra + manutenções feitas</em></div>
+            <div class="kpi"><span>Custos previstos</span><b>${brl(tot.prev)}</b><em>ainda a gastar</em></div>
+            <div class="kpi"><span>Valor em anúncios</span><b>${brl(venda)}</b><em>preço (ou oferta) somado</em></div>
+            <div class="kpi"><span>Lucro previsto</span><b class="${tot.lp < 0 ? 'neg' : ''}">${brl(tot.lp)}</b><em>${tot.sb ? `${tot.sb} carro(s) sem valor de compra` : 'pelos preços anunciados'}</em></div>
+          </div>
+          <div class="table-wrap"><table class="tbl"><thead><tr><th>Veículo</th><th>Propriedade</th><th>Origem</th><th class="r">Dias</th><th class="r">Compra / repasse</th><th class="r">Feitos</th><th class="r">Previstos</th><th class="r">Anúncio</th><th class="r">Lucro previsto</th><th></th></tr></thead><tbody>
+          ${linhas.map(({ v, f }) => `<tr><td><b>${esc(v.marca)} ${esc(v.modelo)}</b><br><span class="sub">${esc(v.versao || '')} ${esc(v.placa || '')}</span></td><td>${esc(label(v.proprietario_tipo, S.me.options.propriedade))}${v.doc_tipo && v.doc_tipo !== 'loja' ? `<br><span class="sub">doc: ${esc(label(v.doc_tipo, S.me.options.documentacao))}</span>` : ''}</td><td>${esc(label(v.compra_origem, S.me.options.origem)) || '<span class="sub">—</span>'}</td>
+            <td class="r ${v.parado ? 'warn' : ''}">${v.dias_estoque}</td><td class="r">${f.previsto ? brl(f.previsto.base) : (v.compra_valor ? brl(v.compra_valor) : '<span class="pill p-warn">informar</span>')}</td><td class="r">${brl(f.custos_realizados ?? f.custos_total ?? 0)}</td><td class="r">${f.custos_previstos ? brl(f.custos_previstos) : '—'}</td><td class="r">${brl(v.preco_anuncio)}</td>
+            <td class="r ${f.previsto?.liquido < 0 ? 'neg' : ''}">${f.previsto ? `${brl(f.previsto.liquido)}<br><span class="sub">${pct(f.previsto.margem_pct)}%</span>` : '—'}</td>
+            <td><button class="btn sm" type="button" data-fin="${v.id}">Abrir</button></td></tr>`).join('') || '<tr><td colspan="10" class="sub">Nenhum carro no estoque.</td></tr>'}</tbody></table></div>
+          <p class="note">Dica: no cadastro de cada carro, a seção <b>Gestão do veículo</b> já calcula o lucro previsto enquanto você preenche.</p>`;
+      }
       if (gTab === 'local') {
         const grupos = Object.entries(P.locais).map(([k, l]) => [k, l, V.filter((v) => (v.local_status || 'patio') === k)]).filter(([k, , list]) => list.length || k === 'patio');
         body = `<div class="board">${grupos.map(([k, l, list]) => `<div class="col"><h3>${esc(l)} <span class="sub">${list.length}</span></h3>${list.map((v) => `
@@ -463,22 +800,56 @@
           </div>`).join('') || '<p class="sub">Nenhum carro.</p>'}</div>`).join('')}</div>
           <p class="note">"Pedir andamento" abre o WhatsApp do parceiro com a mensagem pronta (carro, placa e desde quando está lá). Envio 100% automático exige a API paga do WhatsApp Business.</p>`;
       }
-      if (gTab === 'fin') {
-        const linhas = V.map((v) => ({ v, f: v.financeiro || {} }));
-        const tot = linhas.reduce((a, { f }) => ({ inv: a.inv + (f.investido || 0), lp: a.lp + (f.previsto?.liquido || 0) }), { inv: 0, lp: 0 });
-        body = `<div class="kpis"><div class="kpi"><span>Capital no estoque</span><b>${brl(tot.inv)}</b><em>compra + custos dos carros próprios</em></div><div class="kpi"><span>Lucro previsto do estoque</span><b>${brl(tot.lp)}</b><em>pelos preços anunciados</em></div><div class="kpi"><span>Carros</span><b>${V.length}</b></div></div>
-          <div class="table-wrap"><table class="tbl"><thead><tr><th>Veículo</th><th>Situação</th><th>Dias</th><th class="r">Compra / repasse</th><th class="r">Custos</th><th class="r">Anúncio</th><th class="r">Lucro previsto</th><th></th></tr></thead><tbody>
-          ${linhas.map(({ v, f }) => `<tr><td><b>${esc(v.marca)} ${esc(v.modelo)}</b><br><span class="sub">${esc(v.placa || '')}</span></td><td>${esc((S.me.options.propriedade.find((p) => p.key === v.proprietario_tipo)?.label || '').split(' (')[0])}</td><td>${v.dias_estoque}</td>
-            <td class="r">${f.previsto ? brl(f.previsto.base) : '—'}</td><td class="r">${brl(f.custos_total)}</td><td class="r">${brl(v.preco_anuncio)}</td>
-            <td class="r ${f.previsto?.liquido < 0 ? 'neg' : ''}">${f.previsto ? `${brl(f.previsto.liquido)}<br><span class="sub">${String(f.previsto.margem_pct).replace('.', ',')}%</span>` : '—'}</td>
-            <td><button class="btn sm" type="button" data-fin="${v.id}">Abrir</button></td></tr>`).join('')}</tbody></table></div>`;
+      if (gTab === 'docs') {
+        const D = await api('GET', '/api/docs');
+        const and = D.docs.filter((x) => !x.done);
+        const list = docFiltro === 'andamento' ? and : docFiltro === 'concluidos' ? D.docs.filter((x) => x.done) : D.docs;
+        body = `<div class="kpis">
+            <div class="kpi"><span>Em andamento</span><b>${and.length}</b><em>vendidos com documento a concluir</em></div>
+            <div class="kpi"><span>Sem preenchimento</span><b class="${and.filter((x) => x.status === 'pendente').length ? 'warn' : ''}">${and.filter((x) => x.status === 'pendente').length}</b><em>ATPV-e / recibo pendente</em></div>
+            <div class="kpi"><span>Mais de 30 dias</span><b class="${and.filter((x) => x.dias > 30).length ? 'neg' : ''}">${and.filter((x) => x.dias > 30).length}</b><em>prazo legal de transferência: 30 dias</em></div>
+            <div class="kpi"><span>Entregues (90 dias)</span><b>${D.docs.filter((x) => x.status === 'entregue').length}</b></div>
+          </div>
+          <div class="chips" style="margin-bottom:10px">${[['andamento', 'Em andamento'], ['concluidos', 'Concluídos'], ['todos', 'Todos']].map(([k, l]) => `<button class="chip" type="button" data-df="${k}" aria-pressed="${k === docFiltro}">${l}</button>`).join('')}</div>
+          <div class="table-wrap"><table class="tbl"><thead><tr><th>Veículo</th><th>Venda</th><th>Comprador</th><th>Etapa</th><th>Atualizado</th><th></th></tr></thead><tbody>
+          ${list.map((i) => `<tr><td><b>${esc(i.titulo)}</b><br><span class="sub">${esc(i.placa || '')}${i.doc_tipo && i.doc_tipo !== 'loja' ? ` · doc: ${esc(label(i.doc_tipo, S.me.options.documentacao))}` : ''}</span></td>
+            <td>${fmtDate(i.vendido_em)}<br><span class="sub ${!i.done && i.dias > 30 ? 'neg' : ''}">${i.dias} dias${i.vendedor ? ' · ' + esc(i.vendedor) : ''}</span></td>
+            <td>${esc(i.comprador || '—')}${i.comprador_tel ? `<br><span class="sub">${esc(i.comprador_tel)}</span>` : ''}</td>
+            <td>${docSteps(i)}${i.obs ? `<br><span class="sub">${esc(i.obs)}</span>` : ''}</td>
+            <td>${fmtDate(i.atualizado)}</td>
+            <td><div class="btnrow" style="gap:4px;flex-wrap:nowrap">${i.wa_url ? `<a class="btn sm" href="${esc(i.wa_url)}" target="_blank" rel="noopener" title="Avisar o comprador">WhatsApp</a>` : ''}<button class="btn sm primary" type="button" data-doc="${i.id}">Atualizar</button></div></td></tr>`).join('') || '<tr><td colspan="6" class="sub">Nada por aqui. Ao marcar um carro como vendido, a transferência do documento aparece nesta lista.</td></tr>'}</tbody></table></div>
+          <p class="note">Etapas: ${Object.values(S.me.options.doc_status || {}).filter((x) => x !== 'Não se aplica').join(' → ')}.</p>`;
+        X._docs = D.docs;
+      }
+      if (gTab === 'desp') {
+        const [y, m] = despMes.split('-').map(Number);
+        const from = `${despMes}-01`; const to = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+        const E = await api('GET', `/api/expenses?from=${from}&to=${to}`);
+        const total = E.despesas.reduce((s, e) => s + e.valor, 0);
+        const cats = {}; E.despesas.forEach((e) => { cats[e.categoria_label] = (cats[e.categoria_label] || 0) + e.valor; });
+        body = `<div class="toolbar" style="gap:8px;flex-wrap:wrap;margin-bottom:10px"><button class="btn sm" type="button" data-dm="-1" aria-label="Mês anterior">‹</button><b style="min-width:150px;text-align:center">${new Date(despMes + '-15').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}</b><button class="btn sm" type="button" data-dm="1" aria-label="Próximo mês">›</button></div>
+          <div class="grid2">
+            <div class="panel"><h2>Lançar despesa</h2>
+              <div class="fields">
+                <div class="f"><label for="ex-d">Data</label><input id="ex-d" type="date" value="${despMes === today().slice(0, 7) ? today() : from}"></div>
+                <div class="f"><label for="ex-c">Categoria</label><select id="ex-c">${opt(Object.entries(E.categorias), 'aluguel')}</select></div>
+                <div class="f w3"><label for="ex-t">Descrição</label><input id="ex-t" placeholder="Ex.: aluguel do pátio"></div>
+                <div class="f"><label for="ex-v">Valor (R$)</label><input id="ex-v" inputmode="numeric"></div>
+                <div class="f"><label for="ex-r">Repetir</label><select id="ex-r"><option value="1">Só este mês</option><option value="3">3 meses</option><option value="6">6 meses</option><option value="12">12 meses</option></select></div>
+              </div>
+              <div class="err" id="ex-err" hidden></div>
+              <div class="form-foot"><button class="btn primary" type="button" id="ex-add">Lançar</button></div>
+              <p class="note">Despesas fixas da loja (aluguel, salários, energia, sistemas…). Entram no resultado líquido em Resultados.</p></div>
+            <div class="panel"><h2>Total do mês: ${brl(total)}</h2>${Object.keys(cats).length ? hbars(Object.entries(cats).sort((a, b) => b[1] - a[1]).map(([label, valor]) => ({ label, valor })), (x) => x.valor, brl) : '<p class="sub">Nenhuma despesa lançada neste mês.</p>'}</div>
+          </div>
+          <div class="cfields" style="margin-top:12px">${E.despesas.map((e) => `<div class="cf"><span class="k">${esc(e.categoria_label)}<br><span class="sub">${fmtDate(e.data)}</span></span><span class="v">${esc(e.descricao || '')}<br><b>${brl(e.valor)}</b></span><button class="btn sm ghost danger" type="button" data-ed="${e.id}">Excluir</button></div>`).join('')}</div>`;
       }
       if (gTab === 'parc') {
         body = `<div class="btnrow" style="margin-bottom:10px">${can('parceiros') ? '<button class="btn primary" type="button" id="ptNew">+ Novo parceiro</button>' : ''}</div>
           <div class="cfields">${P.partners.length ? P.partners.map((p) => `<div class="cf"><span class="k"><b>${esc(p.nome)}</b><br><span class="sub">${esc(p.tipo_label)}</span></span><span class="v">${esc(p.contato || '')} ${esc(p.whatsapp || '')}<br><span class="sub">${p.carros} carro(s) lá agora${p.endereco ? ' · ' + esc(p.endereco) : ''}</span></span><span class="btnrow" style="gap:6px">${p.wa ? `<a class="btn sm" href="https://wa.me/${p.wa}" target="_blank" rel="noopener">WhatsApp</a>` : ''}${can('parceiros') ? `<button class="btn sm" type="button" data-pe="${p.id}">Editar</button>` : ''}</span></div>`).join('') : '<div class="cf"><span class="v sub">Cadastre oficinas, funilarias, estética, lavador, lojas parceiras e despachante para saber onde cada carro está.</span></div>'}</div>`;
       }
-      return `<div class="head"><div><h1>Gestão</h1><p>Onde cada carro está, quanto custou e quanto vai dar de lucro.</p></div></div>
-        <div class="chips" style="margin-bottom:14px">${tabs.map(([k, l]) => `<button class="chip" type="button" data-gt="${k}" aria-pressed="${k === gTab}">${l}</button>`).join('')}</div>${body}`;
+      return `<div class="head"><div><h1>Gestão</h1><p>Estoque, margem, onde cada carro está, documentos das vendas e despesas da loja.</p></div></div>
+        <div class="chips tabs" style="margin-bottom:14px">${tabs.map(([k, l]) => `<button class="chip" type="button" data-gt="${k}" aria-pressed="${k === gTab}">${l}</button>`).join('')}</div>${body}`;
     },
     bind() {
       $$('[data-gt]').forEach((b) => { b.onclick = () => { gTab = b.dataset.gt; X.render(); }; });
@@ -486,11 +857,19 @@
       $$('[data-fin]').forEach((b) => { b.onclick = () => financeModal(Number(b.dataset.fin)); });
       $$('[data-pe]').forEach((b) => { b.onclick = () => partnerForm(PARTNERS.partners.find((p) => p.id === Number(b.dataset.pe))); });
       if ($('#ptNew')) $('#ptNew').onclick = () => partnerForm();
+      $$('[data-df]').forEach((b) => { b.onclick = () => { docFiltro = b.dataset.df; X.render(); }; });
+      $$('[data-doc]').forEach((b) => { b.onclick = () => docModal(X._docs.find((i) => i.id === Number(b.dataset.doc)), () => X.render()); });
+      $$('[data-dm]').forEach((b) => { b.onclick = () => { const [y, m] = despMes.split('-').map(Number); despMes = new Date(Date.UTC(y, m - 1 + Number(b.dataset.dm), 1)).toISOString().slice(0, 7); X.render(); }; });
+      if ($('#ex-add')) $('#ex-add').onclick = async () => {
+        try { await api('POST', '/api/expenses', { data: $('#ex-d').value, categoria: $('#ex-c').value, descricao: $('#ex-t').value, valor: $('#ex-v').value, repetir: $('#ex-r').value }); toast('Despesa lançada'); X.render(); }
+        catch (e) { $('#ex-err').textContent = e.message; $('#ex-err').hidden = false; }
+      };
+      $$('[data-ed]').forEach((b) => { b.onclick = () => confirmBox('Excluir a despesa?', '', 'Excluir', async () => { await api('DELETE', `/api/expenses/${b.dataset.ed}`); X.render(); }, true); });
     },
   };
 
   /* ======================= Tela: Resultados ======================= */
-  const R = { from: '', to: '', tipo: '', vendedor: '', periodo: 'mes' };
+  const R = { from: '', to: '', tipo: '', vendedor: '', origem: '', periodo: 'mes' };
   function periodRange(p) {
     const d = new Date(); const y = d.getFullYear(); const m = d.getMonth();
     const iso = (x) => x.toISOString().slice(0, 10);
@@ -498,54 +877,76 @@
     if (p === 'anterior') return [iso(new Date(Date.UTC(y, m - 1, 1))), iso(new Date(Date.UTC(y, m, 0)))];
     if (p === '90') return [iso(new Date(Date.now() - 90 * 864e5)), iso(d)];
     if (p === 'ano') return [iso(new Date(Date.UTC(y, 0, 1))), iso(d)];
+    if (p === '12m') return [iso(new Date(Date.UTC(y, m - 11, 1))), iso(d)];
     return [R.from, R.to];
-  }
-  function bars(meses) {
-    const max = Math.max(1, ...meses.map((m) => m.vendidos));
-    const nome = (k) => new Date(k + '-15').toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
-    return `<svg viewBox="0 0 600 190" class="chart" role="img" aria-label="Carros vendidos por mês">${meses.map((m, i) => {
-      const h = Math.round((m.vendidos / max) * 120); const x = 30 + i * 95;
-      return `<g><rect x="${x}" y="${150 - h}" width="56" height="${h}" rx="5" class="bar"></rect><text x="${x + 28}" y="${142 - h}" text-anchor="middle" class="bv">${m.vendidos}</text><text x="${x + 28}" y="170" text-anchor="middle" class="bl">${nome(m.mes)}</text><text x="${x + 28}" y="186" text-anchor="middle" class="bs">${m.lucro ? (m.lucro / 1000).toFixed(0) + ' mil' : ''}</text></g>`;
-    }).join('')}</svg>`;
   }
   X.views.resultados = {
     async html() {
       if (!can('gestao')) return '<div class="err">Seu usuário não tem acesso aos resultados.</div>';
       const [from, to] = periodRange(R.periodo);
-      const q = new URLSearchParams({ from: from || '', to: to || '', tipo: R.tipo, vendedor: R.vendedor });
+      const q = new URLSearchParams({ from: from || '', to: to || '', tipo: R.tipo, vendedor: R.vendedor, origem: R.origem });
       const [d, sellers] = await Promise.all([api('GET', '/api/results?' + q), api('GET', '/api/team/sellers').catch(() => [])]);
-      const k = d.kpis;
+      const k = d.kpis; const D = d.dre;
       const card = (l, v, e = '', cls = '') => `<div class="kpi"><span>${l}</span><b class="${cls}">${v}</b>${e ? `<em>${e}</em>` : ''}</div>`;
       const fin = can('financeiro');
-      return `<div class="head"><div><h1>Resultados</h1><p>${fmtDate(d.periodo.from)} a ${fmtDate(d.periodo.to)}</p></div></div>
+      const neg = (x) => (x < 0 ? 'neg' : '');
+      const grpTable = (rows, first) => (rows.length ? `<div class="table-wrap"><table class="tbl compact"><thead><tr><th>${first}</th><th class="r">Vendas</th><th class="r">Dias médios</th>${fin ? '<th class="r">Ticket</th><th class="r">Lucro</th>' : ''}</tr></thead><tbody>${rows.map((g) => `<tr><td>${esc(g.label)}</td><td class="r">${g.qtd}</td><td class="r">${g.dias_medio}</td>${fin ? `<td class="r">${brl(g.ticket)}</td><td class="r ${neg(g.lucro)}">${brl(g.lucro)}</td>` : ''}</tr>`).join('')}</tbody></table></div>` : '<p class="sub">Sem vendas no período.</p>');
+      const dreRow = (l, v, cls = '') => `<tr class="${cls}"><td>${l}</td><td class="r ${neg(v)}">${brl(v)}</td></tr>`;
+      return `<div class="head"><div><h1>Resultados</h1><p>${fmtDate(d.periodo.from)} a ${fmtDate(d.periodo.to)}</p></div>${fin ? `<a class="btn" href="/api/results.csv?${q}" download>Exportar vendas (planilha)</a>` : ''}</div>
         <div class="toolbar" style="flex-wrap:wrap;gap:8px">
-          <div class="chips">${[['mes', 'Este mês'], ['anterior', 'Mês passado'], ['90', '90 dias'], ['ano', 'Este ano'], ['custom', 'Escolher']].map(([k2, l]) => `<button class="chip" type="button" data-rp="${k2}" aria-pressed="${R.periodo === k2}">${l}</button>`).join('')}</div>
-          ${R.periodo === 'custom' ? `<input type="date" id="r-from" value="${esc(R.from)}"> <input type="date" id="r-to" value="${esc(R.to)}">` : ''}
-          <select id="r-tipo"><option value="">Todos os tipos</option>${(S.me.options.propriedade || []).map((p) => `<option value="${p.key}" ${p.key === R.tipo ? 'selected' : ''}>${esc(p.label.split(' (')[0])}</option>`).join('')}</select>
-          <select id="r-vend"><option value="">Todos os vendedores</option>${sellers.map((s) => `<option value="${s.id}" ${String(s.id) === String(R.vendedor) ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select>
+          <div class="chips">${[['mes', 'Este mês'], ['anterior', 'Mês passado'], ['90', '90 dias'], ['ano', 'Este ano'], ['12m', '12 meses'], ['custom', 'Escolher']].map(([k2, l]) => `<button class="chip" type="button" data-rp="${k2}" aria-pressed="${R.periodo === k2}">${l}</button>`).join('')}</div>
+          ${R.periodo === 'custom' ? `<input type="date" id="r-from" value="${esc(R.from)}" aria-label="De"> <input type="date" id="r-to" value="${esc(R.to)}" aria-label="Até">` : ''}
+          <select id="r-tipo" aria-label="Propriedade"><option value="">Toda propriedade</option>${(S.me.options.propriedade || []).map((p) => `<option value="${p.key}" ${p.key === R.tipo ? 'selected' : ''}>${esc(p.label.split(' (')[0])}</option>`).join('')}</select>
+          <select id="r-orig" aria-label="Origem"><option value="">Toda origem</option>${(S.me.options.origem || []).map((p) => `<option value="${p.key}" ${p.key === R.origem ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}</select>
+          <select id="r-vend" aria-label="Vendedor"><option value="">Todos os vendedores</option>${sellers.map((s) => `<option value="${s.id}" ${String(s.id) === String(R.vendedor) ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select>
         </div>
         <div class="kpis">
           ${card('Vendidos', k.vendidos, `giro de ${k.giro}% do estoque`)}
           ${fin ? card('Faturamento', brl(k.faturamento), `ticket médio ${brl(k.ticket_medio)}`) : ''}
-          ${fin ? card('Lucro bruto', brl(k.lucro_bruto), 'venda − compra/repasse − custos', k.lucro_bruto < 0 ? 'neg' : '') : ''}
-          ${fin ? card('Lucro líquido', brl(k.lucro_liquido), `${String(k.margem_media_pct).replace('.', ',')}% de margem · média ${brl(k.lucro_medio)}/carro`, k.lucro_liquido < 0 ? 'neg' : '') : ''}
-          ${card('Dias para vender', k.dias_medios_venda, 'média dos vendidos')}
-          ${card('Estoque', k.estoque_qtd, `${brl(k.estoque_valor_venda)} em anúncios`)}
-          ${fin ? card('Capital investido', brl(k.capital_investido), `lucro previsto ${brl(k.lucro_previsto_estoque)}`) : ''}
-          ${card('Idade média do estoque', `${k.idade_media_estoque} dias`, `${k.parados} parado(s) ≥ ${d.parado_dias} dias · ${k.parados_60} ≥ 60 dias`, k.parados ? 'warn' : '')}
-          ${card('Em manutenção / fora', k.em_manutencao, `${k.consignados} consignado(s) no estoque`)}
-          ${fin ? card('Custo médio de preparação', brl(k.custo_medio_preparacao), 'por carro') : ''}
+          ${fin ? card('Lucro das vendas', brl(k.lucro_liquido), `${pct(k.margem_media_pct)}% de margem · ${brl(k.lucro_medio)}/carro`, neg(k.lucro_liquido)) : ''}
+          ${fin ? card('Despesas da loja', brl(k.despesas_loja), 'lançadas em Gestão') : ''}
+          ${fin ? card('Resultado líquido', brl(k.resultado), 'lucro das vendas − despesas', neg(k.resultado)) : ''}
+          ${card('Tempo médio de venda', `${k.dias_medios_venda} dias`, 'da compra até a venda')}
+          ${fin ? card('Desconto médio', `${pct(k.desconto_medio_pct)}%`, 'venda × preço anunciado') : ''}
+          ${card('Estoque', k.estoque_qtd, fin ? `${brl(k.estoque_valor_venda)} em anúncios` : `${k.parados} parado(s)`)}
+          ${fin ? card('Capital investido', brl(k.capital_investido), `${brl(k.custos_previstos)} previstos · lucro previsto ${brl(k.lucro_previsto_estoque)}`) : ''}
+          ${card('Idade média do estoque', `${k.idade_media_estoque} dias`, `${k.parados} parado(s) ≥ ${d.parado_dias} dias · ${k.parados_60} ≥ 60`, k.parados ? 'warn' : '')}
+          ${card('Documentos pendentes', k.docs_pendentes, `${k.docs_atrasados} com mais de 30 dias`, k.docs_atrasados ? 'neg' : '')}
+          ${card('Fora do pátio', k.em_manutencao, `${k.consignados} consignado(s) no estoque`)}
         </div>
-        <div class="grid2" style="margin-top:16px">
-          <div class="panel"><h2>Vendas por mês</h2>${bars(d.meses)}${fin ? '<p class="note">Abaixo de cada mês: lucro líquido.</p>' : ''}</div>
-          <div class="panel"><h2>Vendidos no período</h2>${d.vendidos.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Veículo</th><th>Dias</th>${fin ? '<th class="r">Venda</th><th class="r">Líquido</th>' : ''}</tr></thead><tbody>${d.vendidos.map((l) => `<tr><td>${esc(l.titulo)}<br><span class="sub">${fmtDate(l.vendido_em)}</span></td><td>${l.dias}</td>${fin ? `<td class="r">${l.venda ? brl(l.venda) : '—'}</td><td class="r ${l.liquido < 0 ? 'neg' : ''}">${l.liquido !== null && l.venda ? `${brl(l.liquido)}<br><span class="sub">${String(l.margem_pct).replace('.', ',')}%</span>` : '—'}${fin ? `<br><button class="btn sm ghost" type="button" data-fin="${l.id}">custos</button>` : ''}</td>` : ''}</tr>`).join('')}</tbody></table></div>` : '<p class="sub">Nenhuma venda no período.</p>'}
-          ${k.sem_valor_venda ? `<p class="note">${k.sem_valor_venda} venda(s) sem valor informado: abra "custos" para completar.</p>` : ''}</div>
-        </div>`;
+        <div class="grid2 eq" style="margin-top:6px">
+          <div class="panel"><h2>Vendas nos últimos 12 meses</h2>${bars(d.meses, fin)}${fin ? '<p class="note">Número de carros por mês; abaixo, o lucro das vendas.</p>' : ''}</div>
+          ${fin ? `<div class="panel"><h2>DRE do período</h2><table class="tbl dre"><tbody>
+            ${dreRow('Receita das vendas', D.receita)}${dreRow('(−) Custo dos veículos (compra / repasse)', -D.custo_veiculos)}${dreRow('(−) Preparação e manutenção', -D.preparacao)}
+            ${dreRow('= Lucro bruto', D.lucro_bruto, 'sub-t')}${dreRow('(−) Comissões de venda', -D.comissoes)}${dreRow('(−) Impostos sobre a venda', -D.impostos)}
+            ${dreRow('= Lucro das vendas', D.lucro_operacoes, 'sub-t')}${D.despesas_categorias.map((c) => dreRow(`(−) ${esc(c.categoria)}`, -c.valor)).join('') || dreRow('(−) Despesas da loja', 0)}
+            ${dreRow('= Resultado líquido', D.resultado, 'tot-t')}</tbody></table>
+            ${D.fora_do_calculo ? `<p class="note">${D.fora_do_calculo} venda(s) sem valor de compra ou de venda ficaram fora do DRE. Complete em "custos" na lista abaixo.</p>` : ''}</div>` : ''}
+        </div>
+        <div class="grid2 eq" style="margin-top:16px">
+          <div class="panel"><h2>Tempo até vender</h2>${k.vendidos ? hbars(d.faixas_venda, (x) => x.qtd, (x) => `${x}`) : '<p class="sub">Sem vendas no período.</p>'}</div>
+          <div class="panel"><h2>Idade do estoque</h2>${hbars(d.faixas_estoque, (x) => x.qtd, (x) => `${x}`)}${fin ? `<p class="note">Acima de 60 dias: ${brl(d.faixas_estoque.slice(4).reduce((s, f) => s + f.investido, 0))} investidos.</p>` : ''}</div>
+        </div>
+        <div class="grid2 eq" style="margin-top:16px">
+          <div class="panel"><h2>Vendas por marca</h2>${grpTable(d.marcas, 'Marca')}</div>
+          <div class="panel"><h2>Vendedores</h2>${d.vendedores.length ? `<div class="table-wrap"><table class="tbl compact"><thead><tr><th>Vendedor</th><th class="r">Vendas</th><th class="r">Dias médios</th>${fin ? '<th class="r">Faturamento</th><th class="r">Lucro</th><th class="r">Comissão</th>' : ''}</tr></thead><tbody>${d.vendedores.map((g, i) => `<tr><td>${i === 0 ? '🏆 ' : ''}${esc(g.label)}</td><td class="r">${g.qtd}</td><td class="r">${g.dias_medio}</td>${fin ? `<td class="r">${brl(g.faturamento)}</td><td class="r ${neg(g.lucro)}">${brl(g.lucro)}</td><td class="r">${brl(g.comissao)}</td>` : ''}</tr>`).join('')}</tbody></table></div>` : '<p class="sub">Sem vendas no período.</p>'}</div>
+        </div>
+        <div class="grid2 eq" style="margin-top:16px">
+          <div class="panel"><h2>Formas de pagamento</h2>${d.pagamentos.length ? hbars(d.pagamentos, (x) => x.qtd, (x) => `${x} venda${x > 1 ? 's' : ''}`) : '<p class="sub">Sem vendas no período.</p>'}</div>
+          <div class="panel"><h2>Origem da compra</h2>${grpTable(d.origens, 'Origem')}</div>
+        </div>
+        ${fin && d.melhores.length ? `<div class="grid2 eq" style="margin-top:16px">
+          <div class="panel"><h2>Maiores lucros</h2>${hbars(d.melhores, (x) => x.liquido, brl, (x) => x.titulo)}</div>
+          <div class="panel"><h2>Menores lucros</h2>${d.piores.length ? hbars(d.piores, (x) => x.liquido, brl, (x) => x.titulo) : '<p class="sub">Poucas vendas para comparar.</p>'}</div>
+        </div>` : ''}
+        <div class="panel" style="margin-top:16px"><h2>Vendidos no período</h2>${d.vendidos.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Veículo</th><th>Venda</th><th>Vendedor / pagamento</th><th class="r">Dias</th>${fin ? '<th class="r">Valor</th><th class="r">Compra</th><th class="r">Custos</th><th class="r">Líquido</th><th></th>' : ''}</tr></thead><tbody>${d.vendidos.map((l) => `<tr><td><b>${esc(l.titulo)}</b><br><span class="sub">${esc(l.placa || '')} · ${esc(l.origem_label)}</span></td><td>${fmtDate(l.vendido_em)}<br><span class="sub">${esc(l.comprador || '')}</span></td><td>${esc(l.vendedor || '—')}<br><span class="sub">${esc(l.pagamento)}</span></td><td class="r">${l.dias}</td>${fin ? `<td class="r">${l.venda ? brl(l.venda) : '—'}</td><td class="r">${l.base ? brl(l.base) : '<span class="pill p-warn">informar</span>'}</td><td class="r">${brl(l.custos)}</td><td class="r ${neg(l.liquido)}">${l.liquido !== null ? `${brl(l.liquido)}<br><span class="sub">${pct(l.margem_pct)}%</span>` : '—'}</td><td><button class="btn sm ghost" type="button" data-fin="${l.id}">custos</button></td>` : ''}</tr>`).join('')}</tbody></table></div>` : '<p class="sub">Nenhuma venda no período.</p>'}</div>
+        <div class="panel" style="margin-top:16px"><h2>Estoque mais antigo</h2>${d.estoque.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Veículo</th><th class="r">Dias</th>${fin ? '<th class="r">Anúncio</th><th class="r">FIPE</th><th class="r">Investido</th><th class="r">Lucro previsto</th>' : ''}<th>Onde</th></tr></thead><tbody>${d.estoque.slice(0, 10).map((e) => `<tr><td><b>${esc(e.titulo)}</b><br><span class="sub">${esc(e.placa || '')} · ${esc(e.tipo_label.split(' (')[0])}</span></td><td class="r ${e.parado ? 'warn' : ''}">${e.dias}</td>${fin ? `<td class="r">${brl(e.preco)}</td><td class="r">${e.fipe ? brl(e.fipe) : '—'}</td><td class="r">${brl(e.investido)}</td><td class="r ${neg(e.lucro_previsto)}">${e.lucro_previsto !== null ? brl(e.lucro_previsto) : '—'}</td>` : ''}<td>${esc(e.local || 'Pátio')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="sub">Estoque vazio.</p>'}</div>`;
     },
     bind() {
       $$('[data-rp]').forEach((b) => { b.onclick = () => { R.periodo = b.dataset.rp; if (R.periodo === 'custom' && !R.from) [R.from, R.to] = periodRange('mes'); X.render(); }; });
       if ($('#r-from')) { $('#r-from').onchange = () => { R.from = $('#r-from').value; X.render(); }; $('#r-to').onchange = () => { R.to = $('#r-to').value; X.render(); }; }
       $('#r-tipo') && ($('#r-tipo').onchange = () => { R.tipo = $('#r-tipo').value; X.render(); });
+      $('#r-orig') && ($('#r-orig').onchange = () => { R.origem = $('#r-orig').value; X.render(); });
       $('#r-vend') && ($('#r-vend').onchange = () => { R.vendedor = $('#r-vend').value; X.render(); });
       $$('[data-fin]').forEach((b) => { b.onclick = () => financeModal(Number(b.dataset.fin)); });
     },

@@ -3,13 +3,15 @@
 // 2) Tabela FIPE gratuita (Parallelum) para escolher Marca → Modelo → Ano quando a placa não resolver.
 const { get, run } = require('./db');
 
-const PLATE_URL = () => process.env.PLATE_URL_TEMPLATE || 'https://placafipe.com.br/placa/{placa}';
+// Páginas públicas de consulta por placa (a primeira que responder com dados vale).
+const PLATE_URLS = () => (process.env.PLATE_URL_TEMPLATE || 'https://placafipe.com/placa/{placa},https://www.keplaca.com/placa/{placa}').split(',').map((x) => x.trim()).filter(Boolean);
 const FIPE_URL = () => (process.env.FIPE_API_URL || 'https://parallelum.com.br/fipe/api/v1').replace(/\/+$/, '');
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36';
 
 const cleanPlate = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 const validPlate = (p) => /^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$/.test(p);
-const plateUrl = (p) => PLATE_URL().replace('{placa}', encodeURIComponent(p));
+const plateUrls = (p) => PLATE_URLS().map((u) => u.replace('{placa}', encodeURIComponent(p)));
+const plateUrl = (p) => plateUrls(p)[0];
 
 /* ---------------- Leitura do HTML ---------------- */
 
@@ -86,6 +88,25 @@ function splitMarcaModelo(mm, marcaHint) {
   return { marca: marca ? (MARCAS[String(marca).toUpperCase()] || title(marca)) : '', modelo, versao: words.map((w) => (/\d/.test(w) ? w : title(w))).join(' ') };
 }
 
+// Escolhe a versão FIPE mais parecida com o modelo do documento (ex.: "ETIOS HB X VSC MT", 1329 cc).
+const SYN = { MT: 'MEC', MEC: 'MEC', AT: 'AUT', AUT: 'AUT', AUTOMATICO: 'AUT', MANUAL: 'MEC', HB: '5P', HATCH: '5P', SD: '4P', SEDAN: '4P', FLEX: 'FLEX', TB: 'TURBO', TURBO: 'TURBO', CD: 'CD', CS: 'CS' };
+function toks(s) {
+  return norm(s).toUpperCase().split(/\s+/).filter(Boolean).map((t) => SYN[t] || t);
+}
+function scoreFipe(modeloDoc, extra, f) {
+  const a = new Set(toks(modeloDoc));
+  const b = toks(f.modelo);
+  let sc = 0;
+  for (const t of b) if (a.has(t)) sc += t.length > 2 ? 2 : 1;
+  const litros = extra.cilindrada ? (Math.round(Number(String(extra.cilindrada).replace(/\D/g, '')) / 100) / 10).toFixed(1) : '';
+  if (litros && new RegExp(`\\b${litros.replace('.', '\\.')}\\b`).test(f.modelo)) sc += 3;
+  if (/flex/i.test(extra.combustivel || '') || /alcool.*gasolina/i.test(norm(extra.combustivel || ''))) { if (/flex/i.test(f.modelo)) sc += 1; }
+  if (/diesel/i.test(extra.combustivel || '') && /diesel/i.test(f.modelo)) sc += 2;
+  const cv = Number(String(extra.potencia || '').replace(/\D/g, ''));
+  if (cv && new RegExp(`\\b${cv}\\s?cv\\b`, 'i').test(f.modelo)) sc += 2;
+  return sc;
+}
+
 function parse(html, placa) {
   const p = pairs(html);
   const fipes = fipeRows(html);
@@ -102,7 +123,10 @@ function parse(html, placa) {
   const anos = (anoTxt.match(/\d{4}/g) || []).map(Number);
   const ano_fab = anos[0] || null;
   const ano_modelo = Number((anoMod.match(/\d{4}/) || [])[0]) || anos[1] || ano_fab;
-  const fipe = fipes[0] || null;
+  const modeloDoc = pick(p, 'Modelo') || mm;
+  const extra = { cilindrada: pick(p, 'Cilindrada'), potencia: pick(p, 'Potencia'), combustivel: pick(p, 'Combustivel') };
+  const ordenadas = fipes.map((f) => ({ ...f, score: scoreFipe(modeloDoc, extra, f) })).sort((x, y) => y.score - x.score);
+  const fipe = ordenadas[0] || null;
   // A versão da FIPE é mais completa ("Track 1.6 Flex 8V 5p") que a do documento ("Track Mb").
   if (fipe) { const sp = splitMarcaModelo(fipe.modelo, marca); if (sp.versao && (!versao || norm(sp.modelo) === norm(modelo))) versao = sp.versao; }
   const out = {
@@ -110,7 +134,8 @@ function parse(html, placa) {
     cor: mapCor(pick(p, 'Cor')), combustivel: mapComb(pick(p, 'Combustivel')),
     municipio_placa: [pick(p, 'Municipio'), pick(p, 'UF')].filter(Boolean).join(' - '),
     chassi_final: (pick(p, 'Chassi').match(/[A-Z0-9*]{3,}$/i) || [''])[0],
-    fipe: fipe?.valor || 0, fipe_codigo: fipe?.codigo || '', fipes, fonte: 'placafipe.com.br',
+    fipe: fipe?.valor || 0, fipe_codigo: fipe?.codigo || '', fipe_opcoes: ordenadas.slice(0, 15), fipes: ordenadas, fonte: '',
+    modelo_documento: modeloDoc, cilindrada: extra.cilindrada, potencia: extra.potencia,
   };
   out.encontrado = !!(out.marca && out.modelo);
   return out;
@@ -118,11 +143,11 @@ function parse(html, placa) {
 
 /* ---------------- Busca ---------------- */
 
-async function fetchServer(placa) {
+async function fetchServer(url) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 12000);
   try {
-    const r = await fetch(plateUrl(placa), { headers: { 'User-Agent': UA, Accept: 'text/html', 'Accept-Language': 'pt-BR,pt;q=0.9' }, signal: ctrl.signal });
+    const r = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'text/html', 'Accept-Language': 'pt-BR,pt;q=0.9' }, signal: ctrl.signal });
     const html = await r.text();
     if (!r.ok || /just a moment|cf-chl|captcha|verify you are human/i.test(html)) return { blocked: true, status: r.status };
     return { html };
@@ -144,18 +169,21 @@ async function lookup(placaRaw) {
   if (!validPlate(placa)) throw Object.assign(new Error('Placa inválida. Use o formato ABC1234 ou ABC1D23.'), { status: 400 });
   const c = cached(placa);
   if (c) return { ...c, cache: true };
-  const r = await fetchServer(placa);
-  if (r.html) {
+  for (const url of plateUrls(placa)) {
+    const r = await fetchServer(url);
+    if (!r.html) continue;
     const d = parse(r.html, placa);
+    d.fonte = new URL(url).hostname.replace(/^www\./, '');
     if (d.encontrado) { remember(placa, d); return d; }
   }
-  return { placa, encontrado: false, precisa_extensao: true, url: plateUrl(placa) };
+  return { placa, encontrado: false, precisa_extensao: true, url: plateUrl(placa), urls: plateUrls(placa) };
 }
 
 // HTML trazido pela extensão (navegador da loja).
-function fromHtml(placaRaw, html) {
+function fromHtml(placaRaw, html, url) {
   const placa = cleanPlate(placaRaw);
   const d = parse(String(html || ''), placa);
+  try { d.fonte = url ? new URL(url).hostname.replace(/^www\./, '') : 'navegador'; } catch { d.fonte = 'navegador'; }
   if (d.encontrado) remember(placa, d);
   return d;
 }
@@ -194,4 +222,4 @@ async function fipePreco(t, marca, modelo, ano) {
   };
 }
 
-module.exports = { fipeMarca, lookup, fromHtml, parse, cleanPlate, validPlate, plateUrl, fipeMarcas, fipeModelos, fipeAnos, fipePreco, splitMarcaModelo };
+module.exports = { fipeMarca, lookup, fromHtml, parse, cleanPlate, validPlate, plateUrl, plateUrls, scoreFipe, fipeMarcas, fipeModelos, fipeAnos, fipePreco, splitMarcaModelo };

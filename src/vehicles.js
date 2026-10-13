@@ -8,11 +8,24 @@ const CORES = ['Branco', 'Prata', 'Cinza', 'Preto', 'Vermelho', 'Azul', 'Verde',
 
 // Situação do veículo em relação à loja (v2.0).
 const PROPRIEDADE = [
-  { key: 'proprio', label: 'Próprio da loja' },
+  { key: 'proprio', label: 'Loja (próprio)' },
   { key: 'consignado', label: 'Consignado (o dono deixou para vender)' },
-  { key: 'procuracao', label: 'Procuração para venda' },
   { key: 'parceria', label: 'Parceria (sócio ou outra loja)' },
   { key: 'repasse', label: 'Repasse (venda para lojista)' },
+  { key: 'outro', label: 'Outro' },
+];
+// Em nome de quem está a documentação (v2.1).
+const DOCUMENTACAO = [
+  { key: 'loja', label: 'Em nome da loja' },
+  { key: 'renave', label: 'Renave (estoque da loja)' },
+  { key: 'procuracao', label: 'Procuração para venda' },
+  { key: 'outro', label: 'Outro' },
+];
+// Origem da compra (v2.1).
+const ORIGEM = [
+  { key: 'particular', label: 'Cliente particular' }, { key: 'troca', label: 'Troca na venda de outro carro' },
+  { key: 'leilao', label: 'Leilão' }, { key: 'loja', label: 'Outra loja / repasse' }, { key: 'consignacao', label: 'Consignação' },
+  { key: 'locadora', label: 'Locadora / frota' }, { key: 'outro', label: 'Outro' },
 ];
 
 // Itens que valorizam o veículo ou dão transparência (v1.8). grupo = só um do grupo por vez.
@@ -125,6 +138,8 @@ function extras2(v) {
     local_dias: v.local_status && v.local_status !== 'patio' ? G.daysBetween(v.local_desde) : 0,
     followup_url: parceiro ? G.followUpLink(store, v, parceiro) : '',
     tem_procuracao: !!v.procuracao_file,
+    doc_status_label: v.status === 'vendido' ? (G.DOC_STATUS[v.doc_status || 'pendente'] || '') : '',
+    doc_concluido: v.status === 'vendido' && G.DOC_DONE.includes(v.doc_status || 'pendente'),
     financeiro: G.finance(v, store),
   };
 }
@@ -187,7 +202,8 @@ function cleanInput(body = {}) {
     fipe_codigo: str(body.fipe_codigo, 12).replace(/[^0-9-]/g, ''),
     fipe_ref: str(body.fipe_ref, 30),
     // Proprietário (v2.0)
-    proprietario_tipo: pick(body.proprietario_tipo, PROPRIEDADE.map((p) => p.key)) || 'proprio',
+    proprietario_tipo: pick(body.proprietario_tipo === 'procuracao' ? 'consignado' : body.proprietario_tipo, PROPRIEDADE.map((p) => p.key)) || 'proprio',
+    doc_tipo: pick(body.doc_tipo || (body.proprietario_tipo === 'procuracao' ? 'procuracao' : ''), DOCUMENTACAO.map((p) => p.key)) || 'loja',
     proprietario_nome: str(body.proprietario_nome, 120),
     proprietario_doc: str(body.proprietario_doc, 20).replace(/[^0-9./-]/g, ''),
     proprietario_tel: str(body.proprietario_tel, 20),
@@ -214,6 +230,6 @@ function missingForPublish(v, photoCount) {
 }
 
 module.exports = {
-  CAMBIOS, COMBUSTIVEIS, CARROCERIAS, CORES, DESTAQUES, PROPRIEDADE, conviteVisita, DESTAQUE, destaquesOf, ofertaAtiva, precoAnuncio, descricaoAnuncio,
+  CAMBIOS, COMBUSTIVEIS, CARROCERIAS, CORES, DESTAQUES, PROPRIEDADE, DOCUMENTACAO, ORIGEM, conviteVisita, DESTAQUE, destaquesOf, ofertaAtiva, precoAnuncio, descricaoAnuncio,
   serialize, findVehicle, listVehicles, cleanInput, missingForPublish, photosOf, title, daysSince, mediaUrl,
 };

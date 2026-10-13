@@ -21,9 +21,11 @@ const COLS = [
   ['descricao', 'Descrição', ['descricao', 'descrição', 'observacoes', 'obs']],
   ['renavam', 'Renavam', ['renavam']],
   ['chassi', 'Chassi', ['chassi']],
-  ['proprietario_tipo', 'Situação (próprio, consignado, procuração)', ['situacao', 'propriedade', 'tipo de estoque', 'proprietario tipo']],
+  ['proprietario_tipo', 'Situação (próprio, consignado, parceria, repasse)', ['situacao', 'propriedade', 'tipo de estoque', 'proprietario tipo']],
+  ['documentacao', 'Documentação (loja, Renave, procuração)', ['documentacao', 'documento', 'doc']],
   ['proprietario_nome', 'Proprietário', ['proprietario', 'dono', 'nome do proprietario']],
   ['compra_valor', 'Valor de compra', ['valor de compra', 'compra', 'custo de compra', 'preco de compra']],
+  ['compra_origem', 'Origem da compra', ['origem', 'origem da compra']],
   ['compra_data', 'Data de compra', ['data de compra', 'data compra', 'entrada', 'data de entrada']],
   ['destaques', 'Destaques (separados por vírgula)', ['destaques', 'opcionais', 'itens']],
 ];
@@ -100,11 +102,14 @@ function toVehicle(raw) {
     cambio: pickList(raw.cambio, V.CAMBIOS) || (/auto/.test(norm(raw.cambio)) ? 'Automático' : ''),
     combustivel: pickList(raw.combustivel, V.COMBUSTIVEIS) || (/alcool|gasolina/.test(norm(raw.combustivel)) ? 'Flex' : ''),
     carroceria: pickList(raw.carroceria, V.CARROCERIAS),
-    proprietario_tipo: tipo.startsWith('consig') ? 'consignado' : tipo.startsWith('procura') ? 'procuracao' : tipo.startsWith('parc') ? 'parceria' : tipo.startsWith('repas') ? 'repasse' : 'proprio',
+    proprietario_tipo: tipo.startsWith('consig') || tipo.startsWith('procura') ? 'consignado' : tipo.startsWith('parc') ? 'parceria' : tipo.startsWith('repas') ? 'repasse' : 'proprio',
+    doc_tipo: tipo.startsWith('procura') || norm(raw.documentacao).startsWith('procura') ? 'procuracao' : norm(raw.documentacao).startsWith('renave') ? 'renave' : 'loja',
     destaques,
   };
   const v = V.cleanInput(body);
-  return { v, compra_valor: money(raw.compra_valor), compra_data: dateBr(raw.compra_data) };
+  const o = norm(raw.compra_origem);
+  const origem = (V.ORIGEM.find((x) => o && (norm(x.key) === o || norm(x.label).startsWith(o) || o.startsWith(norm(x.key)))) || {}).key || '';
+  return { v, compra_valor: money(raw.compra_valor), compra_data: dateBr(raw.compra_data), compra_origem: origem };
 }
 
 async function preview(file) {
@@ -126,19 +131,19 @@ async function preview(file) {
     const raw = {};
     keys.forEach((k, i) => { if (k) raw[k] = String(r[i] ?? '').trim(); });
     if (!raw.marca && !raw.modelo) continue;
-    const { v, compra_valor, compra_data } = toVehicle(raw);
+    const { v, compra_valor, compra_data, compra_origem } = toVehicle(raw);
     const problemas = [];
     if (!v.marca || !v.modelo) problemas.push('falta marca ou modelo');
     if (!v.preco) problemas.push('sem preço');
     if (!v.ano_modelo) problemas.push('sem ano do modelo');
-    out.push({ ...v, destaques: JSON.parse(v.destaques), compra_valor, compra_data, problemas, ok: !!(v.marca && v.modelo) });
+    out.push({ ...v, destaques: JSON.parse(v.destaques), compra_valor, compra_data, compra_origem, problemas, ok: !!(v.marca && v.modelo) });
   }
   return { colunas: rows[hi].map((h, i) => ({ planilha: h, campo: keys[i] ? COLS.find((c) => c[0] === keys[i])[1] : null })), linhas: out };
 }
 
 function templateCsv() {
   const head = COLS.map((c) => c[1]).join(';');
-  const ex = ['ABC1D23', 'Volkswagen', 'Fox', 'Track 1.6', '2015', '2016', '98500', '54900', '', '49846', 'Prata', 'Preto', 'Manual', 'Flex', 'Hatch', 'Carro revisado.', '', '', 'Próprio', '', '42000', '01/10/2026', 'Perícia aprovada, Teto solar'].join(';');
+  const ex = ['ABC1D23', 'Volkswagen', 'Fox', 'Track 1.6', '2015', '2016', '98500', '54900', '', '49846', 'Prata', 'Preto', 'Manual', 'Flex', 'Hatch', 'Carro revisado.', '', '', 'Próprio', 'Loja', '', '42000', 'Particular', '01/10/2026', 'Perícia aprovada, Teto solar'].join(';');
   return `﻿${head}\n${ex}\n`;
 }
 
@@ -146,7 +151,7 @@ async function templateXlsx() {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('Estoque');
   ws.addRow(COLS.map((c) => c[1]));
-  ws.addRow(['ABC1D23', 'Volkswagen', 'Fox', 'Track 1.6', 2015, 2016, 98500, 54900, '', 49846, 'Prata', 'Preto', 'Manual', 'Flex', 'Hatch', 'Carro revisado.', '', '', 'Próprio', '', 42000, '01/10/2026', 'Perícia aprovada, Teto solar']);
+  ws.addRow(['ABC1D23', 'Volkswagen', 'Fox', 'Track 1.6', 2015, 2016, 98500, 54900, '', 49846, 'Prata', 'Preto', 'Manual', 'Flex', 'Hatch', 'Carro revisado.', '', '', 'Próprio', 'Loja', '', 42000, 'Particular', '01/10/2026', 'Perícia aprovada, Teto solar']);
   ws.getRow(1).font = { bold: true };
   ws.columns.forEach((c) => { c.width = 16; });
   return wb.xlsx.writeBuffer();

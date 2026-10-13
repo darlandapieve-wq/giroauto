@@ -581,6 +581,15 @@ test('v2.0: placa, FIPE, proprietário, procuração e importação', async () =
   assert.equal(r.body.marca, 'Chevrolet'); assert.equal(r.body.modelo, 'Onix');
   r = await api('GET', '/api/plate/XX12');
   assert.equal(r.status, 400);
+  // v2.1: se a primeira fonte falha, tenta a segunda (keplaca) antes de pedir a extensão.
+  process.env.PLATE_URL_TEMPLATE = `${mp}/fora-do-ar/{placa},${mp}/placafipe/placa/{placa}`;
+  r = await api('GET', '/api/plate/QPB5I85');
+  assert.equal(r.body.encontrado, true, JSON.stringify(r.body)); assert.equal(r.body.modelo, 'Fox');
+  process.env.PLATE_URL_TEMPLATE = `${mp}/placafipe/placa/{placa},${mp}/fora-do-ar/{placa}`;
+  require('../src/db').run("DELETE FROM plate_cache WHERE placa = 'BLQ1A23'");
+  r = await api('GET', '/api/plate/BLQ1A23');
+  assert.equal(r.body.precisa_extensao, true); assert.equal(r.body.urls.length, 2);
+  process.env.PLATE_URL_TEMPLATE = `${mp}/placafipe/placa/{placa}`;
 
   // Tabela FIPE gratuita: marca -> modelo -> ano -> preço
   r = await api('GET', '/api/fipe/carros/marcas');
@@ -591,10 +600,17 @@ test('v2.0: placa, FIPE, proprietário, procuração e importação', async () =
 
   // Proprietário, consignação e procuração (documento privado)
   r = await api('POST', '/api/vehicles', { marca: 'Volkswagen', modelo: 'Fox', ano_modelo: 2016, km: 98500, preco: 54900, fipe: 49846, placa: 'ABC1D23', fipe_codigo: '005340-6',
-    proprietario_tipo: 'procuracao', proprietario_nome: 'João da Silva', proprietario_tel: '(44) 98888-7777', procuracao_validade: '2027-01-31', consig_comissao_pct: '8,5' });
+    proprietario_tipo: 'consignado', doc_tipo: 'procuracao', proprietario_nome: 'João da Silva', proprietario_tel: '(44) 98888-7777', procuracao_validade: '2027-01-31', consig_comissao_pct: '8,5' });
   const id = r.body.id;
-  assert.equal(r.body.proprietario_tipo, 'procuracao');
+  assert.equal(r.body.proprietario_tipo, 'consignado');
+  assert.equal(r.body.doc_tipo, 'procuracao');
   assert.equal(r.body.consig_comissao_pct, 8.5);
+  // Compatibilidade: o valor antigo "procuracao" no proprietário vira consignado + documentação por procuração.
+  const legado = await api('POST', '/api/vehicles', { marca: 'Fiat', modelo: 'Uno', proprietario_tipo: 'procuracao' });
+  assert.equal(legado.body.proprietario_tipo, 'consignado'); assert.equal(legado.body.doc_tipo, 'procuracao');
+  const loja = await api('POST', '/api/vehicles', { marca: 'Fiat', modelo: 'Uno', proprietario_tipo: 'proprio', doc_tipo: 'renave' });
+  assert.equal(loja.body.proprietario_tipo, 'proprio'); assert.equal(loja.body.doc_tipo, 'renave');
+  await api('DELETE', `/api/vehicles/${legado.body.id}`); await api('DELETE', `/api/vehicles/${loja.body.id}`);
   assert.equal(r.body.fipe_diff_pct, 10.1);
   const pdf = Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF');
   const fd = new FormData(); fd.append('arquivo', new Blob([pdf], { type: 'application/pdf' }), 'proc.pdf');
@@ -714,11 +730,84 @@ test('v2.0: gestão (custos, venda, parceiros, localização) e resultados', asy
   assert.equal(r.body.kpis.vendidos >= 1, true);
   const linha = r.body.vendidos.find((l) => l.id === id);
   assert.equal(linha.liquido, 7960);
-  assert.equal(r.body.meses.length, 6);
+  assert.equal(r.body.meses.length, 12);
   r = await api('GET', `/api/results?vendedor=${globalThis.__carlos}`);
   assert.deepEqual(r.body.vendidos.map((l) => l.id), [id]);
   r = await api('GET', '/api/results?tipo=consignado');
   assert.equal(r.body.vendidos.length, 0);
+});
+
+test('v2.1: gestão no cadastro, custos previstos, venda completa, documentação, despesas e DRE', async () => {
+  const D = require('../src/db');
+  // Cadastro já com a gestão do carro: compra, origem, data, manutenção feita e custo previsto.
+  let r = await api('POST', '/api/vehicles', { marca: 'Honda', modelo: 'Fit', versao: 'EX 1.5', ano_modelo: 2018, km: 70000, preco: 70000, placa: 'HFT2E18', proprietario_tipo: 'proprio', doc_tipo: 'renave' });
+  const id = r.body.id;
+  r = await api('PUT', `/api/vehicles/${id}/finance`, { compra_valor: 58000, compra_data: '2026-09-01', compra_origem: 'troca', compra_de: 'Cliente Pedro' });
+  assert.equal(r.status, 200);
+  r = await api('POST', `/api/vehicles/${id}/costs`, { categoria: 'mecanica', descricao: 'Revisão', valor: 900 });
+  r = await api('POST', `/api/vehicles/${id}/costs`, { categoria: 'pneus', descricao: '4 pneus', valor: 1600, status: 'previsto' });
+  r = await api('GET', `/api/vehicles/${id}/finance`);
+  assert.equal(r.body.finance.custos_realizados, 900);
+  assert.equal(r.body.finance.custos_previstos, 1600);
+  assert.equal(r.body.finance.previsto.bruto, 70000 - 58000 - 2500);
+  assert.equal(r.body.finance.investido, 58900);
+  assert.equal(r.body.vehicle.compra_origem, 'troca');
+  const prev = r.body.costs.find((c) => c.previsto);
+  r = await api('PUT', `/api/vehicles/${id}/costs/${prev.id}`, { status: 'realizado', valor: 1500 });
+  r = await api('GET', `/api/vehicles/${id}/finance`);
+  assert.equal(r.body.finance.custos_realizados, 2400); assert.equal(r.body.finance.custos_previstos, 0);
+  // Atualização parcial não apaga o resto.
+  await api('PUT', `/api/vehicles/${id}/finance`, { compra_de: 'Pedro Souza' });
+  r = await api('GET', `/api/vehicles/${id}/finance`);
+  assert.equal(r.body.vehicle.compra_valor, 58000); assert.equal(r.body.vehicle.compra_de, 'Pedro Souza');
+  // Parceiro criado direto do pop-up devolve o id para já ficar selecionado.
+  r = await api('POST', '/api/partners', { nome: 'Despachante Rápido', tipo: 'despachante', whatsapp: '44988887777' });
+  assert.equal(r.status, 201); assert.ok(r.body.id); assert.ok(r.body.partners.some((p) => p.id === r.body.id));
+  // Venda completa com data, comprador, financiamento, troca e documento já preenchido.
+  r = await api('POST', `/api/vehicles/${id}/sold`, { venda_valor: '68.500', venda_data: '2026-10-02', venda_pagamento: 'Financiamento', venda_entrada: 20000, venda_financeira: 'BV',
+    venda_troca_valor: 15000, venda_troca_desc: 'Gol 2014', venda_comprador: 'Ana Lima', comprador_doc: '123.456.789-00', comprador_tel: '(44) 97777-6666', venda_comissao: 600, venda_obs: 'Garantia 3 meses', doc_status: 'preenchido' });
+  assert.equal(r.status, 200);
+  const v = D.get('SELECT * FROM vehicles WHERE id = ?', id);
+  assert.equal(v.vendido_em.slice(0, 10), '2026-10-02'); assert.equal(v.venda_valor, 68500); assert.equal(v.venda_entrada, 20000);
+  assert.equal(v.venda_financeira, 'BV'); assert.equal(v.venda_troca_valor, 15000); assert.equal(v.comprador_tel, '(44) 97777-6666'); assert.equal(v.doc_status, 'preenchido');
+  // Documentação: lista, etapas, histórico e WhatsApp do comprador.
+  r = await api('GET', '/api/docs');
+  let doc = r.body.docs.find((x) => x.id === id);
+  assert.equal(doc.status, 'preenchido'); assert.equal(doc.comprador, 'Ana Lima'); assert.match(doc.wa_url, /^https:\/\/wa\.me\/5544977776666/);
+  r = await api('PUT', `/api/vehicles/${id}/doc`, { status: 'vistoria', obs: 'Vistoria dia 10' });
+  assert.equal(r.status, 200);
+  r = await api('PUT', `/api/vehicles/${id}/doc`, { status: 'entregue', entrega: '2026-10-12' });
+  doc = r.body.docs.find((x) => x.id === id);
+  assert.equal(doc.done, true); assert.equal(doc.entrega, '2026-10-12');
+  r = await api('GET', `/api/vehicles/${id}/doc`);
+  assert.deepEqual(r.body.map((m) => m.status), ['entregue', 'vistoria', 'preenchido']);
+  // Edição posterior da venda.
+  r = await api('PUT', `/api/vehicles/${id}/sale`, { venda_valor: 68000 });
+  assert.equal(D.get('SELECT venda_valor FROM vehicles WHERE id = ?', id).venda_valor, 68000);
+  assert.equal(D.get('SELECT venda_comprador FROM vehicles WHERE id = ?', id).venda_comprador, 'Ana Lima');
+  // Despesas da loja (com repetição mensal) e DRE.
+  r = await api('POST', '/api/expenses', { data: '2026-10-05', categoria: 'aluguel', descricao: 'Pátio', valor: 3000, repetir: 3 });
+  assert.equal(r.status, 201);
+  r = await api('GET', '/api/expenses?from=2026-10-01&to=2026-12-31');
+  assert.equal(r.body.despesas.length, 3);
+  r = await api('GET', '/api/results?from=2026-10-01&to=2026-10-31');
+  const l = r.body.vendidos.find((x) => x.id === id);
+  const imp = Math.round(68000 * 0.02);
+  assert.equal(l.liquido, 68000 - 58000 - 2400 - 600 - imp);
+  assert.equal(l.origem, 'troca'); assert.equal(l.pagamento, 'Financiamento');
+  assert.equal(r.body.dre.despesas_loja, 3000);
+  assert.equal(r.body.dre.resultado, r.body.dre.lucro_operacoes - 3000);
+  assert.ok(r.body.faixas_venda.length === 6 && r.body.marcas.some((m) => m.label === 'Honda'));
+  assert.ok(r.body.origens.some((o) => o.chave === 'troca'));
+  r = await api('GET', '/api/results?from=2026-10-01&to=2026-10-31&origem=leilao');
+  assert.equal(r.body.vendidos.length, 0);
+  const csv = await fetch(`${base}/api/results.csv?from=2026-10-01&to=2026-10-31`, { headers: { cookie } });
+  const txt = await csv.text();
+  assert.match(txt, /Honda Fit/); assert.match(txt, /Ana Lima/); assert.match(txt.split('\r\n')[0], /Lucro líquido/);
+  r = await api('GET', '/api/me');
+  assert.ok(r.body.options.documentacao.some((x) => x.key === 'renave'));
+  assert.ok(r.body.options.origem.some((x) => x.key === 'leilao'));
+  assert.ok(r.body.options.doc_status.entregue);
 });
 
 test('v2.0: agenda de republicação, QR, folha A4, painel TV e fotos prontas', async () => {

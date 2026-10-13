@@ -133,6 +133,14 @@ Destaques do veículo (`DESTAQUES` em `src/vehicles.js`) e preço de oferta (`pr
 - Equipe e permissões (`src/team.js`), gestão e indicadores (`src/gestao.js`), agenda de republicação (`src/schedule.js`), folha A4 / QR / painel TV (`src/printables.js`, rotas `/imprimir/:id`, `/qr/:slug/:id.png`, `/tv/:slug`), importação (`src/importer.js`), fotos prontas (`src/photos.js`).
 - App instalável: `public/manifest.webmanifest` e `public/sw.js`.
 
+## Versão 2.1
+
+- Placa: duas fontes públicas em sequência (placafipe.com e keplaca.com), primeiro pelo servidor e depois pela extensão 1.7; a versão FIPE mais parecida é escolhida sozinha. `PLATE_URL_TEMPLATE` aceita várias URLs separadas por vírgula.
+- Proprietário (`proprietario_tipo`: proprio, consignado, parceria, repasse, outro) separado da documentação (`doc_tipo`: loja, renave, procuracao, outro).
+- Gestão no cadastro: compra, origem (`compra_origem`), data, custos feitos e previstos (`vehicle_costs.status`) e lucro previsto ao vivo.
+- Venda completa (`POST /api/vehicles/:id/sold`, `PUT /api/vehicles/:id/sale`) e transferência do documento (`/api/docs`, `PUT /api/vehicles/:id/doc`, tabela `doc_moves`).
+- Despesas da loja (`/api/expenses`, tabela `store_expenses`), DRE e análises em `/api/results`, planilha em `/api/results.csv`.
+
 ## Outros canais (v1.7)
 
 - **Instagram**: carrossel com a arte, as imagens geradas e as fotos (até 10), publicado pela API da Meta no perfil ligado à Página. Exige ligar "Publicar no Instagram" em Configurações > App da Meta (caso de uso de Instagram no app) e conectar o Facebook de novo.

@@ -262,6 +262,32 @@ db.exec(`CREATE TABLE IF NOT EXISTS vehicle_moves (
 db.exec(`CREATE TABLE IF NOT EXISTS plate_cache (placa TEXT PRIMARY KEY, data_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')))`);
 db.exec(`CREATE TABLE IF NOT EXISTS rep_runs (store_id INTEGER NOT NULL, slot TEXT NOT NULL, PRIMARY KEY (store_id, slot))`);
 
+// v2.1: documentação separada do proprietário, origem da compra, venda completa e transferência, custos previstos, despesas da loja.
+for (const [col, def] of [
+  ['doc_tipo', "TEXT NOT NULL DEFAULT 'loja'"], ['compra_origem', "TEXT DEFAULT ''"],
+  ['comprador_doc', "TEXT DEFAULT ''"], ['comprador_tel', "TEXT DEFAULT ''"], ['venda_entrada', 'INTEGER NOT NULL DEFAULT 0'],
+  ['venda_financeira', "TEXT DEFAULT ''"], ['venda_troca_valor', 'INTEGER NOT NULL DEFAULT 0'], ['venda_troca_desc', "TEXT DEFAULT ''"],
+  ['venda_obs', "TEXT DEFAULT ''"], ['doc_status', "TEXT DEFAULT ''"], ['doc_atualizado', 'TEXT'], ['doc_obs', "TEXT DEFAULT ''"], ['doc_entrega', 'TEXT'],
+]) addColumn('vehicles', col, def);
+addColumn('vehicle_costs', 'status', "TEXT NOT NULL DEFAULT 'realizado'");
+db.exec(`CREATE TABLE IF NOT EXISTS store_expenses (
+  id INTEGER PRIMARY KEY,
+  store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+  data TEXT NOT NULL,
+  categoria TEXT NOT NULL DEFAULT 'outros',
+  descricao TEXT DEFAULT '',
+  valor INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS doc_moves (
+  id INTEGER PRIMARY KEY,
+  vehicle_id INTEGER NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
+  status TEXT NOT NULL,
+  obs TEXT DEFAULT '',
+  user_id INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`);
+
 // Conexão direta com o Instagram (v1.9).
 db.exec(`CREATE TABLE IF NOT EXISTS ig_connections (
   store_id INTEGER PRIMARY KEY REFERENCES stores(id) ON DELETE CASCADE,
@@ -280,6 +306,12 @@ if (!db.prepare("SELECT 1 FROM settings WHERE key = 'mig_v110_rodape'").get()) {
     if (r.descricao && re.test(r.descricao)) db.prepare('UPDATE vehicles SET descricao = ? WHERE id = ?').run(r.descricao.replace(re, '').trimEnd(), r.id);
   }
   db.prepare("INSERT INTO settings (key, value) VALUES ('mig_v110_rodape', '1')").run();
+}
+// v2.1: "procuração" deixa de ser tipo de proprietário e passa a ser tipo de documentação.
+if (!db.prepare("SELECT 1 FROM settings WHERE key = 'mig_v21_doc'").get()) {
+  db.exec("UPDATE vehicles SET proprietario_tipo = 'consignado', doc_tipo = 'procuracao' WHERE proprietario_tipo = 'procuracao'");
+  db.exec("UPDATE vehicles SET doc_status = 'pendente' WHERE status = 'vendido' AND (doc_status IS NULL OR doc_status = '')");
+  db.prepare("INSERT INTO settings (key, value) VALUES ('mig_v21_doc', '1')").run();
 }
 if (!db.prepare('SELECT 1 FROM users WHERE is_admin = 1').get()) {
   db.exec('UPDATE users SET is_admin = 1 WHERE id = (SELECT MIN(id) FROM users)');

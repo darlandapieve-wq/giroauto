@@ -130,7 +130,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 // Consulta de placa (v2.0): abre a página do placafipe numa aba em segundo plano, lê o HTML e fecha.
 // Roda no navegador da loja, então passa pelas verificações do site como uma visita normal.
 async function plateLookup(url) {
-  if (!/^https:\/\/(www\.)?placafipe\.com\.br\//.test(String(url || ''))) return { ok: false, error: 'endereço não permitido' };
+  if (!/^https:\/\/(www\.)?(placafipe\.com(\.br)?|keplaca\.com)\//.test(String(url || ''))) return { ok: false, error: 'endereço não permitido' };
   const tab = await chrome.tabs.create({ url, active: false });
   try {
     const end = Date.now() + 25000;

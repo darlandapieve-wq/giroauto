@@ -361,8 +361,9 @@
       await loadJobs(); return render();
     }
     if (a === 'vendido') {
-      return confirmBox('Marcar como vendido?', `${esc(v.marca)} ${esc(v.modelo)} ${esc(v.versao)}<br><br>${v.status === 'publicado' ? 'A extensão vai excluir o anúncio do Marketplace. ' : ''}O veículo sai do catálogo na próxima sincronização.`, 'Marcar vendido', async () => {
-        const r = await api('POST', `/api/vehicles/${id}/sold`);
+      // v2.1: o modal de venda (valor, data, comprador, pagamento e documento) fica no app2.js.
+      const sold = async (body) => {
+        const r = await api('POST', `/api/vehicles/${id}/sold`, body || {});
         await Promise.all([loadVehicles(), loadJobs()]);
         if (!manualMode() && v.status === 'publicado') extGo('A extensão está excluindo o anúncio do Marketplace.');
         render();
@@ -384,7 +385,9 @@
           setTimeout(() => modal(`<h3>Campanha ainda ativa</h3><p>Este veículo aparece em: <b>${r.campanhas_ativas.map((c) => esc(c.name)).join(', ')}</b>. Pause a campanha ou crie outra sem ele.</p>${extra}<div class="modal-foot"><button class="btn" data-close type="button">Depois</button><button class="btn primary" id="toCamp" type="button">Ir para campanhas</button></div>`), 50);
           setTimeout(() => { const b = $('#toCamp'); if (b) b.onclick = () => { closeModal(); go('campanhas'); }; }, 80);
         } else toast('Veículo marcado como vendido');
-      });
+      };
+      if (EXT.sellModal) return EXT.sellModal(v, sold);
+      return confirmBox('Marcar como vendido?', `${esc(v.marca)} ${esc(v.modelo)} ${esc(v.versao)}<br><br>${v.status === 'publicado' ? 'A extensão vai excluir o anúncio do Marketplace. ' : ''}O veículo sai do catálogo na próxima sincronização.`, 'Marcar vendido', () => sold());
     }
     if (a === 'divulgar') return channelsModal(v);
     if (a === 'duplicar') {
@@ -534,6 +537,8 @@
         S.pendingFiles = [];
         d.photos = v.photos;
       }
+      // v2.1: gestão do veículo (compra, origem, custos realizados e previstos) salva junto.
+      if (EXT.afterSave) await EXT.afterSave(v, d);
       if (v.status === 'rascunho') v = await api('POST', `/api/vehicles/${v.id}/ready`).catch(() => v);
       if (publish) {
         if (!d.organico) throw new Error('Marque "Anúncio orgânico no Marketplace" para publicar.');

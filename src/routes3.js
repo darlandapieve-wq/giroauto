@@ -39,7 +39,7 @@ function register(app) {
   /* ---------------- Placa e Tabela FIPE ---------------- */
   app.get('/api/plate/:placa', team.can('cadastrar'), wrap(async (req, res) => res.json(await plate.lookup(req.params.placa))));
   app.post('/api/plate/:placa/html', team.can('cadastrar'), (req, res) => {
-    const d = plate.fromHtml(req.params.placa, req.body?.html);
+    const d = plate.fromHtml(req.params.placa, req.body?.html, req.body?.url);
     if (!d.encontrado) throw fail(404, 'Não foi possível ler os dados desta placa. Use a Tabela FIPE abaixo ou preencha à mão.');
     res.json(d);
   });
@@ -169,6 +169,7 @@ function register(app) {
         if (d.placa && get('SELECT 1 FROM vehicles WHERE store_id = ? AND placa = ? AND status != \'vendido\'', req.user.storeId, d.placa)) { pulados++; continue; }
         d.created_by = req.user.id;
         if (fin) { d.compra_valor = parseInt(l.compra_valor, 10) || 0; d.compra_data = /^\d{4}-\d{2}-\d{2}$/.test(l.compra_data || '') ? l.compra_data : null; }
+        if (V.ORIGEM.some((x) => x.key === l.compra_origem)) d.compra_origem = l.compra_origem;
         if (d.preco_oferta) d.oferta_desde = new Date().toISOString().slice(0, 19).replace('T', ' ');
         const cols = Object.keys(d);
         run(`INSERT INTO vehicles (store_id, ${cols.join(',')}) VALUES (?, ${cols.map(() => '?').join(',')})`, req.user.storeId, ...cols.map((k) => d[k]));
