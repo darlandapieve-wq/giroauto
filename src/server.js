@@ -137,7 +137,7 @@ app.get('/api/me', auth.requireUser, (req, res) => {
   res.json({
     user: { ...req.user, is_admin: !!get('SELECT is_admin FROM users WHERE id = ?', req.user.id)?.is_admin }, store,
     vitrine_url: `${config.publicUrl}/v/${store.slug}`,
-    options: { cambios: V.CAMBIOS, combustiveis: V.COMBUSTIVEIS, carrocerias: V.CARROCERIAS, cores: V.CORES, destaques: V.DESTAQUES.map(({ key, label, texto, grupo, alerta }) => ({ key, label, texto, grupo: grupo || '', alerta: !!alerta })) },
+    options: { cambios: V.CAMBIOS, combustiveis: V.COMBUSTIVEIS, carrocerias: V.CARROCERIAS, cores: V.CORES, destaques: V.DESTAQUES.map(({ key, label, texto, grupo, alerta, rodape }) => ({ key, label, texto, grupo: grupo || '', alerta: !!alerta, rodape: !!rodape })) },
     republish_days: config.republishDays,
     version: VERSION,
     extension: { id: EXTENSION_ID, version: EXTENSION_VERSION },
@@ -332,6 +332,36 @@ app.delete('/api/vehicles/:id', auth.requireUser, wrap(async (req, res) => {
   await storage.removeMedia(names).catch(() => {});
   logEvent(req.user.storeId, `${v.marca} ${v.modelo} ${v.versao} excluído`);
   res.json({ ok: true, remover });
+}));
+
+// Duplica o veículo com todos os dados e cópias das fotos (independentes do original).
+app.post('/api/vehicles/:id/duplicate', auth.requireUser, wrap(async (req, res) => {
+  const v = own(req);
+  const skip = new Set(['id', 'store_id', 'status', 'fb_listing_url', 'publicado_em', 'vendido_em', 'oferta_desde', 'created_at', 'updated_at']);
+  const cols = Object.keys(v).filter((k) => !skip.has(k));
+  const novo = { ...v, modelo: v.modelo };
+  const copias = [];
+  const fs = require('node:fs');
+  for (const p of V.photosOf(v.id)) {
+    const src = await storage.ensureLocal(p.filename);
+    if (!src) continue;
+    const name = crypto.randomBytes(16).toString('hex') + path.extname(p.filename);
+    fs.copyFileSync(src, path.join(config.dataDir, 'media', name));
+    copias.push({ name, mime: p.mime });
+  }
+  try { for (const c of copias) await storage.saveMedia(c.name); }
+  catch (e) {
+    copias.forEach((c) => fs.rm(path.join(config.dataDir, 'media', c.name), () => {}));
+    throw fail(502, 'Não foi possível copiar as fotos. Tente de novo em instantes.');
+  }
+  const status = V.missingForPublish(v, copias.length).length ? 'rascunho' : 'pronto';
+  const r = run(`INSERT INTO vehicles (store_id, status, ${cols.join(',')}) VALUES (?, ?, ${cols.map(() => '?').join(',')})`, req.user.storeId, status, ...cols.map((k) => novo[k]));
+  const id = r.lastInsertRowid;
+  copias.forEach((c, i) => run('INSERT INTO photos (vehicle_id, filename, mime, position) VALUES (?, ?, ?, ?)', id, c.name, c.mime, i));
+  if (v.preco_oferta) run(`UPDATE vehicles SET oferta_desde = datetime('now') WHERE id = ?`, id);
+  logEvent(req.user.storeId, `${v.marca} ${v.modelo} duplicado`);
+  arts.schedule(id);
+  res.status(201).json(V.serialize(V.findVehicle(req.user.storeId, id)));
 }));
 
 // Marca como "pronto para publicar" quando o cadastro está completo.

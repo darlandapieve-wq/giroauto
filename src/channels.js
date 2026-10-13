@@ -47,20 +47,42 @@ function hashtag(s) {
   return '#' + String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]/g, '').toLowerCase();
 }
 
+// Linhas da descrição que só repetem o que a legenda já mostra (título, preço, itens, destaques, avisos, convite).
+function textoLivre(v) {
+  const norm = (x) => String(x).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const dests = V.DESTAQUES.map((d) => norm(d.texto));
+  const marca = norm(v.marca); const modelo = norm(v.modelo);
+  const specs = [v.cambio && `cambio ${norm(v.cambio)}`, v.combustivel && norm(v.combustivel), v.cor && `cor ${norm(v.cor)}`].filter(Boolean);
+  const out = [];
+  for (const raw of String(v.descricao || '').split('\n')) {
+    const l = raw.trim(); const n = norm(l);
+    if (!n) { if (out.length && out[out.length - 1] !== '') out.push(''); continue; }
+    const bullet = /^[✔✅✓•\-*]/.test(l);
+    if (n.startsWith(`${marca} ${modelo}`)) continue; // título
+    if (/oferta/.test(n) && /r\s?\d/.test(n)) continue; // linha de oferta
+    if (/^transparencia/.test(n) || l.startsWith('⚠')) continue; // aviso (a legenda tem o seu)
+    if (/agendar uma visita|test drive/.test(n)) continue; // convite (a legenda tem o contato)
+    if (bullet && (/\bkm\b/.test(n) || specs.includes(n) || dests.includes(n))) continue; // itens repetidos
+    out.push(l);
+  }
+  while (out.length && out[out.length - 1] === '') out.pop();
+  while (out.length && out[0] === '') out.shift();
+  return out.join('\n');
+}
+
 function caption(v, store) {
-  const desc = V.descricaoAnuncio(v);
   const preco = V.ofertaAtiva(v) ? `🔥 OFERTA: de R$ ${fmtInt(v.preco)} por R$ ${fmtInt(v.preco_oferta)}` : v.preco ? `💰 R$ ${fmtInt(v.preco)}` : '💰 Consulte o valor';
-  const linhas = [
-    `🚗 ${adTitle(v)}`,
-    preco,
-    '',
-    [v.km ? `📍 ${fmtInt(v.km)} km` : '', v.cambio ? `⚙️ Câmbio ${v.cambio.toLowerCase()}` : '', v.combustivel ? `⛽ ${v.combustivel}` : '', v.cor ? `🎨 ${v.cor}` : ''].filter(Boolean).join('\n'),
-  ];
-  // Destaques marcados que a descrição ainda não cita.
-  const extras = V.destaquesOf(v).map((k) => V.DESTAQUE[k]).filter((d) => !d.alerta && !desc.toLowerCase().includes(d.texto.toLowerCase()));
-  if (extras.length) linhas.push(extras.map((d) => `✅ ${d.texto}`).join('\n'));
-  const corpo = String(v.descricao || '').trim() ? desc : desc.replace(V.title(v), '').trim();
-  if (corpo) linhas.push('', corpo);
+  const marcados = V.destaquesOf(v).map((k) => V.DESTAQUE[k]);
+  const itens = [
+    v.km ? `📍 ${fmtInt(v.km)} km` : '', v.cambio ? `⚙️ Câmbio ${v.cambio.toLowerCase()}` : '', v.combustivel ? `⛽ ${v.combustivel}` : '', v.cor ? `🎨 Cor ${v.cor.toLowerCase()}` : '',
+    ...marcados.filter((d) => !d.alerta && !d.rodape).map((d) => `✅ ${d.texto}`),
+  ].filter(Boolean);
+  const linhas = [`🚗 ${adTitle(v)}`, preco];
+  if (itens.length) linhas.push('', itens.join('\n'));
+  const livre = textoLivre(v);
+  if (livre) linhas.push('', livre);
+  const alertas = marcados.filter((d) => d.alerta);
+  if (alertas.length) linhas.push('', `⚠️ Transparência: ${alertas.map((d) => d.texto).join('; ')}.`);
   const contato = store.whatsapp || store.phone;
   linhas.push('', `📲 ${contato ? `Chame no WhatsApp: ${contato}` : 'Chame no direct'}${store.name ? `\n🏪 ${store.name}` : ''}${store.city ? ` · ${store.city}${store.state ? '/' + store.state : ''}` : ''}`);
   const tags = [hashtag(v.marca), hashtag(v.modelo), hashtag(`${v.marca}${v.modelo}`), '#carrosusados', '#seminovos', '#carros', store.city ? hashtag(store.city) : '', store.city ? hashtag(`carros${store.city}`) : '']
@@ -72,7 +94,7 @@ function caption(v, store) {
 // Descrição para os sites: a da loja, os destaques que ela não cita e os avisos de transparência.
 function descricaoComDestaques(v) {
   const desc = V.descricaoAnuncio(v);
-  const extras = V.destaquesOf(v).map((k) => V.DESTAQUE[k]).filter((d) => !d.alerta && !desc.toLowerCase().includes(d.texto.toLowerCase()));
+  const extras = V.destaquesOf(v).map((k) => V.DESTAQUE[k]).filter((d) => !d.alerta && !d.rodape && !desc.toLowerCase().includes(d.texto.toLowerCase()));
   const oferta = V.ofertaAtiva(v) ? `OFERTA: de R$ ${fmtInt(v.preco)} por R$ ${fmtInt(v.preco_oferta)}.\n\n` : '';
   return `${oferta}${desc}${extras.length ? `\n\n${extras.map((d) => `✔ ${d.texto}`).join('\n')}` : ''}`;
 }

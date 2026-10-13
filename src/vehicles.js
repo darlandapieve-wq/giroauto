@@ -21,6 +21,8 @@ const DESTAQUES = [
   { key: 'aceita_troca', label: 'Aceita troca', texto: 'Aceitamos seu usado na troca' },
   { key: 'financiamento', label: 'Financiamento facilitado', texto: 'Financiamento facilitado' },
   { key: 'blindado', label: 'Blindado', texto: 'Veículo blindado' },
+  { key: 'teto_solar', label: 'Teto solar', texto: 'Teto solar' },
+  { key: 'convite_visita', label: 'Convite para visita no fim da descrição', texto: 'Convite para visita', rodape: true },
   { key: 'ex_locadora', label: 'Ex-locadora ou ex-táxi', texto: 'Veículo ex-locadora ou ex-táxi', alerta: true, palavras: /locadora|t[áa]xi|frota/i },
   { key: 'leilao', label: 'Possui leilão', texto: 'Veículo com passagem por leilão', alerta: true, palavras: /leil[ãa]o/i },
   { key: 'sinistro', label: 'Indício de sinistro', texto: 'Veículo com indício de sinistro (laudo disponível na loja)', alerta: true, palavras: /sinistro/i },
@@ -41,10 +43,19 @@ function ofertaAtiva(v) {
 function precoAnuncio(v) { return ofertaAtiva(v) ? v.preco_oferta : v.preco; }
 
 // Descrição usada nos anúncios: a da loja e, se ela não citar, os avisos de transparência marcados.
+// Frase final opcional: "Loja · Cidade/UF. Chame para agendar uma visita ou test drive."
+function conviteVisita(v) {
+  const s = get('SELECT name, city, state FROM stores WHERE id = ?', v.store_id) || {};
+  return `${s.name || 'Nossa loja'}${s.city ? ` · ${s.city}${s.state ? '/' + s.state : ''}` : ''}. Chame para agendar uma visita ou test drive.`;
+}
+
 function descricaoAnuncio(v) {
-  const base = String(v.descricao || '').trim() || title(v);
-  const faltam = destaquesOf(v).map((k) => DESTAQUE[k]).filter((d) => d.alerta && !d.palavras.test(base));
-  return faltam.length ? `${base}\n\n⚠️ Transparência: ${faltam.map((d) => d.texto).join('; ')}.` : base;
+  let base = String(v.descricao || '').trim() || title(v);
+  const marcados = destaquesOf(v);
+  const faltam = marcados.map((k) => DESTAQUE[k]).filter((d) => d.alerta && !d.palavras.test(base));
+  if (faltam.length) base += `\n\n⚠️ Transparência: ${faltam.map((d) => d.texto).join('; ')}.`;
+  if (marcados.includes('convite_visita') && !/agendar uma visita/i.test(base)) base += `\n\n${conviteVisita(v)}`;
+  return base;
 }
 
 const mediaUrl = (filename) => `${config.publicUrl}/media/${filename}`;
@@ -157,6 +168,6 @@ function missingForPublish(v, photoCount) {
 }
 
 module.exports = {
-  CAMBIOS, COMBUSTIVEIS, CARROCERIAS, CORES, DESTAQUES, DESTAQUE, destaquesOf, ofertaAtiva, precoAnuncio, descricaoAnuncio,
+  CAMBIOS, COMBUSTIVEIS, CARROCERIAS, CORES, DESTAQUES, conviteVisita, DESTAQUE, destaquesOf, ofertaAtiva, precoAnuncio, descricaoAnuncio,
   serialize, findVehicle, listVehicles, cleanInput, missingForPublish, photosOf, title, daysSince, mediaUrl,
 };

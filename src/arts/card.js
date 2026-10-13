@@ -218,8 +218,8 @@ async function renderCard(v, photoFiles, store = {}) {
   const selos = [];
   if (marcados.includes('pericia_premium')) selos.push('PERÍCIA PREMIUM');
   else if (marcados.includes('pericia_aprovada')) selos.push('PERÍCIA APROVADA');
-  const outro = ['sem_retoques', 'unico_dono', 'pneus_novos', 'garantia', 'revisoes'].find((k) => marcados.includes(k));
-  if (outro) selos.push({ sem_retoques: 'SEM RETOQUES', unico_dono: 'ÚNICO DONO', pneus_novos: 'PNEUS NOVOS', garantia: 'COM GARANTIA', revisoes: 'REVISÕES EM DIA' }[outro]);
+  const outro = ['sem_retoques', 'unico_dono', 'pneus_novos', 'teto_solar', 'garantia', 'revisoes'].find((k) => marcados.includes(k));
+  if (outro) selos.push({ sem_retoques: 'SEM RETOQUES', unico_dono: 'ÚNICO DONO', pneus_novos: 'PNEUS NOVOS', teto_solar: 'TETO SOLAR', garantia: 'COM GARANTIA', revisoes: 'REVISÕES EM DIA' }[outro]);
   let sy = 60 + tagLines.length * 34 + 26;
   for (const selo of selos) {
     ctx.font = '23px "GA Mont Black"';

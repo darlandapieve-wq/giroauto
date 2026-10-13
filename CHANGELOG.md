@@ -2,6 +2,17 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v1.10 — 13/10/2026
+
+- **Teto solar** entre os destaques do cadastro (entra na descrição, na legenda e no selo da arte).
+- **Duplicar** no estoque: cria uma cópia com todos os dados e cópias das fotos e abre para editar. Mudar ou apagar algo na cópia não altera o veículo original. A cópia nasce sem anúncio publicado.
+- A frase final "Loja · Cidade/UF. Chame para agendar uma visita ou test drive." saiu da descrição. Agora é opcional, pela caixa **Convite para visita no fim da descrição**. A frase foi retirada também das descrições já cadastradas.
+- **Legenda do Instagram sem repetições**: título, itens, destaques, oferta e avisos aparecem uma vez só; da descrição entra apenas o texto livre.
+- **Imagens para divulgação**: ficou só a arte com preço. As fotos 2 a 5 (estacionamento) e a configuração de IA de imagens foram retiradas, e as imagens que existiam foram apagadas.
+- Estoque: botões organizados em duas linhas, sem cortar o preço.
+
+Arquivos alterados: `src/vehicles.js`, `src/channels.js`, `src/server.js`, `src/db.js`, `src/arts/index.js`, `src/arts/card.js`, `public/app.js`, `public/app.css`, `package.json`, `test/api.test.js`, `CHANGELOG.md`, `README.md`.
+
 ## v1.9 — 11/10/2026
 
 **Instagram conectado direto (login do Instagram)**

@@ -218,6 +218,15 @@ db.exec(`CREATE TABLE IF NOT EXISTS ig_connections (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 )`);
 db.exec(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')))`);
+// v1.10: tira das descrições a frase final da loja ("… Chame para agendar uma visita ou test drive.").
+// Agora ela é opcional, pela caixa "Convite para visita" no cadastro.
+if (!db.prepare("SELECT 1 FROM settings WHERE key = 'mig_v110_rodape'").get()) {
+  const re = /\n*[^\n]*Chame para agendar uma visita ou test drive\.?[ \t]*$/;
+  for (const r of db.prepare('SELECT id, descricao FROM vehicles').all()) {
+    if (r.descricao && re.test(r.descricao)) db.prepare('UPDATE vehicles SET descricao = ? WHERE id = ?').run(r.descricao.replace(re, '').trimEnd(), r.id);
+  }
+  db.prepare("INSERT INTO settings (key, value) VALUES ('mig_v110_rodape', '1')").run();
+}
 if (!db.prepare('SELECT 1 FROM users WHERE is_admin = 1').get()) {
   db.exec('UPDATE users SET is_admin = 1 WHERE id = (SELECT MIN(id) FROM users)');
 }

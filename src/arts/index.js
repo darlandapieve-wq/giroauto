@@ -12,8 +12,9 @@ const card = require('./card');
 const gemini = require('./gemini');
 const pollinations = require('./pollinations');
 
-const SLOTS = [1, 2, 3, 4, 5];
-const PARKING = [2, 3, 4, 5];
+// v1.10: só a arte com preço (as fotos no estacionamento foram retiradas a pedido da loja).
+const SLOTS = [1];
+const PARKING = [];
 const mediaDir = () => path.join(config.dataDir, 'media');
 const mediaUrl = (f) => `${config.publicUrl}/media/${f}`;
 const hash = (x) => crypto.createHash('sha1').update(JSON.stringify(x)).digest('hex').slice(0, 16);
@@ -222,6 +223,9 @@ function filesOf(vehicleId) {
 
 // Na inicialização: gera o que falta para os veículos em estoque (sem repetir o que já está pronto).
 function backfill() {
+  // Apaga as imagens 2 a 5 que existiam (v1.7 a v1.9).
+  const extras = all('SELECT filename FROM arts WHERE slot > 1');
+  if (extras.length) { extras.forEach((r) => dropFile(r.filename)); run('DELETE FROM arts WHERE slot > 1'); }
   run(`UPDATE arts SET status = 'pendente' WHERE status = 'gerando'`);
   const ids = all(`SELECT v.id FROM vehicles v WHERE v.status != 'vendido' AND EXISTS (SELECT 1 FROM photos p WHERE p.vehicle_id = v.id)`).map((r) => r.id);
   ids.forEach((id, i) => schedule(id, { delay: 5000 + i * 300 }));

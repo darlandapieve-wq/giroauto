@@ -316,6 +316,7 @@
     if (v.status === 'pronto' && v.organico) acts += `<button class="btn sm primary" data-act="publicar" data-id="${v.id}" type="button" ${busy ? 'disabled' : ''}>Publicar</button>`;
     if (v.status === 'rascunho') acts += `<button class="btn sm" data-act="editar" data-id="${v.id}" type="button">Completar cadastro</button>`;
     if (v.status !== 'vendido' && v.status !== 'rascunho') acts += `<button class="btn sm" data-act="divulgar" data-id="${v.id}" type="button">Divulgar</button><button class="btn sm" data-act="editar" data-id="${v.id}" type="button">Editar</button><button class="btn sm danger" data-act="vendido" data-id="${v.id}" type="button">Vendido</button>`;
+    acts += `<button class="btn sm ghost" data-act="duplicar" data-id="${v.id}" type="button" title="Criar uma cópia com os mesmos dados e fotos">Duplicar</button>`;
     acts += `<button class="btn sm ghost danger" data-act="excluir" data-id="${v.id}" type="button" title="Excluir veículo">Excluir</button>`;
     return `<div class="row ${v.status === 'vendido' ? 'sold' : ''}">
       ${thumb(v)}
@@ -381,6 +382,15 @@
       });
     }
     if (a === 'divulgar') return channelsModal(v);
+    if (a === 'duplicar') {
+      try {
+        const c = await api('POST', `/api/vehicles/${id}/duplicate`);
+        await loadVehicles();
+        location.hash = 'editar-' + c.id;
+        toast('Cópia criada com os mesmos dados e fotos. Edite o que for diferente: o veículo original não muda.', 6000);
+      } catch (e) { toast(e.message, 6000); }
+      return;
+    }
     if (a === 'excluir') {
       const nome = `<b>${esc(v.marca)} ${esc(v.modelo)} ${esc(v.versao)}</b>`;
       const noAr = v.status === 'publicado' || Object.values(v.canais || {}).some((c) => c.status === 'publicado');
@@ -555,12 +565,12 @@
       d.cambio ? `✔ Câmbio ${d.cambio.toLowerCase()}` : '',
       d.combustivel ? `✔ ${d.combustivel}` : '',
       d.cor ? `✔ Cor ${d.cor.toLowerCase()}` : '',
-      ...dests.filter((o) => !o.alerta).map((o) => `✔ ${o.texto}`),
+      ...dests.filter((o) => !o.alerta && !o.rodape).map((o) => `✔ ${o.texto}`),
       oferta ? `\n🔥 Oferta: de ${brl(preco)} por ${brl(oferta)}` : '',
       alertas.length ? `\n⚠️ Transparência: ${alertas.map((o) => o.texto).join('; ')}.` : '',
       '',
       '',
-      `${loja.name}${loja.city ? ' · ' + loja.city + (loja.state ? '/' + loja.state : '') : ''}. Chame para agendar uma visita ou test drive.`,
+      dests.some((o) => o.rodape) ? `${loja.name}${loja.city ? ' · ' + loja.city + (loja.state ? '/' + loja.state : '') : ''}. Chame para agendar uma visita ou test drive.` : '',
     ];
     const txt = linhas.filter((l, i, a) => l || (a[i - 1] && a[i - 1] !== '')).join('\n').trim();
     $('#v-descricao').value = txt; d.descricao = txt;
@@ -1080,7 +1090,6 @@
       <div class="stack">
         ${S.storage ? storagePanel(S.storage) : ''}
         ${S.metaApp ? metaAppPanel(S.metaApp) : ''}
-        ${S.ai ? aiPanel(S.ai) : ''}
         <div class="panel">
           <h2>Publicação no Marketplace</h2>
           <div class="modes">
@@ -1144,33 +1153,22 @@
 
   function artsHtml() {
     const d = S.draft;
-    const head = '<h2>Imagens para divulgação</h2>';
-    if (!d.id || !d.photos.length) return `${head}<p class="lead">Depois de salvar o veículo com fotos, o GiroAuto gera 5 imagens: uma arte com preço e dados do carro e quatro fotos dele num estacionamento vazio.</p>`;
-    const A = d.artes || [];
-    const semChave = A.some((a) => a.status === 'sem_chave');
-    const manual = A.some((a) => a.status === 'manual');
-    const opts = (a) => d.photos.map((p, i) => `<option value="${p.id}" ${(a.photo_id ? a.photo_id === p.id : i === (a.slot - 2) % Math.min(d.photos.length, 4)) ? 'selected' : ''}>Foto ${i + 1}</option>`).join('');
-    const tile = (a) => `<div class="art">
-        <div class="art-img">${a.url && a.status !== 'gerando' ? `<a href="${esc(a.url)}" target="_blank" rel="noopener"><img src="${esc(a.url)}" alt="Imagem ${a.slot}" loading="lazy"></a>` : ''}
-          ${ART_STATUS[a.status] ? `<span class="art-st ${a.status === 'erro' ? 'bad' : ''}">${ART_STATUS[a.status]}</span>` : ''}</div>
-        <div class="art-cap"><b>${a.slot}</b> ${a.slot === 1 ? 'Arte com preço' : 'Estacionamento'}</div>
-        ${a.status === 'erro' && a.error ? `<div class="note" style="color:var(--bad)">${esc(a.error)}</div>` : ''}
-        <div class="art-tools">
-          ${a.slot > 1 ? `<select data-artsrc="${a.slot}" aria-label="Foto de origem da imagem ${a.slot}" ${artBusy(a) ? 'disabled' : ''}>${opts(a)}</select>` : ''}
-          ${a.slot === 1 || (!a.manual && !['manual', 'sem_chave'].includes(a.status)) ? `<button class="btn sm" type="button" data-artregen="${a.slot}" ${artBusy(a) ? 'disabled' : ''}>${a.status === 'aguardando' || (!a.url && a.status === 'erro') ? 'Gerar' : 'Refazer'}</button>` : ''}
-          ${a.slot > 1 ? `<button class="btn sm ${a.status === 'manual' ? 'primary' : 'ghost'}" type="button" data-arthow="${a.slot}" ${artBusy(a) ? 'disabled' : ''}>${a.status === 'manual' ? 'Fazer grátis' : a.manual ? 'Trocar imagem' : 'Enviar imagem'}</button>` : ''}
-        </div>
-      </div>`;
+    const head = '<h2>Imagem para divulgação</h2>';
+    if (!d.id || !d.photos.length) return `${head}<p class="lead">Depois de salvar o veículo com fotos, o GiroAuto gera uma arte com o preço, os dados e três fotos menores do carro.</p>`;
+    const a = (d.artes || [])[0] || { slot: 1, status: 'pendente' };
     return `${head}
-      <p class="lead">Geradas sozinhas a cada veículo. A arte se atualiza quando o preço ou os dados mudam. Nas imagens 2 a 5, escolha qual foto vai para o estacionamento.</p>
-      ${manual ? `<div class="infobox">Modo grátis: em cada imagem, clique em <b>Fazer grátis</b>. O GiroAuto entrega a foto e a instrução prontas para você colar no ChatGPT ou no Gemini e depois enviar o resultado aqui.${S.me.user.is_admin ? ' Para gerar sozinho, escolha uma IA em <a class="link" href="#config">Configurações &gt; Imagens com IA</a>.' : ''}</div>` : ''}
-      ${semChave ? `<div class="infobox">As fotos no estacionamento usam uma IA de imagens. ${S.me.user.is_admin ? 'Configure a chave em <a class="link" href="#config">Configurações &gt; Imagens com IA</a>.' : 'Peça ao administrador para configurar a chave da IA.'}</div>` : ''}
-      <div class="arts">${A.map(tile).join('')}</div>
-      <div class="form-foot" style="justify-content:flex-start;flex-wrap:wrap">
-        <a class="btn sm" href="/api/vehicles/${d.id}/photos.zip?so=artes" ${A.some((a) => a.url) ? '' : 'aria-disabled="true" style="pointer-events:none;opacity:.5"'}>Baixar imagens (.zip)</a>
-        <button class="btn sm" type="button" data-artregen="all" ${A.some(artBusy) ? 'disabled' : ''}>Refazer todas</button>
+      <p class="lead">Gerada sozinha e atualizada quando o preço, os dados ou as primeiras fotos mudam.</p>
+      <div class="arts" style="grid-template-columns:minmax(0,260px)">
+        <div class="art">
+          <div class="art-img">${a.url && a.status !== 'gerando' ? `<a href="${esc(a.url)}" target="_blank" rel="noopener"><img src="${esc(a.url)}" alt="Arte com preço" loading="lazy"></a>` : ''}
+            ${ART_STATUS[a.status] ? `<span class="art-st ${a.status === 'erro' ? 'bad' : ''}">${ART_STATUS[a.status]}</span>` : ''}</div>
+          ${a.status === 'erro' && a.error ? `<div class="note" style="color:var(--bad)">${esc(a.error)}</div>` : ''}
+        </div>
       </div>
-      <p class="note">As fotos no estacionamento são editadas por IA: confira se o carro ficou igual ao real antes de usar.</p>`;
+      <div class="form-foot" style="justify-content:flex-start;flex-wrap:wrap">
+        ${a.url ? `<a class="btn sm" href="${esc(a.url)}" download="arte.jpg" target="_blank" rel="noopener">Baixar arte</a>` : ''}
+        <button class="btn sm" type="button" data-artregen="1" ${artBusy(a) ? 'disabled' : ''}>Refazer</button>
+      </div>`;
   }
 
   let artsTimer;
@@ -1179,7 +1177,7 @@
     const d = S.draft; if (!d?.id) return;
     $$('[data-artregen]').forEach((b) => {
       b.onclick = async () => {
-        const slots = b.dataset.artregen === 'all' ? [1, 2, 3, 4, 5] : [Number(b.dataset.artregen)];
+        const slots = [1];
         b.disabled = true;
         try { d.artes = await api('POST', `/api/vehicles/${d.id}/arts/regenerate`, { slots }); refreshArts(); }
         catch (e) { toast(e.message, 6000); b.disabled = false; }

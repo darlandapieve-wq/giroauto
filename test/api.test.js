@@ -362,107 +362,60 @@ test('público personalizado, interesses, posicionamentos e alcance estimado', a
   assert.ok(adset.params.start_time.startsWith(amanha), 'começa na data escolhida');
 });
 
-test('v1.7: imagens geradas (arte e estacionamento com IA)', async () => {
+test('v1.10: arte com preço (única imagem gerada) e duplicação', async () => {
   const arts = require('../src/arts');
-  process.env.GEMINI_URL = `http://127.0.0.1:${mockServer.address().port}`;
-  let r = await api('POST', '/api/vehicles', { marca: 'Volkswagen', modelo: 'Fox', versao: 'Track 1.6', ano_fab: 2015, ano_modelo: 2016, km: 98500, preco: 54900, cambio: 'Manual', combustivel: 'Flex', cor: 'Prata', carroceria: 'Hatch' });
+  let r = await api('POST', '/api/vehicles', { marca: 'Volkswagen', modelo: 'Fox', versao: 'Track 1.6', ano_fab: 2015, ano_modelo: 2016, km: 98500, preco: 54900, cambio: 'Manual', combustivel: 'Flex', cor: 'Prata', carroceria: 'Hatch',
+    destaques: ['teto_solar', 'convite_visita'], descricao: 'Volkswagen Fox Track 1.6 2015/2016\n\n✔ 98.500 km rodados\n✔ Câmbio manual\n✔ Flex\n✔ Cor prata\n✔ Teto solar\n\nCarro de garagem, revisado.\n\nAuto Center · Assis/PR. Chame para agendar uma visita ou test drive.' });
   const id = r.body.id;
   const fd = new FormData();
   for (const n of ['a', 'b', 'c']) fd.append('fotos', new Blob([JPG], { type: 'image/jpeg' }), `${n}.jpg`);
   await api('POST', `/api/vehicles/${id}/photos`, fd);
   await arts.idle();
   r = await api('GET', `/api/vehicles/${id}/arts`);
+  assert.equal(r.body.length, 1, 'só a arte com preço');
   assert.equal(r.body[0].status, 'pronta', JSON.stringify(r.body[0]));
-  assert.match(r.body[0].url, /\/media\/[a-f0-9]{32}\.jpg$/);
-  assert.ok(r.body.slice(1).every((a) => a.status === 'manual'), 'sem IA configurada, as fotos no estacionamento ficam no modo à mão (grátis)');
-  // Modo à mão: instruções prontas e envio da imagem feita no ChatGPT/Gemini.
-  let pr = await api('GET', `/api/vehicles/${id}/arts/prompts`);
-  assert.equal(pr.body.length, 4);
-  assert.match(pr.body[0].prompt, /Mantenha exatamente o mesmo carro/);
-  assert.match(pr.body[0].source_url, /\/media\//);
-  const up = new FormData(); up.append('imagem', new Blob([JPG], { type: 'image/jpeg' }), 'feita-no-chatgpt.jpg');
-  pr = await api('POST', `/api/vehicles/${id}/arts/2/upload`, up);
-  assert.equal(pr.status, 200, JSON.stringify(pr.body));
-  assert.equal(pr.body[1].status, 'pronta');
-  assert.equal(pr.body[1].manual, true);
-  const manualFile = pr.body[1].filename;
   const card1 = r.body[0].filename;
   const img = await fetch(base + '/media/' + card1);
-  assert.equal(img.status, 200);
-  const buf = Buffer.from(await img.arrayBuffer());
-  assert.equal(buf.readUInt16BE(0), 0xffd8, 'arte em JPEG');
+  assert.equal(Buffer.from(await img.arrayBuffer()).readUInt16BE(0), 0xffd8, 'arte em JPEG');
 
-  // Mudar o preço refaz a arte (e só ela).
-  await api('PUT', `/api/vehicles/${id}`, { marca: 'Volkswagen', modelo: 'Fox', versao: 'Track 1.6', ano_fab: 2015, ano_modelo: 2016, km: 98500, preco: 52900, cambio: 'Manual', combustivel: 'Flex', cor: 'Prata', carroceria: 'Hatch' });
+  // Mudar o preço refaz a arte.
+  await api('PUT', `/api/vehicles/${id}`, { ...(await api('GET', `/api/vehicles/${id}`)).body, preco: 52900 });
   await arts.idle();
   r = await api('GET', `/api/vehicles/${id}/arts`);
   assert.notEqual(r.body[0].filename, card1);
   assert.equal((await fetch(base + '/media/' + card1)).status, 404, 'arte antiga apagada');
 
-  // Chave da IA: inválida é recusada; válida libera as imagens 2 a 5.
-  r = await api('PUT', '/api/admin/ai', { key: 'AIzaERRADA12345678901234567890123456' });
-  assert.equal(r.status, 400);
-  r = await api('PUT', '/api/admin/ai', { key: 'AIzaTESTKEY1234567890123456789012345', auto: true });
-  assert.equal(r.status, 200, JSON.stringify(r.body));
-  assert.equal(r.body.configured, true);
-  await arts.idle();
-  r = await api('GET', `/api/vehicles/${id}/arts`);
-  assert.equal(r.body[1].filename, manualFile, 'a imagem enviada pela loja não é substituída sozinha');
-  r = await api('POST', `/api/vehicles/${id}/arts/regenerate`, { slots: [2, 3, 4, 5] });
-  assert.equal(r.status, 200);
-  await arts.idle();
-  r = await api('GET', `/api/vehicles/${id}/arts`);
-  assert.ok(r.body.every((a) => a.status === 'pronta'), JSON.stringify(r.body));
-  assert.notEqual(r.body[1].filename, manualFile, 'Refazer troca a imagem enviada');
-  const calls = mock.state.geminiCalls;
-  assert.ok(calls.length >= 4, 'gera as 4 imagens (e as dos outros veículos em estoque)');
-  assert.equal(calls[0].model, 'gemini-nano-banana-2.1');
-  const parts = calls[0].body.contents[0].parts;
-  assert.match(parts[0].text, /parking/);
-  assert.match(parts[0].text, /Keep the exact same car/);
-  assert.equal(parts[1].inline_data.mime_type, 'image/jpeg');
-  assert.equal(calls[0].body.generationConfig.responseFormat.image.aspectRatio, '4:5');
+  // Legenda do Instagram sem repetições: título, itens e convite aparecem uma vez só.
+  const cd = await api('GET', `/api/vehicles/${id}/channel-data`);
+  const cap = cd.body.caption;
+  assert.equal((cap.match(/Fox Track/g) || []).length, 1, cap);
+  assert.equal((cap.match(/98\.500 km/g) || []).length, 1, cap);
+  assert.equal((cap.match(/Teto solar/g) || []).length, 1, cap);
+  assert.match(cap, /Carro de garagem, revisado\./);
+  assert.doesNotMatch(cap, /test drive/, 'o contato da loja já está na legenda');
 
-  // Trocar a foto de origem de uma imagem refaz só ela; erro de cota aparece para a loja.
-  const v = await api('GET', `/api/vehicles/${id}`);
-  mock.state.geminiFail = true;
-  r = await api('PUT', `/api/vehicles/${id}/arts/3/source`, { photo_id: v.body.photos[2].id });
-  assert.equal(r.status, 200);
+  // Duplicar: mesmos dados e fotos copiadas; editar a cópia não muda o original.
+  r = await api('POST', `/api/vehicles/${id}/duplicate`);
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  const dup = r.body;
+  assert.notEqual(dup.id, id);
+  assert.equal(dup.modelo, 'Fox');
+  assert.equal(dup.preco, 52900);
+  assert.deepEqual(dup.destaques, ['teto_solar', 'convite_visita']);
+  assert.equal(dup.photos.length, 3);
+  const orig = (await api('GET', `/api/vehicles/${id}`)).body;
+  assert.ok(dup.photos.every((p) => !orig.photos.some((o) => o.filename === p.filename)), 'fotos são cópias');
+  assert.equal(dup.status, 'pronto');
+  assert.equal(dup.fb_listing_url, '');
+  await api('PUT', `/api/vehicles/${dup.id}`, { ...dup, cor: 'Branco', preco: 50000 });
+  await api('DELETE', `/api/vehicles/${dup.id}/photos/${dup.photos[0].id}`);
+  const again = (await api('GET', `/api/vehicles/${id}`)).body;
+  assert.equal(again.cor, 'Prata');
+  assert.equal(again.preco, 52900);
+  assert.equal(again.photos.length, 3);
+  assert.equal((await fetch(again.photos[0].url.replace(/^https?:\/\/[^/]+/, base))).status, 200, 'foto do original continua');
+  await api('DELETE', `/api/vehicles/${dup.id}`);
   await arts.idle();
-  r = await api('GET', `/api/vehicles/${id}/arts`);
-  assert.equal(r.body[2].status, 'erro');
-  assert.match(r.body[2].error, /Limite de uso/);
-  assert.equal(r.body[2].photo_id, v.body.photos[2].id);
-  assert.equal(r.body[1].status, 'pronta');
-  mock.state.geminiFail = false;
-
-  // Pollinations (cota gratuita): mesma geração por outro serviço.
-  r = await api('PUT', '/api/admin/ai', { provider: 'pollinations', pollinations_key: 'chave-errada' });
-  assert.equal(r.status, 400);
-  r = await api('PUT', '/api/admin/ai', { provider: 'pollinations', pollinations_key: 'sk_teste1234567890' });
-  assert.equal(r.status, 200, JSON.stringify(r.body));
-  assert.equal(r.body.provider, 'pollinations');
-  process.env.POLLINATIONS_URL = process.env.GEMINI_URL;
-  mock.state.pollCalls = [];
-  r = await api('POST', `/api/vehicles/${id}/arts/regenerate`, { slots: [4] });
-  await arts.idle();
-  r = await api('GET', `/api/vehicles/${id}/arts`);
-  assert.equal(r.body[3].status, 'pronta', JSON.stringify(r.body[3]));
-  assert.equal(mock.state.pollCalls.length, 1);
-  assert.equal(mock.state.pollCalls[0].auth, 'Bearer sk_teste1234567890');
-  assert.equal(mock.state.pollCalls[0].model, 'kontext');
-  mock.state.pollFail = 402;
-  r = await api('POST', `/api/vehicles/${id}/arts/regenerate`, { slots: [5] });
-  await arts.idle();
-  r = await api('GET', `/api/vehicles/${id}/arts`);
-  assert.match(r.body[4].error, /Cota gratuita do dia/);
-  mock.state.pollFail = 0;
-  await api('PUT', '/api/admin/ai', { provider: 'gemini' });
-
-  // Zip com as imagens geradas.
-  const z = await fetch(`${base}/api/vehicles/${id}/photos.zip?so=artes`, { headers: { cookie } });
-  assert.equal(z.status, 200);
-  assert.match(Buffer.from(await z.arrayBuffer()).toString('latin1'), /arte-01\.jpg/);
   globalThis.__foxId = id;
 });
 
@@ -486,10 +439,10 @@ test('v1.7: Instagram, Webmotors, OLX e exclusão do veículo', async () => {
   assert.equal(r.body.canais.instagram.status, 'publicado', JSON.stringify(r.body.canais));
   assert.equal(r.body.canais.instagram.url, 'https://www.instagram.com/p/TESTE123/');
   const items = mock.calls.filter((c) => c.path === '/ig_1/media' && c.params.is_carousel_item);
-  assert.equal(items.length, 6, 'arte + 2 imagens no estacionamento prontas (duas deram erro) + 3 fotos');
+  assert.equal(items.length, 4, 'arte + 3 fotos');
   assert.match(items[0].params.image_url, /\/media\/[a-f0-9]{32}\.jpg$/);
   const carousel = mock.calls.find((c) => c.path === '/ig_1/media' && c.params.media_type === 'CAROUSEL');
-  assert.equal(carousel.params.children.split(',').length, 6);
+  assert.equal(carousel.params.children.split(',').length, 4);
   assert.match(carousel.params.caption, /#volkswagen/);
   assert.ok(mock.calls.find((c) => c.path === '/ig_1/media_publish'));
 
