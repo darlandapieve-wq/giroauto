@@ -211,8 +211,13 @@ function cleanInput(body = {}) {
     procuracao_nome: str(body.procuracao_nome, 120),
     procuracao_validade: /^\d{4}-\d{2}-\d{2}$/.test(String(body.procuracao_validade || '')) ? body.procuracao_validade : null,
     consig_comissao_pct: Math.max(0, Math.min(100, Number(String(body.consig_comissao_pct ?? '').replace(',', '.')) || 0)),
+    // v2.2: margem da loja em % (consig_comissao_pct) ou valor fixo (margem_fixa), para consignado, parceria e outro.
+    margem_tipo: body.margem_tipo === 'valor' ? 'valor' : 'pct',
+    margem_fixa: body.margem_tipo === 'valor' ? int(body.margem_fixa) : 0,
+    preco_repasse: int(body.preco_repasse),
   };
   if (out.preco_oferta && out.preco && out.preco_oferta >= out.preco) out.preco_oferta = 0;
+  if (out.margem_tipo === 'valor') out.consig_comissao_pct = 0;
   const ano = new Date().getFullYear() + 1;
   for (const k of ['ano_fab', 'ano_modelo']) if (out[k] && (out[k] < 1950 || out[k] > ano)) out[k] = null;
   return out;

@@ -9,6 +9,19 @@
   const today = () => new Date().toISOString().slice(0, 10);
   const isMobile = () => /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) || window.innerWidth < 760;
   const fmtDate = (d) => (d ? new Date(String(d).length <= 10 ? d + 'T12:00:00' : String(d).replace(' ', 'T') + 'Z').toLocaleDateString('pt-BR') : '');
+  // Propriedades em que a loja ganha uma margem: consignado, parceria e outro (v2.2).
+  const TERC = ['consignado', 'parceria', 'outro'];
+  const decimal = (x) => Number(String(x ?? '').replace(/\./g, '').replace(',', '.')) || 0;
+  // Base do lucro: compra (próprio) ou o que vai para o dono (repasse combinado, venda − margem fixa, venda × (1 − margem %)).
+  function baseCalc(o, venda) {
+    if (!TERC.includes(o.tipo)) return o.compra || 0;
+    if (o.repasse) return o.repasse;
+    if (o.margemTipo === 'valor' && o.margemValor) return Math.max(0, venda - o.margemValor);
+    if (o.margemTipo !== 'valor' && o.margemValor) return Math.round(venda * (1 - o.margemValor / 100));
+    return o.compra || 0;
+  }
+  const baseOfVehicle = (v, venda) => baseCalc({ tipo: v.proprietario_tipo, repasse: v.consig_repasse, compra: v.compra_valor, margemTipo: v.margem_tipo, margemValor: v.margem_tipo === 'valor' ? v.margem_fixa : v.consig_comissao_pct }, venda);
+  const margemTxt = (v) => (v.margem_tipo === 'valor' && v.margem_fixa ? brl(v.margem_fixa) : v.consig_comissao_pct ? `${String(v.consig_comissao_pct).replace('.', ',')}%` : '');
   const opt = (list, val) => list.map(([k, l]) => `<option value="${esc(k)}" ${k === val ? 'selected' : ''}>${esc(l)}</option>`).join('');
 
   /* ======================= Cadastro pela placa ======================= */
@@ -64,8 +77,23 @@
         }
       }
       if (d.encontrado) { applyVehicleData(d); return d; }
-      if (info) info.innerHTML = `<div class="warnbox">Não consegui os dados desta placa automaticamente${X.S.extInfo ? '' : ' (a extensão do Chrome ajuda quando o site bloqueia o servidor)'}. Use a <b>Tabela FIPE</b> ou preencha à mão.</div>`;
-      fipeModal((f) => applyVehicleData({ ...f, placa: p }));
+      // Sem resposta automática: o usuário abre a consulta, copia a página e cola aqui (funciona sem extensão).
+      const urls = d.urls || [d.url];
+      const ext = X.S.extInfo; const extOld = ext && String(ext.version || '0').split('.').map(Number)[1] < 7 && String(ext.version || '0').startsWith('1.');
+      if (info) {
+        info.innerHTML = `<div class="warnbox"><b>Os sites de consulta bloquearam a busca automática desta vez.</b> ${!ext ? 'Com a <a class="link" href="#config">extensão do Chrome</a> instalada, a busca acontece pelo seu navegador e costuma funcionar.' : extOld ? `Sua extensão é a v${esc(ext.version)}: <a class="link" href="#config">atualize para a v1.7</a> para buscar pelo seu navegador.` : ''}
+          <div style="margin-top:8px"><b>Jeito rápido:</b> 1) abra a consulta: ${urls.map((u) => `<a class="btn sm" href="${esc(u)}" target="_blank" rel="noopener">${esc(new URL(u).hostname.replace('www.', ''))}</a>`).join(' ')} 2) na página, aperte <b>Ctrl+A</b> e <b>Ctrl+C</b> (no celular: Selecionar tudo &gt; Copiar) 3) cole aqui:</div>
+          <textarea id="pb-paste" rows="3" placeholder="Cole aqui o conteúdo da página da placa" style="width:100%;margin-top:6px"></textarea>
+          <div class="btnrow" style="margin-top:6px"><button class="btn sm primary" type="button" id="pb-read">Preencher com o texto colado</button><button class="btn sm" type="button" id="pb-fipe2">Usar a Tabela FIPE</button></div></div>`;
+        $('#pb-fipe2').onclick = () => fipeModal((f) => applyVehicleData({ ...f, placa: p }));
+        const readPaste = async () => {
+          const txt = $('#pb-paste').value.trim(); if (txt.length < 20) return;
+          try { const t = await api('POST', `/api/plate/${p}/html`, { html: txt, url: urls[0] }); applyVehicleData(t); }
+          catch (e) { toast(e.message, 6000); }
+        };
+        $('#pb-read').onclick = readPaste;
+        $('#pb-paste').addEventListener('paste', () => setTimeout(readPaste, 50));
+      }
     } catch (e) { if (info) info.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
     finally { if (btn) { btn.disabled = false; btn.textContent = 'Buscar dados'; } }
     return null;
@@ -133,7 +161,7 @@
           <div class="f w3"><label for="v-proprietario_nome">Nome do proprietário</label><input id="v-proprietario_nome" value="${esc(d.proprietario_nome || '')}"></div>
           <div class="f w3"><label for="v-proprietario_tel">Telefone / WhatsApp</label><input id="v-proprietario_tel" value="${esc(d.proprietario_tel || '')}" inputmode="tel"></div>
           <div class="f"><label for="v-proprietario_doc">CPF / CNPJ</label><input id="v-proprietario_doc" value="${esc(d.proprietario_doc || '')}" inputmode="numeric"></div>
-          <div class="f" id="consigBox" ${tipo === 'consignado' ? '' : 'hidden'}><label for="v-consig_comissao_pct">Comissão da loja (%)</label><input id="v-consig_comissao_pct" value="${esc(d.consig_comissao_pct || '')}" inputmode="decimal" placeholder="ex.: 8"></div>
+          <div class="f w3" id="consigBox" ${TERC.includes(tipo) ? '' : 'hidden'}><label for="v-margem_valor">Margem da loja na venda</label><div class="inline2"><select id="v-margem_tipo" aria-label="Tipo de margem"><option value="pct" ${d.margem_tipo !== 'valor' ? 'selected' : ''}>%</option><option value="valor" ${d.margem_tipo === 'valor' ? 'selected' : ''}>R$</option></select><input id="v-margem_valor" inputmode="decimal" value="${esc(d.margem_tipo === 'valor' ? (d.margem_fixa || '') : (d.consig_comissao_pct ? String(d.consig_comissao_pct).replace('.', ',') : ''))}" placeholder="${d.margem_tipo === 'valor' ? 'ex.: 3000' : 'ex.: 8'}"></div><span class="hint">O que a loja ganha com a venda. Entra no lucro da loja.</span></div>
         </div>
       </div>
       <h3 class="dest-h">Documentação</h3>
@@ -164,7 +192,13 @@
     const t = $('input[name="v-ptipo"]:checked'); if (t) d.proprietario_tipo = t.value;
     const dt = $('input[name="v-dtipo"]:checked'); if (dt) d.doc_tipo = dt.value;
     readGestao(d);
-    ['proprietario_nome', 'proprietario_tel', 'proprietario_doc', 'consig_comissao_pct', 'procuracao_validade', 'proprietario_obs', 'renavam', 'chassi', 'municipio_placa', 'fipe_codigo', 'fipe_ref']
+    if ($('#v-margem_tipo')) {
+      d.margem_tipo = $('#v-margem_tipo').value;
+      if (d.margem_tipo === 'valor') { d.margem_fixa = num($('#v-margem_valor').value); d.consig_comissao_pct = 0; }
+      else { d.consig_comissao_pct = String(decimal($('#v-margem_valor').value)); d.margem_fixa = 0; }
+    }
+    if ($('#salePanel')) d._sale = saleBody();
+    ['proprietario_nome', 'proprietario_tel', 'proprietario_doc', 'procuracao_validade', 'proprietario_obs', 'renavam', 'chassi', 'municipio_placa', 'fipe_codigo', 'fipe_ref']
       .forEach((k) => { const el = $('#v-' + k); if (el) d[k] = el.value; });
   };
 
@@ -186,7 +220,8 @@
     // Proprietário e identificação
     if (!$('#ownerPanel') && dados) {
       dados.insertAdjacentHTML('beforeend', ownerPanelHtml(d));
-      $$('input[name="v-ptipo"]').forEach((r) => { r.onchange = () => { $('#ownerExtra').hidden = r.value === 'proprio'; $('#consigBox').hidden = r.value !== 'consignado'; gestaoSync(); }; });
+      $$('input[name="v-ptipo"]').forEach((r) => { r.onchange = () => { $('#ownerExtra').hidden = r.value === 'proprio'; $('#consigBox').hidden = !TERC.includes(r.value); gestaoSync(); }; });
+      if ($('#v-margem_tipo')) $('#v-margem_tipo').onchange = () => { $('#v-margem_valor').placeholder = $('#v-margem_tipo').value === 'valor' ? 'ex.: 3000' : 'ex.: 8'; gestaoSync(); };
       $$('input[name="v-dtipo"]').forEach((r) => { r.onchange = () => { $('#procBox').hidden = r.value !== 'procuracao'; $('#procUpload').hidden = r.value !== 'procuracao'; }; });
       bindProc(d);
     }
@@ -203,15 +238,23 @@
     }
     decoratePhotos(d);
     // Venda já feita: atalho para editar os dados da venda.
-    if (d.id && d.status === 'vendido' && can('vender') && !$('#saleBtn')) {
-      const foot = $('#salvar')?.parentElement;
-      foot?.insertAdjacentHTML('afterbegin', `<button class="btn ghost" id="saleBtn" type="button">Dados da venda</button>`);
-      $('#saleBtn').onclick = () => saleEditModal(d.id);
+    if (d.id && d.status === 'vendido' && can('vender') && !$('#salePanel') && dados) {
+      const anchor = $('#gestaoPanel') || $('#ownerPanel') || dados;
+      anchor.insertAdjacentHTML('afterend', '<div class="panel" id="salePanel" style="margin-top:16px"><div class="loading">Carregando…</div></div>');
+      salePanel(d);
     }
   }
   /* ---------- Gestão do veículo dentro do cadastro (v2.1) ---------- */
   const pct = (x) => String(x ?? 0).replace('.', ',');
-  const consigOf = () => ($('input[name="v-ptipo"]:checked')?.value || S.draft?.proprietario_tipo) === 'consignado';
+  const tipoAtual = () => $('input[name="v-ptipo"]:checked')?.value || S.draft?.proprietario_tipo || 'proprio';
+  const consigOf = () => TERC.includes(tipoAtual());
+  async function salePanel(d) {
+    const v = S.vehicles.find((x) => x.id === d.id) || d;
+    const sellers = await api('GET', '/api/team/sellers').catch(() => []);
+    const box = $('#salePanel'); if (!box) return;
+    box.innerHTML = `<h2>Venda</h2><p class="lead">Dados da venda deste carro. São salvos junto com o botão Salvar.</p>${saleFieldsHtml(v, sellers, true)}`;
+    bindSaleFields(v);
+  }
   async function gestaoPanel(d) {
     const g = d._g || (d._g = { costs: [], novos: [] });
     try {
@@ -246,7 +289,7 @@
       <div id="gc-pbox"></div>
       <div class="calc" id="g-calc"></div>`;
     renderCosts(d);
-    ['#g-cv', '#v-preco', '#v-preco_oferta', '#v-consig_comissao_pct'].forEach((s) => { const el = $(s); if (el) el.addEventListener('input', gestaoSync); });
+    ['#g-cv', '#v-preco', '#v-preco_oferta', '#v-margem_valor'].forEach((s) => { const el = $(s); if (el) el.addEventListener('input', gestaoSync); });
     $('#gc-pn').onclick = () => partnerInline($('#gc-p'), $('#gc-pbox'), $('#gc-c').value);
     $('#gc-add').onclick = async () => {
       const c = { status: $('#gc-s').value, categoria: $('#gc-c').value, descricao: $('#gc-d').value.trim(), valor: num($('#gc-v').value), parceiro_id: $('#gc-p').value, data: today() };
@@ -264,7 +307,7 @@
     const parc = c.parceiro_nome || PARTNERS?.partners.find((p) => String(p.id) === String(c.parceiro_id))?.nome || '';
     const key = c.id ? `id:${c.id}` : `tmp:${c.tmp}`;
     return `<div class="cf"><span class="k">${esc(cat)}${c.id ? '' : ' <span class="pill p-muted">a salvar</span>'}<br><span class="sub">${esc(c.descricao || '')}${parc ? ' · ' + esc(parc) : ''}</span></span><span class="v">${brl(c.valor)}</span>
-      <span class="btnrow" style="gap:4px">${c.status === 'previsto' ? `<button class="btn sm" type="button" data-cdone="${key}" title="Marcar como feito">Feito</button>` : ''}<button class="btn sm ghost danger" type="button" data-cdel="${key}" aria-label="Excluir custo">×</button></span></div>`;
+      <span class="btnrow" style="gap:4px">${c.status === 'previsto' ? `<button class="btn sm" type="button" data-cdone="${key}" title="Marcar como feito">Feito</button>` : ''}<button class="btn sm ghost" type="button" data-cedit="${key}" title="Editar descrição e valor">Editar</button><button class="btn sm ghost danger" type="button" data-cdel="${key}" aria-label="Excluir custo">×</button></span></div>`;
   }
   function renderCosts(d) {
     const g = d._g; const all_ = [...g.costs, ...g.novos];
@@ -279,6 +322,20 @@
       else g.novos = g.novos.filter((x) => x !== c);
       renderCosts(d);
     }; });
+    $$('[data-cedit]').forEach((b) => { b.onclick = () => {
+      const { c, saved } = find(b.dataset.cedit); if (!c) return;
+      const row = b.closest('.cf');
+      row.outerHTML = costEditHtml(c, 'ce');
+      $('#ce-x').onclick = () => renderCosts(d);
+      $('#ce-ok').onclick = async () => {
+        const upd = { descricao: $('#ce-d').value.trim(), valor: num($('#ce-v').value), categoria: $('#ce-c').value, status: $('#ce-s').value };
+        if (!upd.valor) return toast('Informe o valor.');
+        if (saved) { try { await api('PUT', `/api/vehicles/${d.id}/costs/${c.id}`, upd); g.costs = (await api('GET', `/api/vehicles/${d.id}/finance`)).costs; } catch (e) { return toast(e.message); } }
+        else Object.assign(c, upd);
+        renderCosts(d);
+      };
+      $('#ce-v').focus();
+    }; });
     $$('[data-cdone]').forEach((b) => { b.onclick = async () => {
       const { c, saved } = find(b.dataset.cdone); if (!c) return;
       if (saved) { try { await api('PUT', `/api/vehicles/${d.id}/costs/${c.id}`, { status: 'realizado' }); } catch (e) { return toast(e.message); } }
@@ -287,17 +344,28 @@
     }; });
     gestaoSync();
   }
+  // Linha de custo em modo de edição (cadastro e modal de custos).
+  function costEditHtml(c, px) {
+    return `<div class="cf cedit"><div class="fields" style="grid-column:1/-1">
+      <div class="f"><label for="${px}-s">Tipo</label><select id="${px}-s"><option value="realizado" ${c.status !== 'previsto' ? 'selected' : ''}>Já feito</option><option value="previsto" ${c.status === 'previsto' ? 'selected' : ''}>Previsto</option></select></div>
+      <div class="f"><label for="${px}-c">Categoria</label><select id="${px}-c">${opt(Object.entries(S.me.options.custos || {}), c.categoria)}</select></div>
+      <div class="f w3"><label for="${px}-d">Descrição</label><input id="${px}-d" value="${esc(c.descricao || '')}"></div>
+      <div class="f"><label for="${px}-v">Valor (R$)</label><input id="${px}-v" inputmode="numeric" value="${esc(c.valor || '')}"></div>
+      <div class="f" style="align-self:end;flex-direction:row;gap:6px"><button class="btn sm" type="button" id="${px}-x">Cancelar</button><button class="btn sm primary" type="button" id="${px}-ok">Salvar</button></div>
+    </div></div>`;
+  }
   // Recalcula a previsão de lucro com o que está na tela.
   function gestaoSync() {
     const box = $('#g-calc'); const d = S.draft; if (!box || !d?._g) return;
     const consig = consigOf();
-    if ($('#g-cv-l')) { $('#g-cv-l').textContent = consig ? 'Repasse ao dono (R$)' : 'Valor de compra (R$)'; $('#g-cv').placeholder = consig ? 'ou a comissão % acima' : 'ex.: 52000'; }
+    if ($('#g-cv-l')) { $('#g-cv-l').textContent = consig ? 'Repasse fixo ao dono (R$, opcional)' : 'Valor de compra (R$)'; $('#g-cv').placeholder = consig ? 'se não usar a margem' : 'ex.: 52000'; }
     const preco = num($('#v-preco_oferta')?.value) || num($('#v-preco')?.value);
     const all_ = [...d._g.costs, ...d._g.novos];
     const feitos = all_.filter((c) => c.status !== 'previsto').reduce((s, c) => s + num(c.valor), 0);
     const prev = all_.filter((c) => c.status === 'previsto').reduce((s, c) => s + num(c.valor), 0);
-    const pctC = Number(String($('#v-consig_comissao_pct')?.value || '').replace(',', '.')) || 0;
-    const base = num($('#g-cv').value) || (consig && pctC && preco ? Math.round(preco * (1 - pctC / 100)) : 0);
+    const mt = $('#v-margem_tipo')?.value || d.margem_tipo || 'pct';
+    const mv = $('#v-margem_valor') ? (mt === 'valor' ? num($('#v-margem_valor').value) : decimal($('#v-margem_valor').value)) : (mt === 'valor' ? d.margem_fixa : d.consig_comissao_pct);
+    const base = preco || num($('#g-cv').value) ? baseCalc({ tipo: tipoAtual(), repasse: consig ? num($('#g-cv').value) : 0, compra: consig ? 0 : num($('#g-cv').value), margemTipo: mt, margemValor: mv }, preco) : 0;
     const impPct = Number(S.me.store.impostos_pct || 0);
     const imp = Math.round(preco * impPct / 100);
     const lucro = preco - base - feitos - prev - imp;
@@ -305,11 +373,12 @@
     const line = (l, v, cls = '') => `<div class="cl ${cls}"><span>${l}</span><b>${v}</b></div>`;
     box.innerHTML = `<h3 class="dest-h">Previsão de lucro</h3>
       ${line(`Preço do anúncio${num($('#v-preco_oferta')?.value) ? ' (oferta)' : ''}`, preco ? brl(preco) : '—')}
+      ${consig && preco && base ? line('Margem da loja', brl(preco - base)) : ''}
       ${line(consig ? '− Repasse ao dono' : '− Valor de compra', base ? brl(base) : '—')}
       ${line('− Manutenções feitas', brl(feitos))}
       ${line('− Custos previstos', brl(prev))}
       ${impPct ? line(`− Impostos (${pct(impPct)}%)`, brl(imp)) : ''}
-      ${preco && base ? line('= Lucro previsto', `${brl(lucro)} <small>${pct(margem)}% de margem</small>`, `tot ${lucro < 0 ? 'neg' : 'pos'}`) : `<p class="note">Informe o preço e ${consig ? 'o repasse (ou a comissão %)' : 'o valor de compra'} para ver o lucro previsto.</p>`}
+      ${preco && base ? line('= Lucro previsto', `${brl(lucro)} <small>${pct(margem)}% de margem</small>`, `tot ${lucro < 0 ? 'neg' : 'pos'}`) : `<p class="note">Informe o preço e ${consig ? 'a margem da loja (em Proprietário) ou o repasse ao dono' : 'o valor de compra'} para ver o lucro previsto.</p>`}
       ${consig ? '' : `<p class="note">Investimento total: <b>${brl(base + feitos + prev)}</b> (compra + manutenções + previstos).</p>`}`;
   }
   function readGestao(d) {
@@ -319,6 +388,7 @@
     d._fin[consig ? 'consig_repasse' : 'compra_valor'] = num($('#g-cv').value);
   }
   X.afterSave = async (v, d) => {
+    if (d._sale && v.status === 'vendido' && can('vender')) await api('PUT', `/api/vehicles/${v.id}/sale`, d._sale);
     if (!can('financeiro') || !d._fin) return;
     const { base, ...body } = d._fin;
     await api('PUT', `/api/vehicles/${v.id}/finance`, body);
@@ -461,6 +531,8 @@
       can('parceiros') && v.status !== 'vendido' && ['loc', 'Localização (oficina, funilaria…)'],
       can('financeiro') && ['fin', 'Custos e margem'],
       can('vender') && v.status === 'vendido' && ['sale', 'Dados da venda'],
+      can('publicar') && v.status !== 'vendido' && ['repasse', 'Enviar para grupo de repasse'],
+      ['ficha', 'Ficha rápida do veículo'],
     ].filter(Boolean);
     const r = anchor.getBoundingClientRect();
     document.body.insertAdjacentHTML('beforeend', `<div class="menu" id="moreMenu" style="top:${r.bottom + window.scrollY + 4}px;left:${Math.max(8, r.right + window.scrollX - 260)}px">${items.map(([k, l]) => `<button type="button" data-mi="${k}">${esc(l)}</button>`).join('')}</div>`);
@@ -478,6 +550,8 @@
         if (k === 'loc') locationModal(v);
         if (k === 'fin') financeModal(v.id);
         if (k === 'sale') saleEditModal(v.id);
+        if (k === 'repasse') X.repasseModal(v, (t) => { S.chanTab = t; $$(`[data-act="divulgar"][data-id="${v.id}"]`)[0]?.click(); });
+        if (k === 'ficha') vehiclePop(v.id);
       };
     });
   }
@@ -612,8 +686,8 @@
       if (!box) return;
       if (!can('financeiro') || !f) { box.innerHTML = ''; return; }
       const venda = num($('#s-vv').value);
-      const consig = v.proprietario_tipo === 'consignado';
-      const base = consig ? (v.consig_repasse || (v.consig_comissao_pct ? Math.round(venda * (1 - v.consig_comissao_pct / 100)) : v.compra_valor || 0)) : (v.compra_valor || 0);
+      const consig = TERC.includes(v.proprietario_tipo);
+      const base = baseOfVehicle(v, venda);
       if (!venda || !base) { box.innerHTML = `<p class="note">${base ? '' : `Sem ${consig ? 'repasse/comissão' : 'valor de compra'} no cadastro: o lucro desta venda não será calculado até você informar.`}</p>`; return; }
       const imp = Math.round(venda * Number(S.me.store.impostos_pct || 0) / 100);
       const com = num($('#s-cm')?.value);
@@ -667,14 +741,14 @@
     let F;
     try { [F] = await Promise.all([api('GET', `/api/vehicles/${id}/finance`), loadPartners()]); } catch (e) { return toast(e.message); }
     const v = F.vehicle; const f = F.finance;
-    const consig = v.proprietario_tipo === 'consignado';
+    const consig = TERC.includes(v.proprietario_tipo);
     const lucro = (x, label) => (x ? `<div class="kpi"><span>${label}</span><b class="${x.liquido < 0 ? 'neg' : ''}">${brl(x.liquido)}</b><em>bruto ${brl(x.bruto)} · ${pct(x.margem_pct)}% de margem</em></div>` : '');
-    const row = (c) => `<div class="cf"><span class="k">${esc(c.categoria_label)}${c.previsto ? ' <span class="pill p-warn">previsto</span>' : ''}<br><span class="sub">${fmtDate(c.data)}${c.parceiro_nome ? ' · ' + esc(c.parceiro_nome) : ''}</span></span><span class="v">${esc(c.descricao || '')}<br><b>${brl(c.valor)}</b></span><span class="btnrow" style="gap:4px">${c.previsto ? `<button class="btn sm" type="button" data-cf="${c.id}">Feito</button>` : ''}<button class="btn sm ghost danger" type="button" data-dc="${c.id}">Excluir</button></span></div>`;
+    const row = (c) => `<div class="cf"><span class="k">${esc(c.categoria_label)}${c.previsto ? ' <span class="pill p-warn">previsto</span>' : ''}<br><span class="sub">${fmtDate(c.data)}${c.parceiro_nome ? ' · ' + esc(c.parceiro_nome) : ''}</span></span><span class="v">${esc(c.descricao || '')}<br><b>${brl(c.valor)}</b></span><span class="btnrow" style="gap:4px">${c.previsto ? `<button class="btn sm" type="button" data-cf="${c.id}">Feito</button>` : ''}<button class="btn sm ghost" type="button" data-ce="${c.id}">Editar</button><button class="btn sm ghost danger" type="button" data-dc="${c.id}">Excluir</button></span></div>`;
     modal(`<h3>Custos e margem: ${esc(v.marca)} ${esc(v.modelo)}</h3>
-      <div class="kpis">${f.falta_base ? `<div class="kpi"><span>Lucro previsto</span><b class="warn">—</b><em>Informe ${consig ? 'o repasse ao dono ou a comissão (no cadastro)' : 'o valor de compra'} abaixo para calcular.</em></div>` : ''}${v.status !== 'vendido' ? lucro(f.previsto, `Lucro previsto (anúncio ${brl(v.preco_anuncio)})`) : ''}${lucro(f.real, `Lucro real (venda ${brl(f.real?.venda)})`)}<div class="kpi"><span>Custos</span><b>${brl(f.custos_total)}</b><em>${brl(f.custos_realizados)} feitos · ${brl(f.custos_previstos)} previstos</em></div></div>
+      <div class="kpis">${f.falta_base ? `<div class="kpi"><span>Lucro previsto</span><b class="warn">—</b><em>Informe ${consig ? 'a margem da loja (no cadastro) ou o repasse ao dono' : 'o valor de compra'} para calcular.</em></div>` : ''}${v.status !== 'vendido' ? lucro(f.previsto, `Lucro previsto (anúncio ${brl(v.preco_anuncio)})`) : ''}${lucro(f.real, `Lucro real (venda ${brl(f.real?.venda)})`)}<div class="kpi"><span>Custos</span><b>${brl(f.custos_total)}</b><em>${brl(f.custos_realizados)} feitos · ${brl(f.custos_previstos)} previstos</em></div></div>
       <h4>${consig ? 'Consignação' : 'Compra'}</h4>
       <div class="fields">
-        ${consig ? `<div class="f"><label for="fn-rep">Repasse ao dono (R$)</label><input id="fn-rep" inputmode="numeric" value="${v.consig_repasse || ''}" placeholder="${v.consig_comissao_pct ? `ou ${pct(v.consig_comissao_pct)}% de comissão` : ''}"></div>` : `<div class="f"><label for="fn-cv">Valor de compra (R$)</label><input id="fn-cv" inputmode="numeric" value="${v.compra_valor || ''}"></div>`}
+        ${consig ? `<div class="f"><label for="fn-rep">Repasse ao dono (R$)</label><input id="fn-rep" inputmode="numeric" value="${v.consig_repasse || ''}" placeholder="${margemTxt(v) ? `ou margem de ${margemTxt(v)}` : 'opcional'}"></div>` : `<div class="f"><label for="fn-cv">Valor de compra (R$)</label><input id="fn-cv" inputmode="numeric" value="${v.compra_valor || ''}"></div>`}
         <div class="f"><label for="fn-cd">Data da compra</label><input id="fn-cd" type="date" value="${esc(v.compra_data || String(v.created_at || '').slice(0, 10))}"></div>
         <div class="f"><label for="fn-or">Origem</label><select id="fn-or"><option value="">—</option>${(F.origens || []).map((o) => `<option value="${o.key}" ${o.key === v.compra_origem ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}</select></div>
         <div class="f"><label for="fn-cf">Comprado de</label><input id="fn-cf" value="${esc(v.compra_de || v.proprietario_nome || '')}"></div>
@@ -711,6 +785,15 @@
     };
     $$('[data-dc]').forEach((b) => { b.onclick = async () => { await api('DELETE', `/api/vehicles/${id}/costs/${b.dataset.dc}`); await X.loadVehicles(); financeModal(id); }; });
     $$('[data-cf]').forEach((b) => { b.onclick = async () => { await api('PUT', `/api/vehicles/${id}/costs/${b.dataset.cf}`, { status: 'realizado' }); await X.loadVehicles(); financeModal(id); }; });
+    $$('[data-ce]').forEach((b) => { b.onclick = () => {
+      const c = F.costs.find((x) => x.id === Number(b.dataset.ce)); if (!c) return;
+      b.closest('.cf').outerHTML = costEditHtml(c, 'fe');
+      $('#fe-x').onclick = () => financeModal(id);
+      $('#fe-ok').onclick = async () => {
+        try { await api('PUT', `/api/vehicles/${id}/costs/${c.id}`, { descricao: $('#fe-d').value, valor: num($('#fe-v').value), categoria: $('#fe-c').value, status: $('#fe-s').value }); await X.loadVehicles(); financeModal(id); }
+        catch (e) { err(e.message); }
+      };
+    }; });
   }
 
   /* ======================= Documentação de transferência ======================= */
@@ -765,7 +848,7 @@
   X.views.gestao = {
     async html() {
       const fin = can('financeiro');
-      const tabs = [fin && ['estoque', 'Estoque e margem'], ['local', 'Localização'], (can('vender') || can('gestao')) && ['docs', 'Documentação'], fin && ['desp', 'Despesas da loja'], ['parc', 'Parceiros']].filter(Boolean);
+      const tabs = [fin && ['estoque', 'Estoque e margem'], ['local', 'Acompanhamento'], (can('vender') || can('gestao')) && ['docs', 'Documentação'], fin && ['desp', 'Despesas da loja'], ['parc', 'Parceiros']].filter(Boolean);
       if (!tabs.some((t) => t[0] === gTab)) gTab = tabs[0][0];
       const P = await loadPartners(true);
       const V = S.vehicles.filter((v) => v.status !== 'vendido');
@@ -783,7 +866,7 @@
             <div class="kpi"><span>Lucro previsto</span><b class="${tot.lp < 0 ? 'neg' : ''}">${brl(tot.lp)}</b><em>${tot.sb ? `${tot.sb} carro(s) sem valor de compra` : 'pelos preços anunciados'}</em></div>
           </div>
           <div class="table-wrap"><table class="tbl"><thead><tr><th>Veículo</th><th>Propriedade</th><th>Origem</th><th class="r">Dias</th><th class="r">Compra / repasse</th><th class="r">Feitos</th><th class="r">Previstos</th><th class="r">Anúncio</th><th class="r">Lucro previsto</th><th></th></tr></thead><tbody>
-          ${linhas.map(({ v, f }) => `<tr><td><b>${esc(v.marca)} ${esc(v.modelo)}</b><br><span class="sub">${esc(v.versao || '')} ${esc(v.placa || '')}</span></td><td>${esc(label(v.proprietario_tipo, S.me.options.propriedade))}${v.doc_tipo && v.doc_tipo !== 'loja' ? `<br><span class="sub">doc: ${esc(label(v.doc_tipo, S.me.options.documentacao))}</span>` : ''}</td><td>${esc(label(v.compra_origem, S.me.options.origem)) || '<span class="sub">—</span>'}</td>
+          ${linhas.map(({ v, f }) => `<tr><td><button class="vlink" type="button" data-vp="${v.id}">${esc(v.marca)} ${esc(v.modelo)}</button><br><span class="sub">${esc(v.versao || '')} ${esc(v.placa || '')}</span></td><td>${esc(label(v.proprietario_tipo, S.me.options.propriedade))}${v.doc_tipo && v.doc_tipo !== 'loja' ? `<br><span class="sub">doc: ${esc(label(v.doc_tipo, S.me.options.documentacao))}</span>` : ''}</td><td>${esc(label(v.compra_origem, S.me.options.origem)) || '<span class="sub">—</span>'}</td>
             <td class="r ${v.parado ? 'warn' : ''}">${v.dias_estoque}</td><td class="r">${f.previsto ? brl(f.previsto.base) : (v.compra_valor ? brl(v.compra_valor) : '<span class="pill p-warn">informar</span>')}</td><td class="r">${brl(f.custos_realizados ?? f.custos_total ?? 0)}</td><td class="r">${f.custos_previstos ? brl(f.custos_previstos) : '—'}</td><td class="r">${brl(v.preco_anuncio)}</td>
             <td class="r ${f.previsto?.liquido < 0 ? 'neg' : ''}">${f.previsto ? `${brl(f.previsto.liquido)}<br><span class="sub">${pct(f.previsto.margem_pct)}%</span>` : '—'}</td>
             <td><button class="btn sm" type="button" data-fin="${v.id}">Abrir</button></td></tr>`).join('') || '<tr><td colspan="10" class="sub">Nenhum carro no estoque.</td></tr>'}</tbody></table></div>
@@ -793,7 +876,7 @@
         const grupos = Object.entries(P.locais).map(([k, l]) => [k, l, V.filter((v) => (v.local_status || 'patio') === k)]).filter(([k, , list]) => list.length || k === 'patio');
         body = `<div class="board">${grupos.map(([k, l, list]) => `<div class="col"><h3>${esc(l)} <span class="sub">${list.length}</span></h3>${list.map((v) => `
           <div class="card2">
-            <div class="t">${esc(v.marca)} ${esc(v.modelo)} <span class="sub">${esc(v.placa || '')}</span></div>
+            <div class="t"><button class="vlink" type="button" data-vp="${v.id}">${esc(v.marca)} ${esc(v.modelo)}</button> <span class="sub">${esc(v.placa || '')}</span></div>
             ${v.local_parceiro ? `<div class="sub">${esc(v.local_parceiro.nome)} · ${esc(v.local_parceiro.tipo)}${v.local_obs ? ' · ' + esc(v.local_obs) : ''}</div>
               <div class="sub">Há ${v.local_dias} dia(s)${v.local_previsao ? ` · previsão ${fmtDate(v.local_previsao)}` : ''}${v.local_previsao && v.local_previsao < today() ? ' <span class="pill p-bad">atrasado</span>' : ''}</div>` : `<div class="sub">${v.dias_estoque} dias no estoque${v.parado ? ' · <span class="pill p-warn">parado</span>' : ''}</div>`}
             <div class="btnrow" style="gap:6px;margin-top:6px">${v.followup_url ? `<a class="btn sm" href="${esc(v.followup_url)}" target="_blank" rel="noopener">Pedir andamento (WhatsApp)</a>` : ''}${can('parceiros') ? `<button class="btn sm ${k === 'patio' ? '' : 'ghost'}" type="button" data-loc="${v.id}">${k === 'patio' ? 'Enviar para…' : 'Mudar'}</button>` : ''}</div>
@@ -812,7 +895,7 @@
           </div>
           <div class="chips" style="margin-bottom:10px">${[['andamento', 'Em andamento'], ['concluidos', 'Concluídos'], ['todos', 'Todos']].map(([k, l]) => `<button class="chip" type="button" data-df="${k}" aria-pressed="${k === docFiltro}">${l}</button>`).join('')}</div>
           <div class="table-wrap"><table class="tbl"><thead><tr><th>Veículo</th><th>Venda</th><th>Comprador</th><th>Etapa</th><th>Atualizado</th><th></th></tr></thead><tbody>
-          ${list.map((i) => `<tr><td><b>${esc(i.titulo)}</b><br><span class="sub">${esc(i.placa || '')}${i.doc_tipo && i.doc_tipo !== 'loja' ? ` · doc: ${esc(label(i.doc_tipo, S.me.options.documentacao))}` : ''}</span></td>
+          ${list.map((i) => `<tr><td><button class="vlink" type="button" data-vp="${i.id}">${esc(i.titulo)}</button><br><span class="sub">${esc(i.placa || '')}${i.doc_tipo && i.doc_tipo !== 'loja' ? ` · doc: ${esc(label(i.doc_tipo, S.me.options.documentacao))}` : ''}</span></td>
             <td>${fmtDate(i.vendido_em)}<br><span class="sub ${!i.done && i.dias > 30 ? 'neg' : ''}">${i.dias} dias${i.vendedor ? ' · ' + esc(i.vendedor) : ''}</span></td>
             <td>${esc(i.comprador || '—')}${i.comprador_tel ? `<br><span class="sub">${esc(i.comprador_tel)}</span>` : ''}</td>
             <td>${docSteps(i)}${i.obs ? `<br><span class="sub">${esc(i.obs)}</span>` : ''}</td>
@@ -824,7 +907,8 @@
       if (gTab === 'desp') {
         const [y, m] = despMes.split('-').map(Number);
         const from = `${despMes}-01`; const to = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
-        const E = await api('GET', `/api/expenses?from=${from}&to=${to}`);
+        const [E, sellersE] = await Promise.all([api('GET', `/api/expenses?from=${from}&to=${to}`), api('GET', '/api/team/sellers').catch(() => [])]);
+        const vendidosRec = S.vehicles.filter((v) => v.status === 'vendido').slice(0, 60);
         const total = E.despesas.reduce((s, e) => s + e.valor, 0);
         const cats = {}; E.despesas.forEach((e) => { cats[e.categoria_label] = (cats[e.categoria_label] || 0) + e.valor; });
         body = `<div class="toolbar" style="gap:8px;flex-wrap:wrap;margin-bottom:10px"><button class="btn sm" type="button" data-dm="-1" aria-label="Mês anterior">‹</button><b style="min-width:150px;text-align:center">${new Date(despMes + '-15').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}</b><button class="btn sm" type="button" data-dm="1" aria-label="Próximo mês">›</button></div>
@@ -835,6 +919,8 @@
                 <div class="f"><label for="ex-c">Categoria</label><select id="ex-c">${opt(Object.entries(E.categorias), 'aluguel')}</select></div>
                 <div class="f w3"><label for="ex-t">Descrição</label><input id="ex-t" placeholder="Ex.: aluguel do pátio"></div>
                 <div class="f"><label for="ex-v">Valor (R$)</label><input id="ex-v" inputmode="numeric"></div>
+                <div class="f ex-com"><label for="ex-vd">Vendedor</label><select id="ex-vd"><option value="">Selecione</option>${sellersE.map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></div>
+                <div class="f w3 ex-com"><label for="ex-vc">Venda (opcional)</label><select id="ex-vc"><option value="">—</option>${vendidosRec.map((v) => `<option value="${v.id}">${esc(v.marca)} ${esc(v.modelo)} ${esc(v.placa || '')}${v.vendido_em ? ' · ' + fmtDate(v.vendido_em) : ''}</option>`).join('')}</select></div>
                 <div class="f"><label for="ex-r">Repetir</label><select id="ex-r"><option value="1">Só este mês</option><option value="3">3 meses</option><option value="6">6 meses</option><option value="12">12 meses</option></select></div>
               </div>
               <div class="err" id="ex-err" hidden></div>
@@ -842,13 +928,14 @@
               <p class="note">Despesas fixas da loja (aluguel, salários, energia, sistemas…). Entram no resultado líquido em Resultados.</p></div>
             <div class="panel"><h2>Total do mês: ${brl(total)}</h2>${Object.keys(cats).length ? hbars(Object.entries(cats).sort((a, b) => b[1] - a[1]).map(([label, valor]) => ({ label, valor })), (x) => x.valor, brl) : '<p class="sub">Nenhuma despesa lançada neste mês.</p>'}</div>
           </div>
-          <div class="cfields" style="margin-top:12px">${E.despesas.map((e) => `<div class="cf"><span class="k">${esc(e.categoria_label)}<br><span class="sub">${fmtDate(e.data)}</span></span><span class="v">${esc(e.descricao || '')}<br><b>${brl(e.valor)}</b></span><button class="btn sm ghost danger" type="button" data-ed="${e.id}">Excluir</button></div>`).join('')}</div>`;
+          <div class="cfields" style="margin-top:12px">${E.despesas.map((e) => `<div class="cf"><span class="k">${esc(e.categoria_label)}<br><span class="sub">${fmtDate(e.data)}</span></span><span class="v">${esc(e.descricao || '')}${e.vendedor_nome ? ` <span class="pill p-info">${esc(e.vendedor_nome)}</span>` : ''}${e.veiculo ? ` <span class="sub">${esc(e.veiculo)}</span>` : ''}<br><b>${brl(e.valor)}</b></span><button class="btn sm ghost danger" type="button" data-ed="${e.id}">Excluir</button></div>`).join('')}</div>
+          <p class="note">Comissão de vendedor lançada aqui entra no resultado como comissão (e no ranking de vendedores), não como despesa fixa. A comissão também pode ser informada ao concluir a venda.</p>`;
       }
       if (gTab === 'parc') {
         body = `<div class="btnrow" style="margin-bottom:10px">${can('parceiros') ? '<button class="btn primary" type="button" id="ptNew">+ Novo parceiro</button>' : ''}</div>
           <div class="cfields">${P.partners.length ? P.partners.map((p) => `<div class="cf"><span class="k"><b>${esc(p.nome)}</b><br><span class="sub">${esc(p.tipo_label)}</span></span><span class="v">${esc(p.contato || '')} ${esc(p.whatsapp || '')}<br><span class="sub">${p.carros} carro(s) lá agora${p.endereco ? ' · ' + esc(p.endereco) : ''}</span></span><span class="btnrow" style="gap:6px">${p.wa ? `<a class="btn sm" href="https://wa.me/${p.wa}" target="_blank" rel="noopener">WhatsApp</a>` : ''}${can('parceiros') ? `<button class="btn sm" type="button" data-pe="${p.id}">Editar</button>` : ''}</span></div>`).join('') : '<div class="cf"><span class="v sub">Cadastre oficinas, funilarias, estética, lavador, lojas parceiras e despachante para saber onde cada carro está.</span></div>'}</div>`;
       }
-      return `<div class="head"><div><h1>Gestão</h1><p>Estoque, margem, onde cada carro está, documentos das vendas e despesas da loja.</p></div></div>
+      return `<div class="head"><div><h1>Gestão</h1><p>Estoque, margem, acompanhamento dos carros, documentos das vendas e despesas da loja. Clique no nome de um carro para ver os dados.</p></div></div>
         <div class="chips tabs" style="margin-bottom:14px">${tabs.map(([k, l]) => `<button class="chip" type="button" data-gt="${k}" aria-pressed="${k === gTab}">${l}</button>`).join('')}</div>${body}`;
     },
     bind() {
@@ -860,8 +947,9 @@
       $$('[data-df]').forEach((b) => { b.onclick = () => { docFiltro = b.dataset.df; X.render(); }; });
       $$('[data-doc]').forEach((b) => { b.onclick = () => docModal(X._docs.find((i) => i.id === Number(b.dataset.doc)), () => X.render()); });
       $$('[data-dm]').forEach((b) => { b.onclick = () => { const [y, m] = despMes.split('-').map(Number); despMes = new Date(Date.UTC(y, m - 1 + Number(b.dataset.dm), 1)).toISOString().slice(0, 7); X.render(); }; });
+      if ($('#ex-c')) { const sx = () => { const c = $('#ex-c').value === 'comissao'; $$('.ex-com').forEach((e) => { e.hidden = !c; }); if (c && !$('#ex-t').value) $('#ex-t').placeholder = 'Ex.: comissão da venda do Onix'; }; $('#ex-c').onchange = sx; sx(); }
       if ($('#ex-add')) $('#ex-add').onclick = async () => {
-        try { await api('POST', '/api/expenses', { data: $('#ex-d').value, categoria: $('#ex-c').value, descricao: $('#ex-t').value, valor: $('#ex-v').value, repetir: $('#ex-r').value }); toast('Despesa lançada'); X.render(); }
+        try { await api('POST', '/api/expenses', { data: $('#ex-d').value, categoria: $('#ex-c').value, descricao: $('#ex-t').value, valor: $('#ex-v').value, repetir: $('#ex-r').value, vendedor_id: $('#ex-vd').value, vehicle_id: $('#ex-vc').value }); toast('Despesa lançada'); X.render(); }
         catch (e) { $('#ex-err').textContent = e.message; $('#ex-err').hidden = false; }
       };
       $$('[data-ed]').forEach((b) => { b.onclick = () => confirmBox('Excluir a despesa?', '', 'Excluir', async () => { await api('DELETE', `/api/expenses/${b.dataset.ed}`); X.render(); }, true); });
@@ -918,7 +1006,7 @@
           <div class="panel"><h2>Vendas nos últimos 12 meses</h2>${bars(d.meses, fin)}${fin ? '<p class="note">Número de carros por mês; abaixo, o lucro das vendas.</p>' : ''}</div>
           ${fin ? `<div class="panel"><h2>DRE do período</h2><table class="tbl dre"><tbody>
             ${dreRow('Receita das vendas', D.receita)}${dreRow('(−) Custo dos veículos (compra / repasse)', -D.custo_veiculos)}${dreRow('(−) Preparação e manutenção', -D.preparacao)}
-            ${dreRow('= Lucro bruto', D.lucro_bruto, 'sub-t')}${dreRow('(−) Comissões de venda', -D.comissoes)}${dreRow('(−) Impostos sobre a venda', -D.impostos)}
+            ${dreRow('= Lucro bruto', D.lucro_bruto, 'sub-t')}${dreRow('(−) Comissões de venda', -(D.comissoes + (D.comissoes_extra || 0)))}${dreRow('(−) Impostos sobre a venda', -D.impostos)}
             ${dreRow('= Lucro das vendas', D.lucro_operacoes, 'sub-t')}${D.despesas_categorias.map((c) => dreRow(`(−) ${esc(c.categoria)}`, -c.valor)).join('') || dreRow('(−) Despesas da loja', 0)}
             ${dreRow('= Resultado líquido', D.resultado, 'tot-t')}</tbody></table>
             ${D.fora_do_calculo ? `<p class="note">${D.fora_do_calculo} venda(s) sem valor de compra ou de venda ficaram fora do DRE. Complete em "custos" na lista abaixo.</p>` : ''}</div>` : ''}
@@ -939,8 +1027,8 @@
           <div class="panel"><h2>Maiores lucros</h2>${hbars(d.melhores, (x) => x.liquido, brl, (x) => x.titulo)}</div>
           <div class="panel"><h2>Menores lucros</h2>${d.piores.length ? hbars(d.piores, (x) => x.liquido, brl, (x) => x.titulo) : '<p class="sub">Poucas vendas para comparar.</p>'}</div>
         </div>` : ''}
-        <div class="panel" style="margin-top:16px"><h2>Vendidos no período</h2>${d.vendidos.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Veículo</th><th>Venda</th><th>Vendedor / pagamento</th><th class="r">Dias</th>${fin ? '<th class="r">Valor</th><th class="r">Compra</th><th class="r">Custos</th><th class="r">Líquido</th><th></th>' : ''}</tr></thead><tbody>${d.vendidos.map((l) => `<tr><td><b>${esc(l.titulo)}</b><br><span class="sub">${esc(l.placa || '')} · ${esc(l.origem_label)}</span></td><td>${fmtDate(l.vendido_em)}<br><span class="sub">${esc(l.comprador || '')}</span></td><td>${esc(l.vendedor || '—')}<br><span class="sub">${esc(l.pagamento)}</span></td><td class="r">${l.dias}</td>${fin ? `<td class="r">${l.venda ? brl(l.venda) : '—'}</td><td class="r">${l.base ? brl(l.base) : '<span class="pill p-warn">informar</span>'}</td><td class="r">${brl(l.custos)}</td><td class="r ${neg(l.liquido)}">${l.liquido !== null ? `${brl(l.liquido)}<br><span class="sub">${pct(l.margem_pct)}%</span>` : '—'}</td><td><button class="btn sm ghost" type="button" data-fin="${l.id}">custos</button></td>` : ''}</tr>`).join('')}</tbody></table></div>` : '<p class="sub">Nenhuma venda no período.</p>'}</div>
-        <div class="panel" style="margin-top:16px"><h2>Estoque mais antigo</h2>${d.estoque.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Veículo</th><th class="r">Dias</th>${fin ? '<th class="r">Anúncio</th><th class="r">FIPE</th><th class="r">Investido</th><th class="r">Lucro previsto</th>' : ''}<th>Onde</th></tr></thead><tbody>${d.estoque.slice(0, 10).map((e) => `<tr><td><b>${esc(e.titulo)}</b><br><span class="sub">${esc(e.placa || '')} · ${esc(e.tipo_label.split(' (')[0])}</span></td><td class="r ${e.parado ? 'warn' : ''}">${e.dias}</td>${fin ? `<td class="r">${brl(e.preco)}</td><td class="r">${e.fipe ? brl(e.fipe) : '—'}</td><td class="r">${brl(e.investido)}</td><td class="r ${neg(e.lucro_previsto)}">${e.lucro_previsto !== null ? brl(e.lucro_previsto) : '—'}</td>` : ''}<td>${esc(e.local || 'Pátio')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="sub">Estoque vazio.</p>'}</div>`;
+        <div class="panel" style="margin-top:16px"><h2>Vendidos no período</h2>${d.vendidos.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Veículo</th><th>Venda</th><th>Vendedor / pagamento</th><th class="r">Dias</th>${fin ? '<th class="r">Valor</th><th class="r">Compra</th><th class="r">Custos</th><th class="r">Líquido</th><th></th>' : ''}</tr></thead><tbody>${d.vendidos.map((l) => `<tr><td><button class="vlink" type="button" data-vp="${l.id}">${esc(l.titulo)}</button><br><span class="sub">${esc(l.placa || '')} · ${esc(l.origem_label)}</span></td><td>${fmtDate(l.vendido_em)}<br><span class="sub">${esc(l.comprador || '')}</span></td><td>${esc(l.vendedor || '—')}<br><span class="sub">${esc(l.pagamento)}</span></td><td class="r">${l.dias}</td>${fin ? `<td class="r">${l.venda ? brl(l.venda) : '—'}</td><td class="r">${l.base ? brl(l.base) : '<span class="pill p-warn">informar</span>'}</td><td class="r">${brl(l.custos)}</td><td class="r ${neg(l.liquido)}">${l.liquido !== null ? `${brl(l.liquido)}<br><span class="sub">${pct(l.margem_pct)}%</span>` : '—'}</td><td><button class="btn sm ghost" type="button" data-fin="${l.id}">custos</button></td>` : ''}</tr>`).join('')}</tbody></table></div>` : '<p class="sub">Nenhuma venda no período.</p>'}</div>
+        <div class="panel" style="margin-top:16px"><h2>Estoque mais antigo</h2>${d.estoque.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Veículo</th><th class="r">Dias</th>${fin ? '<th class="r">Anúncio</th><th class="r">FIPE</th><th class="r">Investido</th><th class="r">Lucro previsto</th>' : ''}<th>Onde</th></tr></thead><tbody>${d.estoque.slice(0, 10).map((e) => `<tr><td><button class="vlink" type="button" data-vp="${e.id}">${esc(e.titulo)}</button><br><span class="sub">${esc(e.placa || '')} · ${esc(e.tipo_label.split(' (')[0])}</span></td><td class="r ${e.parado ? 'warn' : ''}">${e.dias}</td>${fin ? `<td class="r">${brl(e.preco)}</td><td class="r">${e.fipe ? brl(e.fipe) : '—'}</td><td class="r">${brl(e.investido)}</td><td class="r ${neg(e.lucro_previsto)}">${e.lucro_previsto !== null ? brl(e.lucro_previsto) : '—'}</td>` : ''}<td>${esc(e.local || 'Pátio')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="sub">Estoque vazio.</p>'}</div>`;
     },
     bind() {
       $$('[data-rp]').forEach((b) => { b.onclick = () => { R.periodo = b.dataset.rp; if (R.periodo === 'custom' && !R.from) [R.from, R.to] = periodRange('mes'); X.render(); }; });
@@ -1061,9 +1149,9 @@
     const dias = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
     const cfgOk = can('config');
     $('#cfgV2').innerHTML = `
-      ${team ? `<div class="panel" id="cfgTeam"><h2>Equipe</h2><p class="lead">Cada vendedor entra com o próprio e-mail. Você escolhe o que cada um pode fazer.</p>
-        <div class="cfields">${team.users.map((u) => `<div class="cf"><span class="k"><b>${esc(u.name)}</b><br><span class="sub">${esc(u.email)}</span></span><span class="v">${u.role === 'admin' ? '<span class="pill p-ok">Administrador da loja</span>' : `${u.active ? '' : '<span class="pill p-bad">desativado</span> '}<span class="sub">${u.permissions.length} permissão(ões)</span>`}</span>${u.role === 'admin' ? '<span></span>' : `<button class="btn sm" type="button" data-tu="${u.id}">Editar</button>`}</div>`).join('')}</div>
-        <div class="form-foot"><button class="btn primary" type="button" id="tuNew">+ Adicionar vendedor</button></div></div>` : ''}
+      ${team ? `<div class="panel" id="cfgTeam"><h2>Equipe</h2><p class="lead">${team.users.length - 1} vendedor(es) cadastrado(s). Cadastro, acessos e permissões ficam no menu <b>Equipe</b>.</p><div class="btnrow"><a class="btn" href="#equipe">Abrir Equipe</a></div></div>` : ''}
+      <div class="panel"><h2>Minha senha</h2>
+        <div class="fields"><div class="f"><label for="pw-a">Senha atual</label><input id="pw-a" type="password" autocomplete="current-password"></div><div class="f"><label for="pw-n">Nova senha</label><input id="pw-n" type="password" autocomplete="new-password" placeholder="mínimo 8 caracteres"></div><div class="f" style="align-self:end"><button class="btn" type="button" id="pw-ok">Trocar senha</button></div></div></div>
       <div class="panel"><h2>Republicação agendada</h2>
         ${sch?.pub_mode !== 'extensao' ? '<div class="infobox">Funciona com a publicação automática (extensão do Chrome). Ative em <b>Publicação no Marketplace</b>, nesta página.</div>' : ''}
         <p class="lead">Nos dias e horários escolhidos, a extensão republica sozinha os carros com ${S.me.republish_days}+ dias de anúncio (ou com oferta nova), respeitando o limite diário. <b>Sem nenhum clique</b>, desde que o computador fique ligado, com o Chrome aberto e logado no Facebook.</p>
@@ -1096,10 +1184,10 @@
       <div class="panel"><h2>App no celular</h2><p class="lead">Instale o GiroAuto na tela inicial do celular para cadastrar no pátio com a câmera.</p>
         <div class="btnrow">${X.installEvt ? '<button class="btn primary" id="appInstall" type="button">Instalar app</button>' : '<span class="note">No celular: abra este painel no Chrome (Android) e toque em <b>⋮ &gt; Instalar app</b>, ou no Safari (iPhone) em <b>Compartilhar &gt; Adicionar à Tela de Início</b>.</span>'}</div></div>`;
     // Equipe
-    if (team) {
-      $('#tuNew').onclick = () => userModal(null, team);
-      $$('[data-tu]').forEach((b) => { b.onclick = () => userModal(team.users.find((u) => u.id === Number(b.dataset.tu)), team); });
-    }
+    $('#pw-ok').onclick = async () => {
+      try { await api('PUT', '/api/me/password', { atual: $('#pw-a').value, nova: $('#pw-n').value }); $('#pw-a').value = ''; $('#pw-n').value = ''; toast('Senha trocada'); }
+      catch (e) { toast(e.message, 6000); }
+    };
     if ($('#sc-save')) $('#sc-save').onclick = async () => {
       try {
         await api('PUT', '/api/store/schedule', { ativo: $('#sc-on').checked, dias: $$('[data-sd]').filter((c) => c.checked).map((c) => Number(c.dataset.sd)), horarios: $('#sc-h').value.split(/[,;\s]+/).filter(Boolean).map((h) => (h.length === 4 ? '0' + h : h)), por_vez: $('#sc-n').value });
@@ -1145,14 +1233,162 @@
     if ($('#tu-act')) $('#tu-act').onclick = async () => { await api('PUT', `/api/team/${u.id}`, { active: !u.active }); closeModal(); X.render(); };
   }
 
+  /* ======================= Ficha rápida do veículo (v2.2) ======================= */
+  async function vehiclePop(id) {
+    let v = S.vehicles.find((x) => x.id === id);
+    if (!v) { await X.loadVehicles(); v = S.vehicles.find((x) => x.id === id); }
+    if (!v) return toast('Veículo não encontrado.');
+    const fin = can('financeiro'); const f = v.financeiro || {};
+    const lab = (key, list) => ((list || []).find((p) => p.key === key)?.label || '').split(' (')[0];
+    const st = { rascunho: ['p-muted', 'Rascunho'], pronto: ['p-info', 'Pronto'], publicado: ['p-ok', 'No Marketplace'], vendido: ['p-muted', 'Vendido'] }[v.status] || ['p-muted', v.status];
+    const kv = (k, val) => (val ? `<div class="kv2"><span>${k}</span><b>${val}</b></div>` : '');
+    const vend = v.status === 'vendido';
+    const sellers = vend ? await api('GET', '/api/team/sellers').catch(() => []) : [];
+    modal(`<div class="vpop ${v.photos?.[0] ? '' : 'noimg'}">
+        ${v.photos?.[0] ? `<img src="${esc(v.photos[0].url)}" alt="" class="vpop-img">` : ''}
+        <div class="vpop-main">
+          <h3>${esc(v.marca)} ${esc(v.modelo)} <span class="sub">${esc(v.versao || '')}</span></h3>
+          <p><span class="pill ${st[0]}">${st[1]}</span>${v.parado ? ' <span class="pill p-warn">parado</span>' : ''}${v.placa ? ` <b class="mono">${esc(v.placa)}</b>` : ''}</p>
+          <div class="kvs">
+            ${kv('Ano', [v.ano_fab, v.ano_modelo].filter(Boolean).join('/'))}${kv('KM', v.km ? km(v.km) : '')}${kv('Cor', esc(v.cor || ''))}${kv('Câmbio', esc(v.cambio || ''))}
+            ${kv('Preço', v.preco ? brl(v.preco) + (v.oferta_ativa ? ` · oferta ${brl(v.preco_oferta)}` : '') : '')}${kv('FIPE', v.fipe ? brl(v.fipe) : '')}
+            ${kv('Repasse', v.preco_repasse ? brl(v.preco_repasse) : '')}${kv(vend ? 'Dias até vender' : 'Dias no estoque', String(v.dias_estoque))}
+            ${kv('Propriedade', esc(lab(v.proprietario_tipo, S.me.options.propriedade)) + (TERC.includes(v.proprietario_tipo) && margemTxt(v) ? ` · margem ${margemTxt(v)}` : ''))}${kv('Documentação', esc(lab(v.doc_tipo, S.me.options.documentacao)))}
+            ${!vend && v.local_status && v.local_status !== 'patio' ? kv('Onde está', esc(v.local_label) + (v.local_parceiro ? ': ' + esc(v.local_parceiro.nome) : '')) : ''}
+            ${fin ? kv(f.base_label || 'Compra', f.previsto ? brl(f.previsto.base) : v.compra_valor ? brl(v.compra_valor) : '<span class="pill p-warn">informar</span>') : ''}
+            ${fin ? kv('Custos', `${brl(f.custos_realizados ?? f.custos_total ?? 0)}${f.custos_previstos ? ` + ${brl(f.custos_previstos)} previstos` : ''}`) : ''}
+            ${fin && !vend && f.previsto ? kv('Lucro previsto', `<span class="${f.previsto.liquido < 0 ? 'neg' : ''}">${brl(f.previsto.liquido)} · ${pct(f.previsto.margem_pct)}%</span>`) : ''}
+            ${vend ? kv('Vendido em', fmtDate(v.vendido_em)) + kv('Valor da venda', v.venda_valor ? brl(v.venda_valor) : '') + kv('Comprador', esc(v.venda_comprador || '')) + kv('Vendedor', esc(sellers.find((x) => x.id === v.venda_vendedor_id)?.name || '')) + kv('Pagamento', esc(v.venda_pagamento || '')) + kv('Documento', esc(v.doc_status_label || '')) : ''}
+            ${fin && vend && f.real ? kv('Lucro da venda', `<span class="${f.real.liquido < 0 ? 'neg' : ''}">${brl(f.real.liquido)} · ${pct(f.real.margem_pct)}%</span>`) : ''}
+          </div>
+        </div>
+      </div>
+      <div class="modal-foot">${fin ? '<button class="btn" type="button" id="vp-fin">Custos e margem</button>' : ''}<button class="btn" data-close type="button">Fechar</button>${can('cadastrar') || can('vender') ? '<button class="btn primary" type="button" id="vp-ed">Editar</button>' : ''}</div>`, true);
+    if ($('#vp-ed')) $('#vp-ed').onclick = () => { if (vend && !can('cadastrar')) return saleEditModal(id); closeModal(); location.hash = 'editar-' + id; };
+    if ($('#vp-fin')) $('#vp-fin').onclick = () => financeModal(id);
+  }
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-vp]');
+    if (b) { e.preventDefault(); vehiclePop(Number(b.dataset.vp)); }
+  });
+
+  /* ======================= Grupos de repasse (v2.2) ======================= */
+  X.repasseModal = async (v, back) => {
+    let R;
+    try { R = await api('GET', `/api/vehicles/${v.id}/repasse`); } catch (e) { return toast(e.message, 6000); }
+    const ultimo = (nome) => R.posts.find((p) => p.grupo === nome);
+    const tabs = [['instagram', 'Instagram'], ['webmotors', 'Webmotors'], ['olx', 'OLX'], ['repasse', 'Grupo de repasse']];
+    const waUrl = (t) => `https://wa.me/?text=${encodeURIComponent(t)}`;
+    modal(`<h3>Divulgar ${esc(v.marca)} ${esc(v.modelo)}</h3>
+      <div class="chips" role="tablist">${tabs.map(([k, l]) => `<button class="chip" type="button" role="tab" data-rtab="${k}" aria-pressed="${k === 'repasse'}">${l}</button>`).join('')}</div>
+      <p class="note">Para grupos de lojistas no WhatsApp, Facebook ou Telegram. Esses apps não deixam sistemas postarem sozinhos em grupos, então o GiroAuto deixa o texto e as fotos prontos e registra em quais grupos o carro já foi enviado.</p>
+      <div class="fields">
+        <div class="f"><label for="rp-p">Preço de repasse (R$)</label><input id="rp-p" inputmode="numeric" value="${R.preco_repasse || ''}" placeholder="${R.preco ? brl(R.preco) : ''}" ${can('precos') ? '' : 'disabled'}></div>
+        <div class="f" style="align-self:end">${can('precos') ? '<button class="btn" type="button" id="rp-ps">Salvar preço</button>' : ''}</div>
+        <div class="f" style="align-self:end"><span class="note">Anúncio ${brl(R.preco)}${R.fipe ? ` · FIPE ${brl(R.fipe)}` : ''}. O preço de repasse não aparece nos anúncios.</span></div>
+      </div>
+      <div class="f"><label for="rp-t">Texto para o grupo</label><textarea id="rp-t" rows="9">${esc(R.texto)}</textarea></div>
+      <div class="btnrow">
+        <button class="btn primary" type="button" id="rp-share">Enviar texto e fotos</button>
+        <a class="btn" id="rp-wa" href="${esc(waUrl(R.texto))}" target="_blank" rel="noopener">WhatsApp (só texto)</a>
+        <button class="btn" type="button" id="rp-cp">Copiar texto</button>
+        <a class="btn" href="/api/vehicles/${v.id}/photos.zip">Baixar fotos (.zip)</a>
+      </div>
+      <p class="note">"Enviar texto e fotos" abre o compartilhamento do celular: escolha o WhatsApp e o grupo. No computador, use "WhatsApp (só texto)" e anexe as fotos baixadas.</p>
+      <h4>Grupos da loja</h4>
+      <div class="rglist">${R.grupos.length ? R.grupos.map((g) => { const u = ultimo(g.nome); return `<div class="rgrow"><label class="rgl"><input type="checkbox" data-rg="${esc(g.nome)}"><span><b>${esc(g.nome)}</b> <span class="sub">${esc(R.tipos[g.tipo] || g.tipo)}</span></span></label><span>${u ? `<span class="pill p-ok">enviado ${fmtDate(u.created_at)}</span>` : '<span class="sub">ainda não enviado</span>'}</span>${g.link ? `<a class="btn sm" href="${esc(g.link)}" target="_blank" rel="noopener">Abrir grupo</a>` : '<span></span>'}</div>`; }).join('') : '<div class="rgrow"><span class="sub">Nenhum grupo cadastrado. Cadastre abaixo os grupos de repasse da loja (nome e link de convite).</span></div>'}</div>
+      ${R.grupos.length && can('publicar') ? '<div class="btnrow" style="margin-top:8px"><button class="btn" type="button" id="rp-mark">Marcar selecionados como enviados</button></div>' : ''}
+      <details ${R.grupos.length ? '' : 'open'} style="margin-top:10px"><summary style="cursor:pointer;font-weight:600">Cadastrar e editar grupos</summary>
+        <div id="rp-gl" class="stack" style="gap:6px;margin-top:8px">${[...R.grupos, {}].map((g, i) => groupRow(g, i, R.tipos)).join('')}</div>
+        <div class="btnrow" style="margin-top:8px"><button class="btn sm" type="button" id="rp-ga">+ Outro grupo</button><button class="btn sm primary" type="button" id="rp-gs">Salvar grupos</button></div>
+      </details>
+      ${R.posts.length ? `<h4>Histórico</h4><div class="timeline">${R.posts.slice(0, 20).map((p) => `<div><b>${esc(p.grupo)}</b> <span class="sub">${fmtDate(p.created_at)}${p.user_name ? ' · ' + esc(p.user_name) : ''}</span></div>`).join('')}</div>` : ''}
+      <div class="err" id="rp-err" hidden></div>
+      <div class="modal-foot"><button class="btn" data-close type="button">Fechar</button></div>`, true);
+    const err = (m) => { $('#rp-err').textContent = m; $('#rp-err').hidden = false; };
+    $$('[data-rtab]').forEach((b) => { b.onclick = () => { if (b.dataset.rtab !== 'repasse') back(b.dataset.rtab); }; });
+    $('#rp-t').oninput = () => { $('#rp-wa').href = waUrl($('#rp-t').value); };
+    $('#rp-cp').onclick = (e) => X.copyText($('#rp-t').value, e.target);
+    if ($('#rp-ps')) $('#rp-ps').onclick = async () => {
+      try { await api('PUT', `/api/vehicles/${v.id}/repasse-preco`, { preco_repasse: $('#rp-p').value }); toast('Preço de repasse salvo'); X.repasseModal(v, back); } catch (e) { err(e.message); }
+    };
+    $('#rp-share').onclick = async () => {
+      const text = $('#rp-t').value;
+      try {
+        if (navigator.share) {
+          const files = [];
+          for (const [i, u] of R.fotos.slice(0, 8).entries()) {
+            const bl = await (await fetch(u)).blob();
+            files.push(new File([bl], `foto-${i + 1}.jpg`, { type: bl.type || 'image/jpeg' }));
+          }
+          if (files.length && navigator.canShare?.({ files })) await navigator.share({ files, text });
+          else await navigator.share({ text });
+          return;
+        }
+      } catch (e) { if (e.name === 'AbortError') return; }
+      X.copyText(text, $('#rp-share'));
+      window.open(waUrl(text), '_blank', 'noopener');
+      toast('Texto copiado. Escolha o grupo no WhatsApp e anexe as fotos baixadas.', 6000);
+    };
+    if ($('#rp-mark')) $('#rp-mark').onclick = async () => {
+      const grupos = $$('[data-rg]').filter((c) => c.checked).map((c) => c.dataset.rg);
+      if (!grupos.length) return err('Marque os grupos em que você enviou o carro.');
+      try { await api('POST', `/api/vehicles/${v.id}/repasse`, { grupos }); toast('Envio registrado'); X.repasseModal(v, back); } catch (e) { err(e.message); }
+    };
+    $('#rp-ga').onclick = () => { const n = $$('#rp-gl .grow').length; $('#rp-gl').insertAdjacentHTML('beforeend', groupRow({}, n, R.tipos)); };
+    $('#rp-gs').onclick = async () => {
+      const grupos = $$('#rp-gl .grow').map((r) => ({ id: r.dataset.id, nome: r.querySelector('[data-gn]').value, tipo: r.querySelector('[data-gt2]').value, link: r.querySelector('[data-gk]').value })).filter((g) => g.nome.trim());
+      try { await api('PUT', '/api/store/repasse-grupos', { grupos }); toast('Grupos salvos'); X.repasseModal(v, back); } catch (e) { err(e.message); }
+    };
+  };
+  function groupRow(g, i, tipos) {
+    return `<div class="grow fields" data-id="${esc(g.id || '')}">
+      <div class="f w3"><label for="gn-${i}">Nome do grupo</label><input id="gn-${i}" data-gn value="${esc(g.nome || '')}" placeholder="Repasse PR Oeste"></div>
+      <div class="f"><label for="gt-${i}">App</label><select id="gt-${i}" data-gt2>${opt(Object.entries(tipos), g.tipo || 'whatsapp')}</select></div>
+      <div class="f w3"><label for="gk-${i}">Link do grupo (opcional)</label><input id="gk-${i}" data-gk value="${esc(g.link || '')}" placeholder="https://chat.whatsapp.com/…"></div>
+    </div>`;
+  }
+
+  /* ======================= Tela: Equipe (v2.2) ======================= */
+  const PERM_CURTO = { cadastrar: 'Cadastrar', precos: 'Preços', excluir: 'Excluir', publicar: 'Publicar', vender: 'Vender', campanhas: 'Campanhas', financeiro: 'Financeiro', gestao: 'Resultados', parceiros: 'Parceiros', config: 'Config.' };
+  X.views.equipe = {
+    async html() {
+      if (!owner()) return '<div class="err">Só o administrador da loja gerencia a equipe.</div>';
+      const team = await api('GET', '/api/team');
+      X._team = team;
+      const keys = Object.keys(team.perms);
+      return `<div class="head"><div><h1>Equipe</h1><p>Cadastre os vendedores e escolha o que cada um pode fazer. Cada um entra com o próprio e-mail e senha.</p></div><button class="btn primary" type="button" id="tuNew">+ Adicionar vendedor</button></div>
+        <div class="table-wrap"><table class="tbl team"><thead><tr><th>Pessoa</th><th>Situação</th>${keys.map((k) => `<th class="c" title="${esc(team.perms[k])}">${PERM_CURTO[k] || k}</th>`).join('')}<th></th></tr></thead><tbody>
+        ${team.users.map((u) => `<tr><td><b>${esc(u.name)}</b><br><span class="sub">${esc(u.email)}</span></td>
+          <td>${u.role === 'admin' ? '<span class="pill p-ok">Administrador</span>' : u.active ? '<span class="pill p-info">Ativo</span>' : '<span class="pill p-bad">Sem acesso</span>'}</td>
+          ${keys.map((k) => `<td class="c">${u.permissions.includes(k) ? '<span class="yes" aria-label="sim">✓</span>' : '<span class="no" aria-label="não">·</span>'}</td>`).join('')}
+          <td>${u.role === 'admin' ? '' : `<button class="btn sm" type="button" data-tu="${u.id}">Editar</button>`}</td></tr>`).join('')}</tbody></table></div>
+        <div class="grid2 eq" style="margin-top:14px">
+          <div class="panel"><h2>Como o vendedor entra</h2><ol class="steps-list">
+            <li>Clique em <b>+ Adicionar vendedor</b>, informe nome, e-mail e uma senha inicial e marque as permissões.</li>
+            <li>Passe para ele o endereço <b>${esc(location.origin)}</b>, o e-mail e a senha.</li>
+            <li>Ele entra e troca a senha em <b>Configurações &gt; Minha senha</b>. Só vê e faz o que você liberou.</li>
+            <li>Para tirar o acesso, clique em <b>Editar &gt; Desativar acesso</b>: ele sai na hora.</li></ol></div>
+          <div class="panel"><h2>O que cada permissão libera</h2><div class="cfields">${keys.map((k) => `<div class="cf"><span class="k"><b>${PERM_CURTO[k] || k}</b></span><span class="v" style="font-weight:400">${esc(team.perms[k])}</span><span></span></div>`).join('')}</div>
+            <p class="note">Sem "Financeiro", o vendedor não vê valores de compra, custos e margem.</p></div>
+        </div>`;
+    },
+    bind() {
+      if (!X._team) return;
+      $('#tuNew') && ($('#tuNew').onclick = () => userModal(null, X._team));
+      $$('[data-tu]').forEach((b) => { b.onclick = () => userModal(X._team.users.find((u) => u.id === Number(b.dataset.tu)), X._team); });
+    },
+  };
+
   /* ======================= Navegação e app instalável ======================= */
   function navSetup() {
     const nav = $('.nav'); if (!nav || $('[data-view="gestao"]')) return;
     const cfg = nav.querySelector('[data-view="config"]');
     cfg.insertAdjacentHTML('beforebegin', `
       <button data-view="gestao"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v16"/></svg>Gestão</button>
-      ${can('gestao') ? '<button data-view="resultados"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Resultados</button>' : ''}`);
-    $$('.nav [data-view="gestao"], .nav [data-view="resultados"]').forEach((b) => b.addEventListener('click', () => { if (location.hash === '#' + b.dataset.view) X.route(); else location.hash = b.dataset.view; }));
+      ${can('gestao') ? '<button data-view="resultados"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Resultados</button>' : ''}
+      ${owner() ? '<button data-view="equipe"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.2"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2A5 5 0 0 1 21 19"/></svg>Equipe</button>' : ''}`);
+    $$('.nav [data-view="gestao"], .nav [data-view="resultados"], .nav [data-view="equipe"]').forEach((b) => b.addEventListener('click', () => { if (location.hash === '#' + b.dataset.view) X.route(); else location.hash = b.dataset.view; }));
     // Esconde o que o vendedor não pode usar
     if (!can('campanhas')) nav.querySelector('[data-view="campanhas"]')?.setAttribute('hidden', '');
     if (!can('cadastrar')) nav.querySelector('[data-view="novo"]')?.setAttribute('hidden', '');

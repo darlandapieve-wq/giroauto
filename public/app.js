@@ -321,6 +321,7 @@
     if (v.status === 'pronto' && v.organico) acts += `<button class="btn sm primary" data-act="publicar" data-id="${v.id}" type="button" ${busy ? 'disabled' : ''}>Publicar</button>`;
     if (v.status === 'rascunho') acts += `<button class="btn sm" data-act="editar" data-id="${v.id}" type="button">Completar cadastro</button>`;
     if (v.status !== 'vendido' && v.status !== 'rascunho') acts += `<button class="btn sm" data-act="divulgar" data-id="${v.id}" type="button">Divulgar</button><button class="btn sm" data-act="editar" data-id="${v.id}" type="button">Editar</button><button class="btn sm danger" data-act="vendido" data-id="${v.id}" type="button">Vendido</button>`;
+    if (v.status === 'vendido') acts += `<button class="btn sm" data-act="editar" data-id="${v.id}" type="button" title="Editar dados do veículo e da venda">Editar</button>`;
     acts += `<button class="btn sm ghost" data-act="duplicar" data-id="${v.id}" type="button" title="Criar uma cópia com os mesmos dados e fotos">Duplicar</button>`;
     acts += `<button class="btn sm ghost danger" data-act="excluir" data-id="${v.id}" type="button" title="Excluir veículo">Excluir</button>`;
     return `<div class="row ${v.status === 'vendido' ? 'sold' : ''}">
@@ -1155,6 +1156,7 @@
 
   /* ---------------- v1.7: imagens geradas, outros canais ---------------- */
   const CANAIS = [['instagram', 'Instagram'], ['webmotors', 'Webmotors'], ['olx', 'OLX']];
+  const CANAIS_MODAL = [...CANAIS, ['repasse', 'Grupo de repasse']];
   const ART_STATUS = { pronta: '', na_fila: 'Na fila', pendente: 'Na fila', gerando: 'Gerando…', erro: 'Erro', sem_chave: 'Falta a chave da IA', aguardando: 'Clique em Gerar', manual: 'Faça grátis no ChatGPT ou Gemini' };
   const artBusy = (a) => ['na_fila', 'pendente', 'gerando'].includes(a.status);
 
@@ -1241,6 +1243,7 @@
     let data;
     try { data = await api('GET', `/api/vehicles/${v.id}/channel-data`); } catch (e) { return toast(e.message, 6000); }
     const cur = tab || S.chanTab || 'instagram';
+    if (cur === 'repasse' && EXT.repasseModal) return EXT.repasseModal(v, (t) => channelsModal(v, t));
     S.chanTab = cur;
     const L = data.listings;
     const pill = (k) => L[k]?.status === 'publicado' ? '<span class="pill p-ok">Publicado</span>' : L[k]?.status === 'publicando' ? '<span class="pill p-info">Publicando…</span>' : L[k]?.status === 'erro' ? '<span class="pill p-bad">Erro</span>' : '';
@@ -1293,7 +1296,7 @@
     };
     const body = cur === 'instagram' ? igSec() : siteSec(cur, cur === 'olx' ? 'OLX' : 'Webmotors');
     modal(`<h3>Divulgar ${esc(v.marca)} ${esc(v.modelo)}</h3>
-      <div class="chips" role="tablist">${CANAIS.map(([k, l]) => `<button class="chip" type="button" role="tab" data-ctab="${k}" aria-pressed="${k === cur}">${l} ${pill(k)}</button>`).join('')}</div>
+      <div class="chips" role="tablist">${CANAIS_MODAL.map(([k, l]) => `<button class="chip" type="button" role="tab" data-ctab="${k}" aria-pressed="${k === cur}">${l} ${pill(k)}</button>`).join('')}</div>
       <div class="stack" style="gap:12px">${body}</div>
       <div class="err" id="chErr" hidden></div>
       <div class="modal-foot"><button class="btn" data-close type="button">Fechar</button></div>`, true);

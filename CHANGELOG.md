@@ -2,6 +2,21 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.2 — 13/10/2026
+
+**Equipe no menu, margem da loja, grupos de repasse, edição depois da venda e placa mais confiável**
+
+- **Equipe** virou item do menu (entre Resultados e Configurações), só para o administrador: cadastrar vendedor, liberar ou tirar acesso, escolher permissões (tabela com o que cada um pode fazer) e instruções de como o vendedor entra. Em Configurações, todos podem **trocar a própria senha**.
+- **Veículo vendido pode ser editado**: botão Editar no estoque e painel **Venda** dentro do cadastro (valor, data, vendedor, comissão, pagamento, comprador), salvo junto com o veículo.
+- **Margem da loja** para consignado, parceria e outro: em **%** ou **valor fixo (R$)**. Entra no lucro previsto e real da loja; o repasse fixo ao dono continua opcional.
+- **Editar custos** já feitos e previstos (tipo, categoria, descrição e valor), no cadastro e em Custos e margem.
+- **Documentação**: nova etapa **Comunicação de venda realizada**, entre "Em transferência" e "Transferido".
+- **Grupos de repasse** (Divulgar > Grupo de repasse, ou Mais > Enviar para grupo de repasse): preço de repasse (não aparece nos anúncios), texto pronto para lojistas, envio de texto e fotos pelo compartilhamento do celular, WhatsApp, cópia do texto, fotos em .zip, cadastro dos grupos da loja e registro de onde cada carro já foi enviado.
+- **Gestão**: aba Localização passou a se chamar **Acompanhamento**; o nome de cada carro é clicável e abre a **ficha rápida** com os dados e o botão **Editar**.
+- **Despesas da loja**: lançar **comissão de vendedor** (com o vendedor e, se quiser, a venda). Entra como comissão no DRE e no ranking de vendedores, não como despesa fixa.
+- **Busca pela placa**: leitura das fontes melhorada (combustível "Álcool / Gasolina", município, versões em sigla como XLT/LTZ) e cabeçalhos de navegador no servidor. Se os sites bloquearem, o painel mostra os links da consulta e um campo para **colar o texto da página** (Ctrl+A, Ctrl+C), que preenche tudo sem extensão. Diagnóstico das fontes em `/health/placa`.
+- **Telas mais compactas no computador** (painéis, indicadores e tabelas com menos espaço sobrando).
+
 ## v2.1 — 13/10/2026
 
 **Placa que preenche sozinha, gestão no cadastro, venda completa com documento e resultados mais completos**

@@ -810,6 +810,69 @@ test('v2.1: gestão no cadastro, custos previstos, venda completa, documentaçã
   assert.ok(r.body.options.doc_status.entregue);
 });
 
+test('v2.2: margem da loja, edição de custos, comunicação de venda, comissão em despesa, repasse e placa colada', async () => {
+  const D = require('../src/db');
+  // Parceria com margem fixa de R$ 4.000: a loja ganha a margem menos os custos.
+  let r = await api('POST', '/api/vehicles', { marca: 'Toyota', modelo: 'Corolla', ano_modelo: 2020, preco: 100000, placa: 'TOY2C20', proprietario_tipo: 'parceria', margem_tipo: 'valor', margem_fixa: '4.000' });
+  const id = r.body.id;
+  assert.equal(r.body.margem_tipo, 'valor'); assert.equal(r.body.margem_fixa, 4000);
+  await api('POST', `/api/vehicles/${id}/costs`, { categoria: 'estetica', descricao: 'Polimento', valor: 500 });
+  r = await api('GET', `/api/vehicles/${id}/finance`);
+  assert.equal(r.body.finance.terceiro, true);
+  assert.equal(r.body.finance.previsto.base, 96000);
+  assert.equal(r.body.finance.previsto.bruto, 3500);
+  // Margem em %: 6% de 100.000.
+  r = await api('PUT', `/api/vehicles/${id}`, { ...(await api('GET', `/api/vehicles/${id}`)).body, proprietario_tipo: 'outro', margem_tipo: 'pct', consig_comissao_pct: '6' });
+  r = await api('GET', `/api/vehicles/${id}/finance`);
+  assert.equal(r.body.finance.previsto.base, 94000);
+  // Edição de custo: descrição e valor.
+  const c = r.body.costs[0];
+  await api('PUT', `/api/vehicles/${id}/costs/${c.id}`, { descricao: 'Polimento e vitrificação', valor: 800 });
+  r = await api('GET', `/api/vehicles/${id}/finance`);
+  assert.equal(r.body.costs[0].descricao, 'Polimento e vitrificação'); assert.equal(r.body.finance.custos_total, 800);
+  // Venda e etapa nova de documento (comunicação de venda entre transferência e transferido).
+  await api('POST', `/api/vehicles/${id}/sold`, { venda_valor: 100000, venda_data: '2026-10-08', venda_vendedor_id: globalThis.__carlos });
+  r = await api('GET', '/api/docs');
+  const keys = Object.keys(r.body.status);
+  assert.equal(keys.indexOf('comunicacao'), keys.indexOf('transferencia') + 1);
+  assert.equal(keys.indexOf('transferido'), keys.indexOf('comunicacao') + 1);
+  r = await api('PUT', `/api/vehicles/${id}/doc`, { status: 'comunicacao' });
+  assert.equal(r.body.docs.find((x) => x.id === id).status_label, 'Comunicação de venda realizada');
+  // Venda pode ser editada depois de vendida (veículo e venda).
+  r = await api('PUT', `/api/vehicles/${id}`, { ...(await api('GET', `/api/vehicles/${id}`)).body, km: 45000 });
+  assert.equal(r.status, 200); assert.equal(r.body.km, 45000); assert.equal(r.body.status, 'vendido');
+  // Comissão lançada como despesa, com vendedor: entra em comissões, não em despesas fixas.
+  r = await api('POST', '/api/expenses', { data: '2026-10-09', categoria: 'comissao', valor: 700 });
+  assert.equal(r.status, 400);
+  r = await api('POST', '/api/expenses', { data: '2026-10-09', categoria: 'comissao', valor: 700, vendedor_id: globalThis.__carlos, vehicle_id: id, descricao: 'Comissão Corolla' });
+  assert.equal(r.status, 201);
+  r = await api('GET', '/api/results?from=2026-10-01&to=2026-10-31');
+  assert.equal(r.body.dre.comissoes_extra, 700);
+  assert.equal(r.body.dre.despesas_loja, 3000);
+  assert.ok(r.body.vendedores.find((g) => g.chave === globalThis.__carlos).comissao >= 700);
+  r = await api('GET', '/api/expenses?from=2026-10-01&to=2026-10-31');
+  assert.ok(r.body.despesas.some((e) => e.vendedor_nome && e.veiculo.startsWith('Toyota Corolla')));
+  // Grupos de repasse: preço, texto, grupos e registro de envio.
+  r = await api('POST', '/api/vehicles', { marca: 'Chevrolet', modelo: 'Onix', versao: 'LT 1.0', ano_fab: 2019, ano_modelo: 2020, km: 60000, preco: 62000, fipe: 64000, placa: 'ONX1A23', cor: 'Branco', destaques: ['leilao'] });
+  const ox = r.body.id;
+  r = await api('PUT', `/api/vehicles/${ox}/repasse-preco`, { preco_repasse: '56.500' });
+  assert.equal(r.body.preco_repasse, 56500);
+  assert.match(r.body.texto, /REPASSE/); assert.match(r.body.texto, /R\$ 56\.500/); assert.match(r.body.texto, /leilão/i); assert.match(r.body.texto, /Final de placa 3/);
+  r = await api('PUT', '/api/store/repasse-grupos', { grupos: [{ nome: 'Repasse PR', link: 'https://chat.whatsapp.com/abc' }, { nome: '' }] });
+  assert.equal(r.body.grupos.length, 1); assert.equal(r.body.grupos[0].tipo, 'whatsapp');
+  r = await api('POST', `/api/vehicles/${ox}/repasse`, { grupos: ['Repasse PR'] });
+  assert.equal(r.body.posts[0].grupo, 'Repasse PR');
+  // O preço de repasse não vai para o anúncio.
+  r = await api('GET', `/api/vehicles/${ox}`);
+  assert.doesNotMatch(r.body.descricao_anuncio || '', /56\.500/);
+  // Placa: texto copiado da página (sem extensão).
+  const txt = 'Marca: FORD\nModelo: ECOSPORT XLT2.0FLEX\nAno: 2009\nAno Modelo: 2009\nCor: Prata\nCombustível: Alcool / Gasolina\nUF: PR\nMunicípio: MARIPA\n003271-9\tEcoSport XLT 2.0/ 2.0 Flex 16V 5p Mec.\tR$ 34.084,00\n';
+  r = await api('POST', '/api/plate/ART9H77/html', { html: txt, url: 'https://placafipe.com/placa/ART9H77' });
+  assert.equal(r.body.marca, 'Ford'); assert.equal(r.body.modelo, 'Ecosport'); assert.equal(r.body.combustivel, 'Flex');
+  assert.equal(r.body.fipe, 34084); assert.equal(r.body.municipio_placa, 'MARIPA - PR'); assert.match(r.body.versao, /^XLT 2\.0/);
+  D.run("DELETE FROM plate_cache WHERE placa = 'ART9H77'");
+});
+
 test('v2.0: agenda de republicação, QR, folha A4, painel TV e fotos prontas', async () => {
   const sched = require('../src/schedule');
   const db = require('../src/db');

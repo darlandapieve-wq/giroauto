@@ -270,6 +270,16 @@ for (const [col, def] of [
   ['venda_obs', "TEXT DEFAULT ''"], ['doc_status', "TEXT DEFAULT ''"], ['doc_atualizado', 'TEXT'], ['doc_obs', "TEXT DEFAULT ''"], ['doc_entrega', 'TEXT'],
 ]) addColumn('vehicles', col, def);
 addColumn('vehicle_costs', 'status', "TEXT NOT NULL DEFAULT 'realizado'");
+// v2.2: margem da loja em valor fixo, preço de repasse, grupos de repasse, comissão lançada como despesa.
+for (const [col, def] of [['margem_tipo', "TEXT NOT NULL DEFAULT 'pct'"], ['margem_fixa', 'INTEGER NOT NULL DEFAULT 0'], ['preco_repasse', 'INTEGER NOT NULL DEFAULT 0']]) addColumn('vehicles', col, def);
+addColumn('stores', 'repasse_grupos', "TEXT NOT NULL DEFAULT '[]'");
+db.exec(`CREATE TABLE IF NOT EXISTS repasse_posts (
+  id INTEGER PRIMARY KEY,
+  vehicle_id INTEGER NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
+  grupo TEXT NOT NULL,
+  user_id INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`);
 db.exec(`CREATE TABLE IF NOT EXISTS store_expenses (
   id INTEGER PRIMARY KEY,
   store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
@@ -288,6 +298,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS doc_moves (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 )`);
 
+addColumn('store_expenses', 'vendedor_id', 'INTEGER');
+addColumn('store_expenses', 'vehicle_id', 'INTEGER');
 // Conexão direta com o Instagram (v1.9).
 db.exec(`CREATE TABLE IF NOT EXISTS ig_connections (
   store_id INTEGER PRIMARY KEY REFERENCES stores(id) ON DELETE CASCADE,

@@ -141,6 +141,13 @@ Destaques do veículo (`DESTAQUES` em `src/vehicles.js`) e preço de oferta (`pr
 - Venda completa (`POST /api/vehicles/:id/sold`, `PUT /api/vehicles/:id/sale`) e transferência do documento (`/api/docs`, `PUT /api/vehicles/:id/doc`, tabela `doc_moves`).
 - Despesas da loja (`/api/expenses`, tabela `store_expenses`), DRE e análises em `/api/results`, planilha em `/api/results.csv`.
 
+## Versão 2.2
+
+- Equipe no menu (`X.views.equipe` em `public/app2.js`), margem da loja (`margem_tipo`, `margem_fixa`, `consig_comissao_pct`) para consignado/parceria/outro, etapa `comunicacao` na documentação.
+- Grupos de repasse (`src/repasse.js`): `GET/POST /api/vehicles/:id/repasse`, `PUT /api/vehicles/:id/repasse-preco`, `PUT /api/store/repasse-grupos`.
+- Comissão de vendedor como despesa (`store_expenses.vendedor_id`, categoria `comissao`).
+- Placa: texto colado aceito em `POST /api/plate/:placa/html`; diagnóstico das fontes em `GET /health/placa`.
+
 ## Outros canais (v1.7)
 
 - **Instagram**: carrossel com a arte, as imagens geradas e as fotos (até 10), publicado pela API da Meta no perfil ligado à Página. Exige ligar "Publicar no Instagram" em Configurações > App da Meta (caso de uso de Instagram no app) e conectar o Facebook de novo.

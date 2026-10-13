@@ -48,6 +48,31 @@ function register(app) {
   app.get('/api/fipe/:tipo/marcas/:m/modelos/:mo/anos', auth.requireUser, wrap(async (req, res) => res.json(await plate.fipeAnos(req.params.tipo, req.params.m, req.params.mo))));
   app.get('/api/fipe/:tipo/marcas/:m/modelos/:mo/anos/:a', auth.requireUser, wrap(async (req, res) => res.json(await plate.fipePreco(req.params.tipo, req.params.m, req.params.mo, req.params.a))));
 
+  // Diagnóstico das fontes de placa (sem dados do veículo): quais sites respondem ao servidor.
+  app.get('/health/placa', wrap(async (req, res) => res.json(await plate.diag(req.query.p || 'ART9H77'))));
+
+  /* ---------------- Grupos de repasse (v2.2) ---------------- */
+  const repasse = require('./repasse');
+  app.get('/api/vehicles/:id/repasse', auth.requireUser, (req, res) => {
+    const store = get('SELECT * FROM stores WHERE id = ?', req.user.storeId);
+    res.json(repasse.data(store, own(req)));
+  });
+  app.put('/api/vehicles/:id/repasse-preco', team.can('precos'), (req, res) => {
+    const v = own(req);
+    const valor = parseInt(String(req.body?.preco_repasse ?? '').replace(/\D/g, ''), 10) || 0;
+    run(`UPDATE vehicles SET preco_repasse = ?, updated_at = datetime('now') WHERE id = ?`, valor, v.id);
+    const store = get('SELECT * FROM stores WHERE id = ?', req.user.storeId);
+    res.json(repasse.data(store, V.findVehicle(req.user.storeId, v.id)));
+  });
+  app.post('/api/vehicles/:id/repasse', team.can('publicar'), (req, res) => {
+    const v = own(req);
+    const n = repasse.record(v.id, req.body?.grupos, req.user.id);
+    if (n) logEvent(req.user.storeId, `${v.marca} ${v.modelo} enviado para ${n} grupo(s) de repasse`);
+    const store = get('SELECT * FROM stores WHERE id = ?', req.user.storeId);
+    res.json(repasse.data(store, V.findVehicle(req.user.storeId, v.id)));
+  });
+  app.put('/api/store/repasse-grupos', team.canAny('publicar', 'config'), (req, res) => res.json({ grupos: repasse.saveGroups(req.user.storeId, req.body?.grupos) }));
+
   /* ---------------- Carro parado: oferta com um clique ---------------- */
   app.get('/api/vehicles/:id/offer-suggestion', auth.requireUser, (req, res) => {
     const v = V.serialize(own(req));

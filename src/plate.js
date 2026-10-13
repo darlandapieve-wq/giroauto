@@ -31,8 +31,17 @@ function pairs(html) {
     if (cells.length === 2) put(decode(cells[0]).replace(/:$/, ''), cells[1]);
   }
   for (const m of html.matchAll(/<dt[^>]*>([\s\S]*?)<\/dt>\s*<dd[^>]*>([\s\S]*?)<\/dd>/gi)) put(decode(m[1]).replace(/:$/, ''), m[2]);
+  // Texto copiado da página (sem HTML): uma informação por linha, "Marca: FORD" ou "Marca<TAB>FORD".
+  if (!/<[a-z]/i.test(html)) {
+    for (const line of String(html).split(/\r?\n/)) {
+      const m = line.match(/^\s*([A-Za-zÀ-ú /]{2,30}?)\s*(?::|\t)\s*(.+?)\s*$/);
+      if (m && !/R\$/.test(m[2])) put(m[1], m[2]);
+    }
+  }
+  const LABELS = 'Marca|Modelo|Importado|Ano Modelo|Ano|Cor|Cilindrada|Pot[êe]ncia|Combust[íi]vel|Chassi|Motor|Passageiros|UF|Munic[íi]pio|Segmento|Sub ?segmento|Esp[ée]cie|Capacidade';
   const text = decode(html);
-  for (const m of text.matchAll(/\b(Marca|Modelo|Importado|Ano|Ano Modelo|Cor|Cilindrada|Pot[êe]ncia|Combust[íi]vel|Chassi|Motor|Passageiros|UF|Munic[íi]pio|Segmento|Sub ?segmento)\s*:\s*([^:]{1,60}?)(?=\s+[A-ZÁÉÍÓÚ][\wáéíóúãõç ]{1,20}:|$)/g)) put(m[1], m[2]);
+  const re = new RegExp(`\\b(${LABELS})\\s*:\\s*(.{1,60}?)(?=\\s+(?:${LABELS})\\s*:|\\s+C[óo]digo|\\s+Tabela|$)`, 'g');
+  for (const m of text.matchAll(re)) put(m[1], m[2]);
   return out;
 }
 
@@ -46,6 +55,13 @@ function fipeRows(html) {
     if (code && valor) {
       const modelo = cells.filter((c) => c !== code && c !== valor && c.length > 3 && !/^\d{4}$/.test(c)).sort((a, b) => b.length - a.length)[0] || '';
       rows.push({ codigo: code, modelo, valor: Math.round(Number(valor.replace(/[^\d,]/g, '').replace(',', '.'))) });
+    }
+  }
+  if (!rows.length) {
+    // Texto copiado da página (sem tabelas): "003271-9 EcoSport XLT 2.0 Flex 16V 5p Mec. R$ 34.084,00".
+    const text = decode(html);
+    for (const m of text.matchAll(/(\d{6}-\d)\s+(.{4,90}?)\s+R\$\s*([\d.]+,\d{2})/g)) {
+      rows.push({ codigo: m[1], modelo: m[2].replace(/^\s*\|?\s*/, '').replace(/\s*\|\s*$/, '').trim(), valor: Math.round(Number(m[3].replace(/\./g, '').replace(',', '.'))) });
     }
   }
   return rows;
@@ -85,7 +101,7 @@ function splitMarcaModelo(mm, marcaHint) {
   }
   const words = s.split(/\s+/).filter(Boolean);
   const modelo = title(words.shift() || '');
-  return { marca: marca ? (MARCAS[String(marca).toUpperCase()] || title(marca)) : '', modelo, versao: words.map((w) => (/\d/.test(w) ? w : title(w))).join(' ') };
+  return { marca: marca ? (MARCAS[String(marca).toUpperCase()] || title(marca)) : '', modelo, versao: words.map((w) => (/\d/.test(w) || (/^[A-Z]{2,4}$/.test(w) && !/^(MEC|AUT|FLEX)$/.test(w)) ? w : title(w))).join(' ').replace(/\/ /g, '/') };
 }
 
 // Escolhe a versão FIPE mais parecida com o modelo do documento (ex.: "ETIOS HB X VSC MT", 1329 cc).
@@ -147,7 +163,15 @@ async function fetchServer(url) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 12000);
   try {
-    const r = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'text/html', 'Accept-Language': 'pt-BR,pt;q=0.9' }, signal: ctrl.signal });
+    const u = new URL(url);
+    const r = await fetch(url, {
+      headers: {
+        'User-Agent': UA, Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8', 'Cache-Control': 'no-cache', Referer: `${u.origin}/`,
+        'Sec-Fetch-Dest': 'document', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Site': 'same-origin', 'Upgrade-Insecure-Requests': '1',
+      },
+      redirect: 'follow', signal: ctrl.signal,
+    });
     const html = await r.text();
     if (!r.ok || /just a moment|cf-chl|captcha|verify you are human/i.test(html)) return { blocked: true, status: r.status };
     return { html };
@@ -164,6 +188,25 @@ function remember(placa, data) {
 }
 
 // Tenta pelo servidor. Se o site bloquear, devolve { precisa_extensao, url } para o painel tentar pela extensão.
+// Diagnóstico: status de cada fonte para o servidor (não devolve dados do veículo).
+let diagCache = null;
+async function diag(p) {
+  const placa = cleanPlate(p);
+  if (!validPlate(placa)) return { erro: 'placa inválida' };
+  if (diagCache && diagCache.placa === placa && diagCache.t > Date.now() - 5 * 60e3) return diagCache.r;
+  const fontes = [];
+  for (const url of plateUrls(placa)) {
+    const host = new URL(url).hostname;
+    const r = await fetchServer(url);
+    if (!r.html) { fontes.push({ host, ok: false, status: r.status || null, erro: r.error ? 'sem resposta' : 'bloqueado' }); continue; }
+    const d = parse(r.html, placa);
+    fontes.push({ host, ok: d.encontrado, tamanho: r.html.length, campos: ['marca', 'modelo', 'ano_fab', 'cor', 'combustivel'].filter((k) => d[k]), fipe_linhas: d.fipes.length });
+  }
+  const r = { fontes, em: new Date().toISOString() };
+  diagCache = { placa, t: Date.now(), r };
+  return r;
+}
+
 async function lookup(placaRaw) {
   const placa = cleanPlate(placaRaw);
   if (!validPlate(placa)) throw Object.assign(new Error('Placa inválida. Use o formato ABC1234 ou ABC1D23.'), { status: 400 });
@@ -222,4 +265,4 @@ async function fipePreco(t, marca, modelo, ano) {
   };
 }
 
-module.exports = { fipeMarca, lookup, fromHtml, parse, cleanPlate, validPlate, plateUrl, plateUrls, scoreFipe, fipeMarcas, fipeModelos, fipeAnos, fipePreco, splitMarcaModelo };
+module.exports = { diag, fipeMarca, lookup, fromHtml, parse, cleanPlate, validPlate, plateUrl, plateUrls, scoreFipe, fipeMarcas, fipeModelos, fipeAnos, fipePreco, splitMarcaModelo };

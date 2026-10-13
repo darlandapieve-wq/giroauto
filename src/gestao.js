@@ -22,6 +22,7 @@ const DOC_STATUS = {
   assinado: 'Assinado / firma reconhecida',
   vistoria: 'Vistoria',
   transferencia: 'Em transferência (Detran / despachante)',
+  comunicacao: 'Comunicação de venda realizada',
   transferido: 'Transferido (novo CRLV emitido)',
   entregue: 'Documento entregue ao comprador',
   nao_aplica: 'Não se aplica',
@@ -31,8 +32,10 @@ const PAGAMENTOS = ['À vista', 'PIX', 'Financiamento', 'Cartão', 'Consórcio',
 const EXP_CATS = {
   aluguel: 'Aluguel', salarios: 'Salários e pró-labore', energia: 'Energia', agua_internet: 'Água, telefone e internet',
   marketing: 'Marketing e anúncios', sistemas: 'Sistemas e assinaturas', contador: 'Contador', impostos: 'Impostos da loja',
-  manutencao: 'Manutenção da loja', combustivel: 'Combustível', outros: 'Outros',
+  manutencao: 'Manutenção da loja', combustivel: 'Combustível', comissao: 'Comissão de vendedor', outros: 'Outros',
 };
+// Propriedades em que a loja ganha uma margem (o carro não é dela): consignado, parceria e outro.
+const TERCEIROS = ['consignado', 'parceria', 'outro'];
 
 const int = (x) => { const n = parseInt(String(x ?? '').replace(/\D/g, ''), 10); return Number.isFinite(n) ? n : 0; };
 const str = (x, max = 200) => String(x ?? '').trim().slice(0, max);
@@ -62,11 +65,13 @@ function finance(v, store) {
   const custos = realizados + previstos;
   const impostosPct = Number(store?.impostos_pct || 0) / 100;
   const preco = V.precoAnuncio(v) || 0;
-  const consig = v.proprietario_tipo === 'consignado';
-  // Base: o que a loja pagou (próprio) ou o que vai repassar ao dono (consignado).
+  const consig = TERCEIROS.includes(v.proprietario_tipo);
+  // Base: o que a loja pagou (próprio) ou o que vai repassar ao dono (consignado, parceria, outro).
+  // Repasse combinado > margem fixa da loja > margem em % > valor de compra.
   const baseFor = (venda) => {
     if (!consig) return v.compra_valor || 0;
     if (v.consig_repasse) return v.consig_repasse;
+    if (v.margem_tipo === 'valor' && v.margem_fixa) return Math.max(0, venda - v.margem_fixa);
     if (v.consig_comissao_pct) return Math.round(venda * (1 - v.consig_comissao_pct / 100));
     return v.compra_valor || 0;
   };
@@ -88,7 +93,9 @@ function finance(v, store) {
     previsto: calc(preco, 0),
     real: v.status === 'vendido' ? calc(v.venda_valor || 0, v.venda_comissao) : null,
     base_label: consig ? 'Repasse ao dono' : 'Valor de compra',
-    falta_base: !(consig ? (v.consig_repasse || v.consig_comissao_pct || v.compra_valor) : v.compra_valor),
+    terceiro: consig,
+    margem_loja: consig ? (v.margem_tipo === 'valor' && v.margem_fixa ? { tipo: 'valor', valor: v.margem_fixa } : v.consig_comissao_pct ? { tipo: 'pct', valor: v.consig_comissao_pct } : null) : null,
+    falta_base: !(consig ? (v.consig_repasse || (v.margem_tipo === 'valor' && v.margem_fixa) || v.consig_comissao_pct || v.compra_valor) : v.compra_valor),
   };
 }
 
@@ -151,8 +158,11 @@ function updateCost(storeId, vehicleId, costId, body) {
   if (!c) throw httpError(404, 'Custo não encontrado.');
   const status = body.status === 'previsto' ? 'previsto' : body.status === 'realizado' ? 'realizado' : c.status;
   const valor = body.valor !== undefined ? int(body.valor) || c.valor : c.valor;
-  const data = status === 'realizado' && c.status === 'previsto' ? new Date().toISOString().slice(0, 10) : (date(body.data) || c.data);
-  run('UPDATE vehicle_costs SET status = ?, valor = ?, data = ? WHERE id = ?', status, valor, data, c.id);
+  const data = date(body.data) || (status === 'realizado' && c.status === 'previsto' ? new Date().toISOString().slice(0, 10) : c.data);
+  const descricao = body.descricao !== undefined ? str(body.descricao, 200) : c.descricao;
+  const categoria = COST_CATS[body.categoria] ? body.categoria : c.categoria;
+  const parceiro = body.parceiro_id !== undefined ? (body.parceiro_id ? get('SELECT id FROM partners WHERE id = ? AND store_id = ?', Number(body.parceiro_id), storeId)?.id || null : null) : c.parceiro_id;
+  run('UPDATE vehicle_costs SET status = ?, valor = ?, data = ?, descricao = ?, categoria = ?, parceiro_id = ? WHERE id = ?', status, valor, data, descricao, categoria, parceiro, c.id);
 }
 
 function deleteCost(storeId, vehicleId, costId) {
@@ -258,19 +268,24 @@ function docList(storeId) {
 /* ---------------- Despesas da loja (v2.1) ---------------- */
 
 function expenses(storeId, from, to) {
-  return all('SELECT * FROM store_expenses WHERE store_id = ? AND data >= ? AND data <= ? ORDER BY data DESC, id DESC', storeId, from, to)
-    .map((e) => ({ ...e, categoria_label: EXP_CATS[e.categoria] || e.categoria }));
+  return all(`SELECT e.*, u.name AS vendedor_nome, v.marca, v.modelo, v.placa FROM store_expenses e LEFT JOIN users u ON u.id = e.vendedor_id LEFT JOIN vehicles v ON v.id = e.vehicle_id
+              WHERE e.store_id = ? AND e.data >= ? AND e.data <= ? ORDER BY e.data DESC, e.id DESC`, storeId, from, to)
+    .map((e) => ({ ...e, categoria_label: EXP_CATS[e.categoria] || e.categoria, veiculo: e.marca ? `${e.marca} ${e.modelo}${e.placa ? ' ' + e.placa : ''}` : '' }));
 }
 function addExpense(storeId, body) {
   const valor = int(body.valor);
   if (!valor) throw httpError(400, 'Informe o valor da despesa.');
   const meses = Math.max(1, Math.min(12, parseInt(body.repetir, 10) || 1));
   const d0 = date(body.data) || new Date().toISOString().slice(0, 10);
+  const cat = EXP_CATS[body.categoria] ? body.categoria : 'outros';
+  const vend = body.vendedor_id ? get('SELECT id FROM users WHERE id = ? AND store_id = ?', Number(body.vendedor_id), storeId)?.id || null : null;
+  if (cat === 'comissao' && !vend) throw httpError(400, 'Informe o vendedor da comissão.');
+  const veic = body.vehicle_id ? get('SELECT id FROM vehicles WHERE id = ? AND store_id = ?', Number(body.vehicle_id), storeId)?.id || null : null;
   for (let i = 0; i < meses; i++) {
     const d = new Date(`${d0}T12:00:00Z`);
     d.setUTCMonth(d.getUTCMonth() + i);
-    run('INSERT INTO store_expenses (store_id, data, categoria, descricao, valor) VALUES (?, ?, ?, ?, ?)',
-      storeId, d.toISOString().slice(0, 10), EXP_CATS[body.categoria] ? body.categoria : 'outros', str(body.descricao, 200), valor);
+    run('INSERT INTO store_expenses (store_id, data, categoria, descricao, valor, vendedor_id, vehicle_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      storeId, d.toISOString().slice(0, 10), cat, str(body.descricao, 200), valor, vend, veic);
   }
 }
 function deleteExpense(storeId, id) { run('DELETE FROM store_expenses WHERE id = ? AND store_id = ?', Number(id), storeId); }
@@ -325,21 +340,26 @@ function results(storeId, q = {}) {
   }).sort((a, b) => b.dias - a.dias);
 
   // Despesas da loja no período e DRE.
-  const desp = expenses(storeId, from, to);
-  const despesas = desp.reduce((s, e) => s + e.valor, 0);
+  const despAll = expenses(storeId, from, to);
+  // Comissões lançadas como despesa (com o vendedor) entram na linha de comissões, não nas despesas fixas.
+  const comExtra = despAll.filter((e) => e.categoria === 'comissao' && (!vendedor || e.vendedor_id === vendedor));
+  const desp = despAll.filter((e) => e.categoria !== 'comissao');
+  const despesas = vendedor ? 0 : desp.reduce((s, e) => s + e.valor, 0);
+  const comissoesExtra = comExtra.reduce((s, e) => s + e.valor, 0);
   const porCat = {};
-  desp.forEach((e) => { porCat[e.categoria_label] = (porCat[e.categoria_label] || 0) + e.valor; });
+  if (!vendedor) desp.forEach((e) => { porCat[e.categoria_label] = (porCat[e.categoria_label] || 0) + e.valor; });
   const dre = {
     receita: sum(comLucro, 'venda'),
     custo_veiculos: sum(comLucro, 'base'),
     preparacao: sum(comLucro, 'custos'),
     lucro_bruto: sum(comLucro, 'bruto'),
     comissoes: sum(comLucro, 'comissao'),
+    comissoes_extra: comissoesExtra,
     impostos: sum(comLucro, 'impostos'),
-    lucro_operacoes: sum(comLucro, 'liquido'),
+    lucro_operacoes: sum(comLucro, 'liquido') - comissoesExtra,
     despesas_loja: despesas,
     despesas_categorias: Object.entries(porCat).map(([categoria, valor]) => ({ categoria, valor })).sort((a, b) => b.valor - a.valor),
-    resultado: sum(comLucro, 'liquido') - despesas,
+    resultado: sum(comLucro, 'liquido') - comissoesExtra - despesas,
     fora_do_calculo: linhas.length - comLucro.length,
   };
 
@@ -414,7 +434,15 @@ function results(storeId, q = {}) {
     meses,
     faixas_venda: faixasVenda,
     faixas_estoque: faixasEstoque,
-    vendedores: group(linhas, (l) => l.vendedor_id || 0, (l) => l.vendedor || 'Sem vendedor'),
+    vendedores: (() => {
+      const g = group(linhas, (l) => l.vendedor_id || 0, (l) => l.vendedor || 'Sem vendedor');
+      comExtra.forEach((e) => {
+        let r = g.find((x) => x.chave === e.vendedor_id);
+        if (!r) { r = { chave: e.vendedor_id, label: e.vendedor_nome || 'Vendedor', qtd: 0, faturamento: 0, lucro: 0, dias: 0, comissao: 0, dias_medio: 0, ticket: 0 }; g.push(r); }
+        r.comissao += e.valor;
+      });
+      return g;
+    })(),
     pagamentos: group(linhas, (l) => l.pagamento, (l) => l.pagamento),
     origens: group(linhas, (l) => l.origem || '-', (l) => l.origem_label),
     marcas: group(linhas, (l) => l.marca, (l) => l.marca),
@@ -435,7 +463,7 @@ function resultsCsv(storeId, q) {
 }
 
 module.exports = {
-  COST_CATS, PARTNER_TYPES, LOCAL, DOC_STATUS, DOC_DONE, PAGAMENTOS, EXP_CATS,
+  TERCEIROS, COST_CATS, PARTNER_TYPES, LOCAL, DOC_STATUS, DOC_DONE, PAGAMENTOS, EXP_CATS,
   costsOf, finance, saveFinance, saleFields, addCost, updateCost, deleteCost, partners, savePartner, setLocation, moves, followUpLink,
   setDocStatus, docMoves, docList, expenses, addExpense, deleteExpense, results, resultsCsv, daysBetween, waNumber,
 };
