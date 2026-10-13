@@ -166,8 +166,9 @@ async function flush() {
 /* ---------------- Fotos ---------------- */
 
 const mediaDir = () => path.join(config.dataDir, 'media');
-const SAFE = /^[a-f0-9]{32}\.(jpg|png|webp)$/;
-const MIME = { '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp' };
+// Fotos públicas: <hex>.jpg|png|webp. Documentos privados (procuração, logo): doc-<hex>.pdf|jpg|png.
+const SAFE = /^(doc-)?[a-f0-9]{32}\.(jpg|png|webp|pdf)$/;
+const MIME = { '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.pdf': 'application/pdf' };
 
 async function saveMedia(filename) {
   if (!enabled()) return;

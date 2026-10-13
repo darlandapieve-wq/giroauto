@@ -16,12 +16,15 @@ const storage = require('./storage');
 const arts = require('./arts');
 const channels = require('./channels');
 const instagram = require('./instagram');
+const team = require('./team');
 
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', true);
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '6mb' }));
 app.use(auth.loadUser);
+require('./routes2').register(app);
+require('./routes3').register(app);
 
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const fail = (status, message) => Object.assign(new Error(message), { status });
@@ -34,6 +37,7 @@ const fail = (status, message) => Object.assign(new Error(message), { status });
 // Fotos: nomes aleatórios, públicas (a Meta e o preenchimento precisam baixá-las).
 // Se o servidor for novo, a foto é buscada no Supabase e guardada no disco como cache.
 app.get('/media/:file', wrap(async (req, res) => {
+  if (req.params.file.startsWith('doc-')) return res.status(404).send('Foto não encontrada'); // documentos são privados
   res.setHeader('Access-Control-Allow-Origin', '*');
   const file = await storage.ensureLocal(req.params.file).catch(() => null);
   if (!file) return res.status(404).send('Foto não encontrada');
@@ -133,11 +137,11 @@ app.post('/api/auth/login', (req, res) => {
 app.post('/api/auth/logout', (req, res) => { auth.destroySession(req, res); res.json({ ok: true }); });
 
 app.get('/api/me', auth.requireUser, (req, res) => {
-  const store = get('SELECT id, name, slug, phone, whatsapp, address, city, state, postal_code, pub_mode, auto_publish, daily_limit FROM stores WHERE id = ?', req.user.storeId);
+  const store = get('SELECT id, name, slug, phone, whatsapp, address, city, state, postal_code, pub_mode, auto_publish, daily_limit, parado_dias, impostos_pct, rep_schedule, foto_opts, logo_file, tv_key FROM stores WHERE id = ?', req.user.storeId);
   res.json({
-    user: { ...req.user, is_admin: !!get('SELECT is_admin FROM users WHERE id = ?', req.user.id)?.is_admin }, store,
+    user: { ...req.user, perms: [...req.user.perms], is_admin: !!get('SELECT is_admin FROM users WHERE id = ?', req.user.id)?.is_admin }, store,
     vitrine_url: `${config.publicUrl}/v/${store.slug}`,
-    options: { cambios: V.CAMBIOS, combustiveis: V.COMBUSTIVEIS, carrocerias: V.CARROCERIAS, cores: V.CORES, destaques: V.DESTAQUES.map(({ key, label, texto, grupo, alerta, rodape }) => ({ key, label, texto, grupo: grupo || '', alerta: !!alerta, rodape: !!rodape })) },
+    options: { propriedade: V.PROPRIEDADE, cambios: V.CAMBIOS, combustiveis: V.COMBUSTIVEIS, carrocerias: V.CARROCERIAS, cores: V.CORES, destaques: V.DESTAQUES.map(({ key, label, texto, grupo, alerta, rodape }) => ({ key, label, texto, grupo: grupo || '', alerta: !!alerta, rodape: !!rodape })) },
     republish_days: config.republishDays,
     version: VERSION,
     extension: { id: EXTENSION_ID, version: EXTENSION_VERSION },
@@ -240,7 +244,7 @@ app.put('/api/admin/meta-app/scopes', requireAdmin, (req, res) => {
 
 app.delete('/api/admin/meta-app', requireAdmin, (req, res) => { settings.clearMetaApp(); res.json(metaAppInfo()); });
 
-app.put('/api/store', auth.requireUser, (req, res) => {
+app.put('/api/store', team.can('config'), (req, res) => {
   const b = req.body || {};
   const s = (x, n = 120) => String(x ?? '').trim().slice(0, n);
   if (!s(b.name)) throw fail(400, 'Informe o nome da loja.');
@@ -249,14 +253,14 @@ app.put('/api/store', auth.requireUser, (req, res) => {
   res.json({ ok: true });
 });
 
-app.put('/api/store/automation', auth.requireUser, (req, res) => {
+app.put('/api/store/automation', team.can('config'), (req, res) => {
   const auto = req.body?.auto_publish ? 1 : 0;
   const limit = Math.min(50, Math.max(1, parseInt(req.body?.daily_limit, 10) || 15));
   run('UPDATE stores SET auto_publish = ?, daily_limit = ? WHERE id = ?', auto, limit, req.user.storeId);
   res.json({ ok: true, auto_publish: auto, daily_limit: limit });
 });
 
-app.put('/api/store/pub-mode', auth.requireUser, (req, res) => {
+app.put('/api/store/pub-mode', team.can('config'), (req, res) => {
   const mode = req.body?.mode;
   if (!['manual', 'extensao'].includes(mode)) throw fail(400, 'Modo inválido.');
   run('UPDATE stores SET pub_mode = ? WHERE id = ?', mode, req.user.storeId);
@@ -295,10 +299,11 @@ app.get('/api/vehicles', auth.requireUser, (req, res) => res.json(V.listVehicles
 
 app.get('/api/vehicles/:id', auth.requireUser, (req, res) => res.json(V.serialize(own(req))));
 
-app.post('/api/vehicles', auth.requireUser, (req, res) => {
+app.post('/api/vehicles', team.can('cadastrar'), (req, res) => {
   const d = V.cleanInput(req.body);
   if (!d.marca || !d.modelo) throw fail(400, 'Informe ao menos marca e modelo.');
   if (d.preco_oferta) d.oferta_desde = new Date().toISOString().slice(0, 19).replace('T', ' ');
+  d.created_by = req.user.id;
   const cols = Object.keys(d);
   const r = run(`INSERT INTO vehicles (store_id, ${cols.join(',')}) VALUES (?, ${cols.map(() => '?').join(',')})`,
     req.user.storeId, ...cols.map((k) => d[k]));
@@ -307,11 +312,14 @@ app.post('/api/vehicles', auth.requireUser, (req, res) => {
   res.status(201).json(V.serialize(V.findVehicle(req.user.storeId, r.lastInsertRowid)));
 });
 
-app.put('/api/vehicles/:id', auth.requireUser, (req, res) => {
+app.put('/api/vehicles/:id', team.can('cadastrar'), (req, res) => {
   const v = own(req);
   const d = V.cleanInput(req.body);
   if (!d.marca || !d.modelo) throw fail(400, 'Informe ao menos marca e modelo.');
   // Nova oferta (ou novo valor de oferta): marca a data para liberar a republicação com o preço novo.
+  if (!req.user.perms.has('precos') && (d.preco !== v.preco || d.preco_oferta !== v.preco_oferta)) {
+    throw fail(403, 'Seu usuário não tem permissão para alterar preço ou oferta. Peça ao administrador da loja.');
+  }
   if (d.preco_oferta && d.preco_oferta !== v.preco_oferta) d.oferta_desde = new Date().toISOString().slice(0, 19).replace('T', ' ');
   if (!d.preco_oferta) d.oferta_desde = null;
   const cols = Object.keys(d);
@@ -322,7 +330,7 @@ app.put('/api/vehicles/:id', auth.requireUser, (req, res) => {
 
 // Exclui o veículo (em estoque, rascunho ou vendido) com fotos e imagens geradas.
 // Anúncios que continuam no ar em outros sites são devolvidos para a loja retirar.
-app.delete('/api/vehicles/:id', auth.requireUser, wrap(async (req, res) => {
+app.delete('/api/vehicles/:id', team.can('excluir'), wrap(async (req, res) => {
   const v = own(req);
   const remover = v.status === 'vendido' ? [] : channels.manualRemovals(v.id);
   if (v.status === 'publicado') remover.unshift({ channel: 'marketplace', label: 'Facebook Marketplace', url: v.fb_listing_url || 'https://www.facebook.com/marketplace/you/selling' });
@@ -335,7 +343,7 @@ app.delete('/api/vehicles/:id', auth.requireUser, wrap(async (req, res) => {
 }));
 
 // Duplica o veículo com todos os dados e cópias das fotos (independentes do original).
-app.post('/api/vehicles/:id/duplicate', auth.requireUser, wrap(async (req, res) => {
+app.post('/api/vehicles/:id/duplicate', team.can('cadastrar'), wrap(async (req, res) => {
   const v = own(req);
   const skip = new Set(['id', 'store_id', 'status', 'fb_listing_url', 'publicado_em', 'vendido_em', 'oferta_desde', 'created_at', 'updated_at']);
   const cols = Object.keys(v).filter((k) => !skip.has(k));
@@ -365,7 +373,7 @@ app.post('/api/vehicles/:id/duplicate', auth.requireUser, wrap(async (req, res) 
 }));
 
 // Marca como "pronto para publicar" quando o cadastro está completo.
-app.post('/api/vehicles/:id/ready', auth.requireUser, (req, res) => {
+app.post('/api/vehicles/:id/ready', team.can('cadastrar'), (req, res) => {
   const v = own(req);
   const faltam = V.missingForPublish(v, V.photosOf(v.id).length);
   if (faltam.length) throw fail(400, `Para publicar, preencha: ${faltam.join(', ')}.`);
@@ -373,7 +381,7 @@ app.post('/api/vehicles/:id/ready', auth.requireUser, (req, res) => {
   res.json(V.serialize(V.findVehicle(req.user.storeId, v.id)));
 });
 
-app.post('/api/vehicles/:id/photos', auth.requireUser, upload.array('fotos', 20), wrap(async (req, res) => {
+app.post('/api/vehicles/:id/photos', team.can('cadastrar'), upload.array('fotos', 20), wrap(async (req, res) => {
   const files = req.files || [];
   const discard = () => files.forEach((f) => require('node:fs').rm(f.path, () => {}));
   let v;
@@ -381,6 +389,18 @@ app.post('/api/vehicles/:id/photos', auth.requireUser, upload.array('fotos', 20)
   if (!files.length) throw fail(400, 'Envie fotos em JPG, PNG ou WEBP de até 12 MB.');
   const count = get('SELECT COUNT(*) n FROM photos WHERE vehicle_id = ?', v.id).n;
   if (count + files.length > 20) { discard(); throw fail(400, `Limite de 20 fotos. Este veículo já tem ${count}.`); }
+  // Fotos prontas (opcional): reduz o tamanho e aplica o logo da loja.
+  const st = get('SELECT foto_opts, logo_file FROM stores WHERE id = ?', req.user.storeId);
+  const fo = require('./photos').opts(st);
+  if (fo.reduzir || fo.marca_dagua) {
+    const logo = fo.marca_dagua && st.logo_file ? await storage.ensureLocal(st.logo_file).catch(() => null) : null;
+    for (const f of files) {
+      try {
+        const n = await require('./photos').processFile(path.join(config.dataDir, 'media'), f.filename, fo, logo);
+        if (n !== f.filename) { f.filename = n; f.mimetype = 'image/jpeg'; }
+      } catch (e) { console.error('Foto:', e.message); }
+    }
+  }
   // Guarda no armazenamento permanente antes de registrar no banco.
   try { for (const f of files) await storage.saveMedia(f.filename); }
   catch (e) {
@@ -396,7 +416,7 @@ app.post('/api/vehicles/:id/photos', auth.requireUser, upload.array('fotos', 20)
   res.json(V.serialize(V.findVehicle(req.user.storeId, v.id)));
 }));
 
-app.put('/api/vehicles/:id/photos/order', auth.requireUser, (req, res) => {
+app.put('/api/vehicles/:id/photos/order', team.can('cadastrar'), (req, res) => {
   const v = own(req);
   const ids = (req.body?.ids || []).map(Number);
   const existing = new Set(V.photosOf(v.id).map((p) => p.id));
@@ -406,7 +426,7 @@ app.put('/api/vehicles/:id/photos/order', auth.requireUser, (req, res) => {
   res.json(V.serialize(V.findVehicle(req.user.storeId, v.id)));
 });
 
-app.delete('/api/vehicles/:id/photos/:pid', auth.requireUser, (req, res) => {
+app.delete('/api/vehicles/:id/photos/:pid', team.can('cadastrar'), (req, res) => {
   const v = own(req);
   const p = get('SELECT * FROM photos WHERE id = ? AND vehicle_id = ?', Number(req.params.pid), v.id);
   if (!p) throw fail(404, 'Foto não encontrada.');
@@ -444,7 +464,7 @@ app.get('/api/vehicles/:id/photos.zip', auth.requireUser, wrap(async (req, res) 
 }));
 
 // Publicação assistida: a pessoa publicou no Facebook e registra aqui.
-app.post('/api/vehicles/:id/mark-published', auth.requireUser, (req, res) => {
+app.post('/api/vehicles/:id/mark-published', team.can('publicar'), (req, res) => {
   const v = own(req);
   if (v.status === 'vendido') throw fail(409, 'Veículo vendido não pode ser publicado.');
   const url = String(req.body?.listing_url || '').trim();
@@ -459,7 +479,7 @@ app.post('/api/vehicles/:id/mark-published', auth.requireUser, (req, res) => {
 });
 
 // Preenchimento automático: o painel escolhe o veículo; a janela-ponte busca e entrega ao favorito no Facebook.
-app.post('/api/assist/start', auth.requireUser, (req, res) => {
+app.post('/api/assist/start', team.can('publicar'), (req, res) => {
   const v = V.findVehicle(req.user.storeId, req.body?.vehicle_id);
   if (!v) throw fail(404, 'Veículo não encontrado.');
   if (v.status === 'vendido') throw fail(409, 'Veículo vendido não pode ser publicado.');
@@ -485,7 +505,7 @@ function enqueue(storeId, vehicleId, type) {
   run('INSERT INTO ext_jobs (store_id, vehicle_id, type) VALUES (?, ?, ?)', storeId, vehicleId, type);
 }
 
-app.post('/api/vehicles/:id/publish', auth.requireUser, (req, res) => {
+app.post('/api/vehicles/:id/publish', team.can('publicar'), (req, res) => {
   const v = own(req);
   if (v.status === 'vendido') throw fail(409, 'Veículo vendido não pode ser publicado.');
   if (v.status === 'publicado') throw fail(409, 'Este veículo já está publicado. Use Republicar.');
@@ -496,7 +516,7 @@ app.post('/api/vehicles/:id/publish', auth.requireUser, (req, res) => {
   res.json({ ok: true, message: 'Enviado para a extensão. Abra o Chrome com a extensão ativa para concluir.' });
 });
 
-app.post('/api/vehicles/:id/republish', auth.requireUser, (req, res) => {
+app.post('/api/vehicles/:id/republish', team.can('publicar'), (req, res) => {
   const v = V.serialize(own(req));
   if (v.status !== 'publicado') throw fail(409, 'Só é possível republicar um anúncio publicado.');
   if (!v.pode_republicar && !req.body?.force) {
@@ -506,12 +526,19 @@ app.post('/api/vehicles/:id/republish', auth.requireUser, (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/vehicles/:id/sold', auth.requireUser, (req, res) => {
+app.post('/api/vehicles/:id/sold', team.can('vender'), (req, res) => {
   const v = own(req);
   if (v.status === 'vendido') return res.json({ ok: true });
   const wasPublished = v.status === 'publicado';
   const pubMode = get('SELECT pub_mode FROM stores WHERE id = ?', req.user.storeId).pub_mode;
   run(`UPDATE vehicles SET status='vendido', vendido_em=datetime('now'), updated_at=datetime('now') WHERE id=?`, v.id);
+  // Dados da venda (opcionais): valor, comprador, pagamento, comissão e vendedor.
+  const b = req.body || {};
+  const int = (x) => parseInt(String(x ?? '').replace(/\D/g, ''), 10) || 0;
+  const seller = b.venda_vendedor_id ? get('SELECT id FROM users WHERE id = ? AND store_id = ?', Number(b.venda_vendedor_id), req.user.storeId) : null;
+  run(`UPDATE vehicles SET venda_valor=?, venda_comprador=?, venda_pagamento=?, venda_comissao=?, venda_vendedor_id=? WHERE id=?`,
+    int(b.venda_valor) || V.precoAnuncio(v), String(b.venda_comprador || '').slice(0, 120), String(b.venda_pagamento || '').slice(0, 60),
+    req.user.perms.has('financeiro') ? int(b.venda_comissao) : 0, seller?.id || req.user.id, v.id);
   run(`UPDATE ext_jobs SET status='cancelado', updated_at=datetime('now') WHERE vehicle_id=? AND status='pendente'`, v.id);
   if (wasPublished && pubMode === 'extensao') run('INSERT INTO ext_jobs (store_id, vehicle_id, type) VALUES (?, ?, ?)', req.user.storeId, v.id, 'excluir');
   logEvent(req.user.storeId, `${v.marca} ${v.modelo} ${v.versao} marcado como vendido`);
@@ -524,7 +551,7 @@ app.post('/api/vehicles/:id/sold', auth.requireUser, (req, res) => {
 
 app.get('/api/vehicles/:id/arts', auth.requireUser, (req, res) => res.json(arts.listArts(own(req).id)));
 
-app.post('/api/vehicles/:id/arts/regenerate', auth.requireUser, (req, res) => {
+app.post('/api/vehicles/:id/arts/regenerate', team.can('cadastrar'), (req, res) => {
   const v = own(req);
   if (v.status === 'vendido') throw fail(409, 'Veículo vendido: as imagens não são mais geradas.');
   if (!V.photosOf(v.id).length) throw fail(400, 'Cadastre as fotos do veículo primeiro.');
@@ -542,7 +569,7 @@ app.post('/api/vehicles/:id/arts/regenerate', auth.requireUser, (req, res) => {
 
 const uploadArt = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024, files: 1 },
   fileFilter: (_req, file, cb) => cb(null, ['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) });
-app.post('/api/vehicles/:id/arts/:slot/upload', auth.requireUser, uploadArt.single('imagem'), wrap(async (req, res) => {
+app.post('/api/vehicles/:id/arts/:slot/upload', team.can('cadastrar'), uploadArt.single('imagem'), wrap(async (req, res) => {
   const v = own(req);
   if (!req.file) throw fail(400, 'Envie a imagem em JPG, PNG ou WEBP de até 15 MB.');
   await arts.saveManual(v.id, Number(req.params.slot), req.file.buffer);
@@ -551,7 +578,7 @@ app.post('/api/vehicles/:id/arts/:slot/upload', auth.requireUser, uploadArt.sing
 
 app.get('/api/vehicles/:id/arts/prompts', auth.requireUser, (req, res) => res.json(arts.manualPrompts(own(req).id)));
 
-app.put('/api/vehicles/:id/arts/:slot/source', auth.requireUser, (req, res) => {
+app.put('/api/vehicles/:id/arts/:slot/source', team.can('cadastrar'), (req, res) => {
   const v = own(req);
   arts.setSource(v.id, Number(req.params.slot), req.body?.photo_id ? Number(req.body.photo_id) : null);
   res.json(arts.listArts(v.id));
@@ -582,16 +609,16 @@ app.get('/api/vehicles/:id/channel-data', auth.requireUser, wrap(async (req, res
   res.json({ caption: channels.caption(v, store), fields: channels.fields(v, store), listings: channels.listingsOf(v.id), links: Object.fromEntries(Object.entries(channels.CHANNELS).map(([k, c]) => [k, c.url])), instagram: igInfo });
 }));
 
-app.post('/api/vehicles/:id/instagram', auth.requireUser, wrap(async (req, res) => {
+app.post('/api/vehicles/:id/instagram', team.can('publicar'), wrap(async (req, res) => {
   const v = own(req);
   res.json(await channels.publishInstagram(req.user.storeId, v.id, { caption: req.body?.caption }));
 }));
 
-app.post('/api/vehicles/:id/listings/:channel', auth.requireUser, (req, res) => {
+app.post('/api/vehicles/:id/listings/:channel', team.can('publicar'), (req, res) => {
   res.json(channels.markPublished(req.user.storeId, own(req).id, req.params.channel, req.body?.url));
 });
 
-app.delete('/api/vehicles/:id/listings/:channel', auth.requireUser, (req, res) => {
+app.delete('/api/vehicles/:id/listings/:channel', team.can('publicar'), (req, res) => {
   res.json(channels.unmark(req.user.storeId, own(req).id, req.params.channel));
 });
 
@@ -600,7 +627,7 @@ app.get('/api/jobs', auth.requireUser, (req, res) => {
     WHERE j.store_id = ? ORDER BY j.id DESC LIMIT 50`, req.user.storeId));
 });
 
-app.post('/api/jobs/:id/cancel', auth.requireUser, (req, res) => {
+app.post('/api/jobs/:id/cancel', team.can('publicar'), (req, res) => {
   run(`UPDATE ext_jobs SET status='cancelado', updated_at=datetime('now') WHERE id=? AND store_id=? AND status IN ('pendente','em_andamento')`,
     Number(req.params.id), req.user.storeId);
   res.json({ ok: true });
@@ -612,7 +639,7 @@ app.get('/api/events', auth.requireUser, (req, res) => {
 
 /* ---- Pareamento e API da extensão ---- */
 
-app.post('/api/extension/pair-code', auth.requireUser, (req, res) => {
+app.post('/api/extension/pair-code', team.can('publicar'), (req, res) => {
   const code = Array.from(crypto.randomBytes(6), (b) => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[b % 32]).join('');
   run('DELETE FROM pair_codes WHERE expires_at < ?', Date.now());
   run('INSERT INTO pair_codes (code, store_id, expires_at) VALUES (?, ?, ?)', code, req.user.storeId, Date.now() + 10 * 60e3);
@@ -646,6 +673,7 @@ extRouter.post('/pair', (req, res) => {
 extRouter.get('/next', auth.requireExtension, (req, res) => {
   // Tarefas "em andamento" há mais de 30 min voltam para a fila.
   run(`UPDATE ext_jobs SET status='pendente' WHERE store_id=? AND status='em_andamento' AND updated_at < datetime('now','-30 minutes')`, req.ext.storeId);
+  try { require('./schedule').tick(req.ext.storeId); } catch (e) { console.error('Agenda:', e.message); }
   const st = get('SELECT name, city, state, auto_publish, daily_limit FROM stores WHERE id = ?', req.ext.storeId);
   const job = get(`SELECT * FROM ext_jobs WHERE store_id = ? AND status = 'pendente' ORDER BY id LIMIT 1`, req.ext.storeId);
   const pendentes = get(`SELECT COUNT(*) n FROM ext_jobs WHERE store_id = ? AND status = 'pendente'`, req.ext.storeId).n;
@@ -702,7 +730,7 @@ app.get('/api/meta/status', auth.requireUser, (req, res) => {
   res.json({ ...st, feed_url: feed.feedUrl(store), feed_items: feed.feedRows(store).length });
 });
 
-app.get('/api/meta/connect', auth.requireUser, (req, res) => {
+app.get('/api/meta/connect', team.can('campanhas'), (req, res) => {
   if (!meta.isConfigured()) throw fail(500, 'Configure META_APP_ID e META_APP_SECRET no .env do servidor.');
   const state = randomToken(16);
   run('INSERT INTO oauth_states (state, store_id, expires_at) VALUES (?, ?, ?)', state, req.user.storeId, Date.now() + 15 * 60e3);
@@ -725,7 +753,7 @@ app.get('/api/meta/callback', wrap(async (req, res) => {
 }));
 
 /* ---- Instagram direto (login do Instagram) ---- */
-app.get('/api/instagram/connect', auth.requireUser, (req, res) => {
+app.get('/api/instagram/connect', team.can('publicar'), (req, res) => {
   if (!instagram.app().configured) throw fail(400, 'O administrador precisa colar o ID e a chave secreta do app do Instagram em Configurações > App da Meta.');
   const state = randomToken(16);
   run('INSERT INTO oauth_states (state, store_id, expires_at) VALUES (?, ?, ?)', state, req.user.storeId, Date.now() + 15 * 60e3);
@@ -744,7 +772,7 @@ app.get('/api/instagram/callback', wrap(async (req, res) => {
     res.redirect('/#estoque?ig=erro&msg=' + encodeURIComponent(e.message.slice(0, 200)));
   }
 }));
-app.post('/api/instagram/disconnect', auth.requireUser, (req, res) => { instagram.disconnect(req.user.storeId); res.json({ ok: true }); });
+app.post('/api/instagram/disconnect', team.can('config'), (req, res) => { instagram.disconnect(req.user.storeId); res.json({ ok: true }); });
 app.get('/api/admin/instagram-app', requireAdmin, (req, res) => res.json({ ...instagram.status(req.user.storeId), app_id: instagram.app().id }));
 app.put('/api/admin/instagram-app', requireAdmin, wrap(async (req, res) => {
   const id = String(req.body?.app_id || '').trim();
@@ -756,7 +784,7 @@ app.put('/api/admin/instagram-app', requireAdmin, wrap(async (req, res) => {
   res.json({ ...instagram.status(req.user.storeId), app_id: id });
 }));
 
-app.post('/api/meta/disconnect', auth.requireUser, (req, res) => {
+app.post('/api/meta/disconnect', team.can('campanhas'), (req, res) => {
   run('DELETE FROM meta_connections WHERE store_id = ?', req.user.storeId);
   logEvent(req.user.storeId, 'Conta do Facebook desconectada');
   res.json({ ok: true });
@@ -770,13 +798,13 @@ app.get('/api/meta/permissions', auth.requireUser, wrap(async (req, res) => {
 }));
 
 app.get('/api/meta/assets', auth.requireUser, wrap(async (req, res) => res.json(await meta.listAssets(req.user.storeId))));
-app.put('/api/meta/settings', auth.requireUser, wrap(async (req, res) => res.json(await meta.saveSettings(req.user.storeId, req.body || {}))));
+app.put('/api/meta/settings', team.can('campanhas'), wrap(async (req, res) => res.json(await meta.saveSettings(req.user.storeId, req.body || {}))));
 app.get('/api/meta/cities', auth.requireUser, wrap(async (req, res) => {
   const q = String(req.query.q || '').trim();
   res.json(q.length < 2 ? [] : await meta.searchCities(req.user.storeId, q));
 }));
-app.post('/api/meta/catalog/setup', auth.requireUser, wrap(async (req, res) => res.json(await meta.setupCatalog(req.user.storeId))));
-app.post('/api/meta/catalog/sync', auth.requireUser, wrap(async (req, res) => res.json(await meta.syncCatalog(req.user.storeId))));
+app.post('/api/meta/catalog/setup', team.can('campanhas'), wrap(async (req, res) => res.json(await meta.setupCatalog(req.user.storeId))));
+app.post('/api/meta/catalog/sync', team.can('campanhas'), wrap(async (req, res) => res.json(await meta.syncCatalog(req.user.storeId))));
 
 function campaignOut(c) {
   const parse = (x, f) => { try { return JSON.parse(x); } catch { return f; } };
@@ -826,14 +854,14 @@ app.get('/api/meta/interests', auth.requireUser, wrap(async (req, res) => {
   res.json(q.length < 2 ? [] : await meta.searchInterests(req.user.storeId, q));
 }));
 
-app.post('/api/meta/reach', auth.requireUser, wrap(async (req, res) => {
+app.post('/api/meta/reach', team.can('campanhas'), wrap(async (req, res) => {
   const a = audienceFrom(req.body || {});
   if (!a.city_key) throw fail(400, 'Escolha a cidade.');
   if (!(a.radius_km >= 17 && a.radius_km <= 80)) throw fail(400, 'Raio entre 17 e 80 km.');
   res.json(await meta.reachEstimate(req.user.storeId, a));
 }));
 
-app.post('/api/campaigns', auth.requireUser, wrap(async (req, res) => {
+app.post('/api/campaigns', team.can('campanhas'), wrap(async (req, res) => {
   const b = req.body || {};
   const aud = audienceFrom(b);
   const storeId = req.user.storeId;
@@ -883,7 +911,7 @@ app.post('/api/campaigns', auth.requireUser, wrap(async (req, res) => {
   }
 }));
 
-app.post('/api/campaigns/:id/retry', auth.requireUser, wrap(async (req, res) => {
+app.post('/api/campaigns/:id/retry', team.can('campanhas'), wrap(async (req, res) => {
   const c = get('SELECT * FROM campaigns WHERE id = ? AND store_id = ?', Number(req.params.id), req.user.storeId);
   if (!c || c.status !== 'erro') throw fail(409, 'Só campanhas com erro podem ser reenviadas.');
   const start = new Date(Date.now() + 5 * 60e3);
@@ -892,12 +920,12 @@ app.post('/api/campaigns/:id/retry', auth.requireUser, wrap(async (req, res) => 
 }));
 
 for (const [action, status] of [['activate', 'ACTIVE'], ['pause', 'PAUSED'], ['end', 'ARCHIVED']]) {
-  app.post(`/api/campaigns/:id/${action}`, auth.requireUser, wrap(async (req, res) => {
+  app.post(`/api/campaigns/:id/${action}`, team.can('campanhas'), wrap(async (req, res) => {
     res.json(campaignOut(await meta.setCampaignStatus(req.user.storeId, Number(req.params.id), status)));
   }));
 }
 
-app.delete('/api/campaigns/:id', auth.requireUser, (req, res) => {
+app.delete('/api/campaigns/:id', team.can('campanhas'), (req, res) => {
   const c = get('SELECT * FROM campaigns WHERE id = ? AND store_id = ?', Number(req.params.id), req.user.storeId);
   if (!c) throw fail(404, 'Campanha não encontrada.');
   if (c.meta_campaign_id) throw fail(409, 'Esta campanha existe na Meta. Use Encerrar.');

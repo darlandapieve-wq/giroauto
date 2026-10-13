@@ -32,12 +32,12 @@ function loadUser(req, _res, next) {
   const token = parseCookies(req.headers.cookie)[COOKIE];
   if (token) {
     const row = get(
-      `SELECT u.id, u.name, u.email, u.role, u.store_id, s.expires_at
+      `SELECT u.id, u.name, u.email, u.role, u.store_id, u.permissions, u.active, s.expires_at
        FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?`,
       sha256(token),
     );
-    if (row && row.expires_at > Date.now()) {
-      req.user = { id: row.id, name: row.name, email: row.email, role: row.role, storeId: row.store_id };
+    if (row && row.expires_at > Date.now() && row.active) {
+      req.user = { id: row.id, name: row.name, email: row.email, role: row.role, storeId: row.store_id, perms: require('./team').permsOf(row) };
     }
   }
   next();

@@ -127,6 +127,29 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   if (current && current.tabId === tabId) await finish('falhou', { error: 'A aba do Facebook foi fechada antes de concluir.' });
 });
 
+// Consulta de placa (v2.0): abre a página do placafipe numa aba em segundo plano, lê o HTML e fecha.
+// Roda no navegador da loja, então passa pelas verificações do site como uma visita normal.
+async function plateLookup(url) {
+  if (!/^https:\/\/(www\.)?placafipe\.com\.br\//.test(String(url || ''))) return { ok: false, error: 'endereço não permitido' };
+  const tab = await chrome.tabs.create({ url, active: false });
+  try {
+    const end = Date.now() + 25000;
+    let html = '';
+    while (Date.now() < end) {
+      await new Promise((r) => setTimeout(r, 1500));
+      const t = await chrome.tabs.get(tab.id).catch(() => null);
+      if (!t) break;
+      if (t.status !== 'complete') continue;
+      const [res] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => document.documentElement.outerHTML }).catch(() => [null]);
+      html = res?.result || '';
+      if (/fipe/i.test(html) && /(marca|modelo)/i.test(html) && !/just a moment|verify you are human|cf-chl/i.test(html)) break;
+    }
+    return { ok: !!html, html: html.slice(0, 600000) };
+  } finally {
+    chrome.tabs.remove(tab.id).catch(() => {});
+  }
+}
+
 async function handle(msg, sender, external) {
   const { current } = await cfg();
   switch (msg.cmd) {
@@ -146,6 +169,7 @@ async function handle(msg, sender, external) {
     case 'pollNow': return poll({ manual: true, returnTabId: sender?.tab?.id || null });
     case 'status': return cfg();
     case 'cancel': await finish('cancelado'); return { ok: true };
+    case 'plateLookup': return plateLookup(msg.url);
     case 'setFbBase': // só para testes locais
       if (external && !/^http:\/\/(localhost|127\.0\.0\.1)/.test(sender.origin)) return { ok: false };
       await store.set({ fbBase: msg.value || '', nextAllowedAt: 0 }); return { ok: true };

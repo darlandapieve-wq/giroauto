@@ -6,6 +6,15 @@ const COMBUSTIVEIS = ['Flex', 'Gasolina', 'Etanol', 'Diesel', 'Elétrico', 'Híb
 const CARROCERIAS = ['Hatch', 'Sedã', 'SUV', 'Picape', 'Minivan', 'Perua', 'Cupê', 'Conversível', 'Van', 'Outro'];
 const CORES = ['Branco', 'Prata', 'Cinza', 'Preto', 'Vermelho', 'Azul', 'Verde', 'Marrom', 'Bege', 'Amarelo', 'Laranja', 'Dourado', 'Vinho', 'Outra'];
 
+// Situação do veículo em relação à loja (v2.0).
+const PROPRIEDADE = [
+  { key: 'proprio', label: 'Próprio da loja' },
+  { key: 'consignado', label: 'Consignado (o dono deixou para vender)' },
+  { key: 'procuracao', label: 'Procuração para venda' },
+  { key: 'parceria', label: 'Parceria (sócio ou outra loja)' },
+  { key: 'repasse', label: 'Repasse (venda para lojista)' },
+];
+
 // Itens que valorizam o veículo ou dão transparência (v1.8). grupo = só um do grupo por vez.
 const DESTAQUES = [
   { key: 'pericia_aprovada', label: 'Perícia aprovada', texto: 'Laudo de perícia cautelar aprovado', grupo: 'pericia' },
@@ -84,6 +93,7 @@ function serialize(v) {
     catalogo: !!v.catalogo,
     titulo: title(v),
     photos,
+    ...extras2(v),
     destaques: destaquesOf(v),
     oferta_ativa: ofertaAtiva(v),
     preco_anuncio: precoAnuncio(v),
@@ -95,6 +105,27 @@ function serialize(v) {
     oferta_nova: v.status === 'publicado' && ofertaAtiva(v) && !!v.oferta_desde && !!v.publicado_em && v.oferta_desde > v.publicado_em,
     pode_republicar: v.status === 'publicado' && (daysSince(v.publicado_em) >= config.republishDays
       || (ofertaAtiva(v) && !!v.oferta_desde && !!v.publicado_em && v.oferta_desde > v.publicado_em)),
+  };
+}
+
+// Dados de gestão (v2.0): idade no estoque, carro parado, FIPE, localização e financeiro.
+function extras2(v) {
+  const G = require('./gestao');
+  const store = get('SELECT name, parado_dias, impostos_pct FROM stores WHERE id = ?', v.store_id) || {};
+  const dias = G.daysBetween(v.compra_data || v.created_at);
+  const preco = precoAnuncio(v);
+  const parceiro = v.local_parceiro_id ? get('SELECT id, nome, tipo, contato, whatsapp FROM partners WHERE id = ?', v.local_parceiro_id) : null;
+  return {
+    dias_estoque: v.status === 'vendido' ? G.daysBetween(v.compra_data || v.created_at, new Date(String(v.vendido_em || '').replace(' ', 'T') + 'Z')) : dias,
+    parado: v.status !== 'vendido' && dias >= (store.parado_dias || 25),
+    parado_dias: store.parado_dias || 25,
+    fipe_diff_pct: v.fipe && preco ? Math.round(((preco - v.fipe) / v.fipe) * 1000) / 10 : null,
+    local_label: G.LOCAL[v.local_status] || '',
+    local_parceiro: parceiro ? { id: parceiro.id, nome: parceiro.nome, tipo: G.PARTNER_TYPES[parceiro.tipo] || parceiro.tipo, contato: parceiro.contato, whatsapp: parceiro.whatsapp } : null,
+    local_dias: v.local_status && v.local_status !== 'patio' ? G.daysBetween(v.local_desde) : 0,
+    followup_url: parceiro ? G.followUpLink(store, v, parceiro) : '',
+    tem_procuracao: !!v.procuracao_file,
+    financeiro: G.finance(v, store),
   };
 }
 
@@ -149,6 +180,21 @@ function cleanInput(body = {}) {
     organico: body.organico === false ? 0 : 1,
     catalogo: body.catalogo ? 1 : 0,
     destaques: JSON.stringify(cleanDestaques(body.destaques)),
+    // Identificação (v2.0)
+    renavam: str(body.renavam, 11).replace(/\D/g, ''),
+    chassi: str(body.chassi, 17).toUpperCase().replace(/[^A-Z0-9]/g, ''),
+    municipio_placa: str(body.municipio_placa, 60),
+    fipe_codigo: str(body.fipe_codigo, 12).replace(/[^0-9-]/g, ''),
+    fipe_ref: str(body.fipe_ref, 30),
+    // Proprietário (v2.0)
+    proprietario_tipo: pick(body.proprietario_tipo, PROPRIEDADE.map((p) => p.key)) || 'proprio',
+    proprietario_nome: str(body.proprietario_nome, 120),
+    proprietario_doc: str(body.proprietario_doc, 20).replace(/[^0-9./-]/g, ''),
+    proprietario_tel: str(body.proprietario_tel, 20),
+    proprietario_obs: str(body.proprietario_obs, 1000),
+    procuracao_nome: str(body.procuracao_nome, 120),
+    procuracao_validade: /^\d{4}-\d{2}-\d{2}$/.test(String(body.procuracao_validade || '')) ? body.procuracao_validade : null,
+    consig_comissao_pct: Math.max(0, Math.min(100, Number(String(body.consig_comissao_pct ?? '').replace(',', '.')) || 0)),
   };
   if (out.preco_oferta && out.preco && out.preco_oferta >= out.preco) out.preco_oferta = 0;
   const ano = new Date().getFullYear() + 1;
@@ -168,6 +214,6 @@ function missingForPublish(v, photoCount) {
 }
 
 module.exports = {
-  CAMBIOS, COMBUSTIVEIS, CARROCERIAS, CORES, DESTAQUES, conviteVisita, DESTAQUE, destaquesOf, ofertaAtiva, precoAnuncio, descricaoAnuncio,
+  CAMBIOS, COMBUSTIVEIS, CARROCERIAS, CORES, DESTAQUES, PROPRIEDADE, conviteVisita, DESTAQUE, destaquesOf, ofertaAtiva, precoAnuncio, descricaoAnuncio,
   serialize, findVehicle, listVehicles, cleanInput, missingForPublish, photosOf, title, daysSince, mediaUrl,
 };

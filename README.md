@@ -127,6 +127,12 @@ Cada veículo com fotos ganha uma arte (1080×1350), gerada em segundo plano: **
 
 Destaques do veículo (`DESTAQUES` em `src/vehicles.js`) e preço de oferta (`preco_oferta`) entram nos textos dos anúncios; os avisos de transparência (leilão, sinistro, remarcado, ex-locadora) são acrescentados sempre que a descrição não os cita.
 
+## Versão 2.0
+
+- Cadastro pela placa (`src/plate.js`): página pública do placafipe.com.br (servidor → extensão) e Tabela FIPE gratuita (Parallelum). Variáveis opcionais: `PLATE_URL_TEMPLATE`, `FIPE_API_URL`.
+- Equipe e permissões (`src/team.js`), gestão e indicadores (`src/gestao.js`), agenda de republicação (`src/schedule.js`), folha A4 / QR / painel TV (`src/printables.js`, rotas `/imprimir/:id`, `/qr/:slug/:id.png`, `/tv/:slug`), importação (`src/importer.js`), fotos prontas (`src/photos.js`).
+- App instalável: `public/manifest.webmanifest` e `public/sw.js`.
+
 ## Outros canais (v1.7)
 
 - **Instagram**: carrossel com a arte, as imagens geradas e as fotos (até 10), publicado pela API da Meta no perfil ligado à Página. Exige ligar "Publicar no Instagram" em Configurações > App da Meta (caso de uso de Instagram no app) e conectar o Facebook de novo.

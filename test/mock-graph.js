@@ -48,6 +48,19 @@ function createMock() {
     res.json({ candidates: [{ content: { parts: [{ text: 'ok' }, { inlineData: { mimeType: 'image/png', data: png.toString('base64') } }] } }] });
   });
 
+  /* placafipe (página de resultado) e Tabela FIPE (Parallelum) */
+  app.get('/placafipe/placa/:p', (req, res) => {
+    if (req.params.p === 'BLQ1A23') return res.status(403).send('<html><title>Just a moment...</title></html>');
+    res.send(`<html><body><table class="fipeTablePriceDetail"><tr><td><b>Marca:</b></td><td>VW</td></tr><tr><td><b>Modelo:</b></td><td>FOX TRACK MB</td></tr>
+      <tr><td><b>Ano:</b></td><td>2015</td></tr><tr><td><b>Ano Modelo:</b></td><td>2016</td></tr><tr><td><b>Cor:</b></td><td>Prata</td></tr>
+      <tr><td><b>Combustível:</b></td><td>Alcool / Gasolina</td></tr><tr><td><b>UF:</b></td><td>PR</td></tr><tr><td><b>Município:</b></td><td>Assis Chateaubriand</td></tr></table>
+      <table><tr><th>Código FIPE</th><th>Modelo</th><th>Valor</th></tr><tr><td>005340-6</td><td>Fox Track 1.6 Flex 8V 5p</td><td>R$ 49.846,00</td></tr></table></body></html>`);
+  });
+  app.get('/fipe/carros/marcas', (req, res) => res.json([{ codigo: '59', nome: 'VW - VolksWagen' }]));
+  app.get('/fipe/carros/marcas/59/modelos', (req, res) => res.json({ modelos: [{ codigo: 5585, nome: 'Fox Track 1.6 Flex 8V 5p' }], anos: [] }));
+  app.get('/fipe/carros/marcas/59/modelos/5585/anos', (req, res) => res.json([{ codigo: '2016-1', nome: '2016 Gasolina' }]));
+  app.get('/fipe/carros/marcas/59/modelos/5585/anos/2016-1', (req, res) => res.json({ Valor: 'R$ 49.846,00', Marca: 'VW - VolksWagen', Modelo: 'Fox Track 1.6 Flex 8V 5p', AnoModelo: 2016, Combustivel: 'Gasolina', CodigoFipe: '005340-6', MesReferencia: 'outubro de 2026 ' }));
+
   /* Instagram direto (login do Instagram) */
   state.igCalls = [];
   app.post('/igapi/oauth/access_token', (req, res) => {

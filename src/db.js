@@ -208,6 +208,60 @@ db.exec(`CREATE TABLE IF NOT EXISTS listings (
 addColumn('vehicles', 'destaques', "TEXT NOT NULL DEFAULT '[]'");
 addColumn('vehicles', 'preco_oferta', 'INTEGER NOT NULL DEFAULT 0');
 addColumn('vehicles', 'oferta_desde', 'TEXT');
+// v2.0: proprietário/consignação, identificação, FIPE, compra/venda, localização, equipe e gestão.
+for (const [col, def] of [
+  ['proprietario_tipo', "TEXT NOT NULL DEFAULT 'proprio'"], ['proprietario_nome', "TEXT DEFAULT ''"], ['proprietario_doc', "TEXT DEFAULT ''"],
+  ['proprietario_tel', "TEXT DEFAULT ''"], ['proprietario_obs', "TEXT DEFAULT ''"], ['consig_repasse', 'INTEGER NOT NULL DEFAULT 0'],
+  ['consig_comissao_pct', 'REAL NOT NULL DEFAULT 0'], ['procuracao_validade', 'TEXT'], ['procuracao_file', "TEXT DEFAULT ''"],
+  ['procuracao_nome', "TEXT DEFAULT ''"], ['renavam', "TEXT DEFAULT ''"], ['chassi', "TEXT DEFAULT ''"], ['municipio_placa', "TEXT DEFAULT ''"],
+  ['fipe_codigo', "TEXT DEFAULT ''"], ['fipe_ref', "TEXT DEFAULT ''"],
+  ['compra_valor', 'INTEGER NOT NULL DEFAULT 0'], ['compra_data', 'TEXT'], ['compra_de', "TEXT DEFAULT ''"],
+  ['venda_valor', 'INTEGER NOT NULL DEFAULT 0'], ['venda_comprador', "TEXT DEFAULT ''"], ['venda_pagamento', "TEXT DEFAULT ''"],
+  ['venda_comissao', 'INTEGER NOT NULL DEFAULT 0'], ['venda_vendedor_id', 'INTEGER'],
+  ['local_status', "TEXT NOT NULL DEFAULT 'patio'"], ['local_parceiro_id', 'INTEGER'], ['local_desde', 'TEXT'], ['local_previsao', 'TEXT'],
+  ['local_obs', "TEXT DEFAULT ''"], ['created_by', 'INTEGER'],
+]) addColumn('vehicles', col, def);
+addColumn('users', 'permissions', "TEXT NOT NULL DEFAULT ''");
+addColumn('users', 'active', 'INTEGER NOT NULL DEFAULT 1');
+for (const [col, def] of [
+  ['parado_dias', 'INTEGER NOT NULL DEFAULT 25'], ['rep_schedule', "TEXT NOT NULL DEFAULT ''"], ['foto_opts', "TEXT NOT NULL DEFAULT ''"],
+  ['logo_file', "TEXT DEFAULT ''"], ['impostos_pct', 'REAL NOT NULL DEFAULT 0'], ['tv_key', "TEXT DEFAULT ''"],
+]) addColumn('stores', col, def);
+db.exec(`CREATE TABLE IF NOT EXISTS vehicle_costs (
+  id INTEGER PRIMARY KEY,
+  vehicle_id INTEGER NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
+  categoria TEXT NOT NULL DEFAULT 'outros',
+  descricao TEXT DEFAULT '',
+  valor INTEGER NOT NULL DEFAULT 0,
+  data TEXT,
+  parceiro_id INTEGER,
+  created_by INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS partners (
+  id INTEGER PRIMARY KEY,
+  store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+  nome TEXT NOT NULL,
+  tipo TEXT NOT NULL DEFAULT 'oficina',
+  contato TEXT DEFAULT '',
+  whatsapp TEXT DEFAULT '',
+  endereco TEXT DEFAULT '',
+  obs TEXT DEFAULT '',
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS vehicle_moves (
+  id INTEGER PRIMARY KEY,
+  vehicle_id INTEGER NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
+  status TEXT NOT NULL,
+  parceiro_id INTEGER,
+  obs TEXT DEFAULT '',
+  user_id INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS plate_cache (placa TEXT PRIMARY KEY, data_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')))`);
+db.exec(`CREATE TABLE IF NOT EXISTS rep_runs (store_id INTEGER NOT NULL, slot TEXT NOT NULL, PRIMARY KEY (store_id, slot))`);
+
 // Conexão direta com o Instagram (v1.9).
 db.exec(`CREATE TABLE IF NOT EXISTS ig_connections (
   store_id INTEGER PRIMARY KEY REFERENCES stores(id) ON DELETE CASCADE,

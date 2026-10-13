@@ -36,6 +36,9 @@
     return data;
   }
 
+  // Extensões do painel (v2.0): telas e ganchos definidos em app2.js.
+  const EXT = window.GiroExt = window.GiroExt || { views: {} };
+
   const manualMode = () => (S.me?.store?.pub_mode || 'manual') !== 'extensao';
 
   /* ---------------- Toast & modal ---------------- */
@@ -201,7 +204,7 @@
       const v = S.vehicles.find((x) => x.id === Number(name.slice(7)));
       if (v) { S.draft = draftFrom(v); S.pendingFiles = []; S.view = 'novo'; return render(); }
     }
-    S.view = ['estoque', 'novo', 'republicacao', 'campanhas', 'config'].includes(name) ? name : 'estoque';
+    S.view = ['estoque', 'novo', 'republicacao', 'campanhas', 'config', ...Object.keys(EXT.views)].includes(name) ? name : 'estoque';
     if (S.view === 'novo' && !S.draft) { S.draft = blankDraft(); S.pendingFiles = []; }
     if (query) history.replaceState(null, '', '#' + name);
     render();
@@ -226,6 +229,7 @@
     counts();
     const m = $('#main');
     try {
+      if (EXT.views[S.view]) { m.innerHTML = '<div class="loading">Carregando…</div>'; m.innerHTML = await EXT.views[S.view].html(); }
       if (S.view === 'estoque') m.innerHTML = viewEstoque();
       if (S.view === 'novo') m.innerHTML = viewVeiculo();
       if (S.view === 'republicacao') { await loadEvents(); m.innerHTML = viewRepublicacao(); }
@@ -243,6 +247,7 @@
     } catch (e) { m.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
     counts();
     bind();
+    try { EXT.views[S.view]?.bind?.(); EXT.after?.(S.view); } catch (e) { console.error(e); }
   }
 
   /* ---------------- Peças visuais ---------------- */
@@ -472,6 +477,7 @@
     ['marca', 'modelo', 'versao', 'ano_fab', 'ano_modelo', 'km', 'preco', 'fipe', 'placa', 'cambio', 'combustivel', 'carroceria', 'cor', 'cor_interna', 'descricao'].forEach((k) => { d[k] = $('#v-' + k).value; });
     d.organico = $('#v-organico').checked; d.catalogo = $('#v-catalogo').checked;
     d.preco_oferta = $('#v-preco_oferta').value;
+    EXT.readDraft?.(d);
     d.destaques = $$('[data-dest]').filter((c) => c.checked).map((c) => c.dataset.dest);
   }
   function destaquesHtml(d) {
@@ -1564,5 +1570,6 @@
     }
   }
 
+  Object.assign(EXT, { S, api, esc, brl, km, intl, when, modal, closeModal, toast, confirmBox, render, go, $, $$, copyText, loadVehicles, extSend, route, manualMode });
   boot();
 })();

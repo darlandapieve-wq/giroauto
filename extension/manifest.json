@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "GiroAuto — Marketplace assistido",
   "short_name": "GiroAuto",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Publica, exclui e republica com um clique os veículos do painel GiroAuto no Facebook Marketplace.",
   "permissions": [
     "storage",
@@ -12,7 +12,9 @@
   ],
   "host_permissions": [
     "https://www.facebook.com/*",
-    "https://web.facebook.com/*"
+    "https://web.facebook.com/*",
+    "https://placafipe.com.br/*",
+    "https://www.placafipe.com.br/*"
   ],
   "background": {
     "service_worker": "background.js"

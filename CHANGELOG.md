@@ -2,6 +2,32 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.0 — 13/10/2026
+
+**Cadastro pela placa, app no celular, vender mais e gestão da loja**
+
+Cadastro
+- **Buscar dados pela placa** (sem API paga): marca, modelo, versão, anos, cor, combustível, município e valor/código FIPE. O GiroAuto lê o placafipe.com.br pelo servidor; se o site bloquear, lê pelo navegador da loja (extensão v1.6); se não der, abre a **Tabela FIPE** gratuita (Marca → Modelo → Ano). Cada placa consultada fica guardada 60 dias.
+- **Proprietário e documentação**: próprio da loja, consignado, procuração para venda, parceria ou repasse; dados do dono, comissão, combinado, validade e **upload da procuração** (arquivo privado, só pelo painel); Renavam, chassi e município.
+- **Cadastro rápido no celular** e **app instalável** (tela inicial do celular), com câmera para as fotos.
+- **Fotos prontas** (opcionais): reduzir o tamanho, marca d'água com o logo da loja e **desfocar a placa** arrastando sobre a foto.
+- **Importar planilha** (Excel ou CSV) com prévia, reconhecimento de colunas e modelo para baixar.
+
+Vender mais
+- **Carro parado**: aviso a partir de 25 dias (ajustável), com diferença para a FIPE, **oferta sugerida com um clique** e republicação com o preço de ocasião.
+- **Republicação agendada**: dias, horários e quantidade por horário; a extensão republica sozinha, respeitando o limite diário.
+- **QR code** de cada carro, **folha A4** para o para-brisa (colorida ou preto e branco) e **painel para TV/monitor** da loja.
+
+Gestão
+- **Custos e margem** por carro: compra ou repasse, custos por categoria e parceiro, venda (valor, comprador, pagamento, comissão, vendedor) e lucro bruto e líquido, previsto e real.
+- **Localização dos carros**: no pátio, em manutenção, em loja parceira, com cliente; cadastro de **parceiros** (oficina, elétrica, funilaria, estética, lavador, loja parceira, despachante…) com **WhatsApp** e mensagem pronta para pedir o andamento.
+- **Resultados**: vendidos, faturamento, lucro bruto e líquido, margem, ticket médio, dias para vender, capital no estoque, idade do estoque, carros parados, em manutenção, consignados, custo de preparação e giro, com filtros por período, tipo e vendedor.
+- **Equipe**: vendedores com login próprio e permissões escolhidas pelo dono (cadastrar, preços, excluir, publicar, vender, campanhas, financeiro, resultados, parceiros, configurações). Quem não tem acesso ao financeiro não vê valores de compra e margem.
+
+Arquivos novos: `src/team.js`, `src/gestao.js`, `src/plate.js`, `src/photos.js`, `src/schedule.js`, `src/printables.js`, `src/importer.js`, `src/routes2.js`, `src/routes3.js`, `public/app2.js`, `public/manifest.webmanifest`, `public/sw.js`, `public/icon-192.png`, `public/icon-512.png`. Alterados: `src/server.js`, `src/db.js`, `src/auth.js`, `src/vehicles.js`, `src/storage.js`, `public/app.js`, `public/app.html`, `public/app.css`, `extension/manifest.json`, `extension/background.js`, `package.json`, `test/api.test.js`, `test/mock-graph.js`, `test/e2e-server.js`, `CHANGELOG.md`, `README.md`.
+
+**Extensão:** a v1.6 da extensão traz a consulta de placa pelo navegador. O painel avisa para atualizar.
+
 ## v1.10 — 13/10/2026
 
 - **Teto solar** entre os destaques do cadastro (entra na descrição, na legenda e no selo da arte).

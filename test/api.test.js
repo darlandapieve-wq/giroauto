@@ -559,3 +559,228 @@ test('v1.8: destaques, transparência e preço de oferta', async () => {
   assert.equal(r.body.oferta_ativa, false);
   assert.equal(r.body.preco_anuncio, 99900);
 });
+
+test('v2.0: placa, FIPE, proprietário, procuração e importação', async () => {
+  const mp = `http://127.0.0.1:${mockServer.address().port}`;
+  Object.assign(process.env, { PLATE_URL_TEMPLATE: `${mp}/placafipe/placa/{placa}`, FIPE_API_URL: `${mp}/fipe` });
+  let r = await api('GET', '/api/plate/abc-1d23');
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.encontrado, true);
+  assert.equal(r.body.marca, 'Volkswagen');
+  assert.equal(r.body.modelo, 'Fox');
+  assert.equal(r.body.versao, 'Track 1.6 Flex 8V 5p');
+  assert.equal(r.body.ano_fab, 2015); assert.equal(r.body.ano_modelo, 2016);
+  assert.equal(r.body.cor, 'Prata'); assert.equal(r.body.combustivel, 'Flex');
+  assert.equal(r.body.fipe, 49846); assert.equal(r.body.fipe_codigo, '005340-6');
+  r = await api('GET', '/api/plate/ABC1D23');
+  assert.equal(r.body.cache, true, 'segunda consulta vem do cache');
+  r = await api('GET', '/api/plate/BLQ1A23');
+  assert.equal(r.body.precisa_extensao, true, 'site bloqueado: painel tenta pela extensão');
+  assert.match(r.body.url, /BLQ1A23/);
+  r = await api('POST', '/api/plate/BLQ1A23/html', { html: '<table><tr><td>Marca:</td><td>GM</td></tr><tr><td>Modelo:</td><td>ONIX LT</td></tr><tr><td>Ano:</td><td>2020</td></tr></table>' });
+  assert.equal(r.body.marca, 'Chevrolet'); assert.equal(r.body.modelo, 'Onix');
+  r = await api('GET', '/api/plate/XX12');
+  assert.equal(r.status, 400);
+
+  // Tabela FIPE gratuita: marca -> modelo -> ano -> preço
+  r = await api('GET', '/api/fipe/carros/marcas');
+  assert.equal(r.body[0].codigo, '59');
+  r = await api('GET', '/api/fipe/carros/marcas/59/modelos/5585/anos/2016-1');
+  assert.equal(r.body.marca, 'Volkswagen'); assert.equal(r.body.versao, 'Track 1.6 Flex 8V 5p');
+  assert.equal(r.body.fipe, 49846); assert.equal(r.body.fipe_ref, 'outubro de 2026');
+
+  // Proprietário, consignação e procuração (documento privado)
+  r = await api('POST', '/api/vehicles', { marca: 'Volkswagen', modelo: 'Fox', ano_modelo: 2016, km: 98500, preco: 54900, fipe: 49846, placa: 'ABC1D23', fipe_codigo: '005340-6',
+    proprietario_tipo: 'procuracao', proprietario_nome: 'João da Silva', proprietario_tel: '(44) 98888-7777', procuracao_validade: '2027-01-31', consig_comissao_pct: '8,5' });
+  const id = r.body.id;
+  assert.equal(r.body.proprietario_tipo, 'procuracao');
+  assert.equal(r.body.consig_comissao_pct, 8.5);
+  assert.equal(r.body.fipe_diff_pct, 10.1);
+  const pdf = Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF');
+  const fd = new FormData(); fd.append('arquivo', new Blob([pdf], { type: 'application/pdf' }), 'proc.pdf');
+  r = await api('POST', `/api/vehicles/${id}/procuracao`, fd);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.tem_procuracao, true);
+  const docName = require('../src/db').get('SELECT procuracao_file f FROM vehicles WHERE id = ?', id).f;
+  assert.match(docName, /^doc-[a-f0-9]{32}\.pdf$/);
+  assert.equal((await fetch(`${base}/media/${docName}`)).status, 404, 'procuração não é pública');
+  const pr = await fetch(`${base}/api/vehicles/${id}/procuracao`, { headers: { cookie } });
+  assert.equal(pr.status, 200);
+  assert.equal(pr.headers.get('content-type'), 'application/pdf');
+
+  // Importação: modelo, prévia e gravação
+  const t = await fetch(`${base}/api/import/modelo.xlsx`, { headers: { cookie } });
+  assert.equal(t.status, 200);
+  const xlsx = Buffer.from(await t.arrayBuffer());
+  let up = new FormData(); up.append('planilha', new Blob([xlsx]), 'modelo.xlsx');
+  r = await api('POST', '/api/import/preview', up);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.linhas.length, 1);
+  assert.equal(r.body.linhas[0].preco, 54900);
+  assert.deepEqual(r.body.linhas[0].destaques, ['pericia_aprovada', 'teto_solar']);
+  const csv = 'Marca;Modelo;Ano;KM;Valor;Câmbio;Situação;Valor de compra;Data de compra\nFiat;Argo Drive 1.0;2021;45.000;R$ 72.900,00;manual;Consignado;65000;05/09/2026\nHonda;;2019;;;;;;\n';
+  up = new FormData(); up.append('planilha', new Blob([csv], { type: 'text/csv' }), 'estoque.csv');
+  r = await api('POST', '/api/import/preview', up);
+  assert.equal(r.body.linhas.length, 2);
+  const [argo, ruim] = r.body.linhas;
+  assert.equal(argo.preco, 72900); assert.equal(argo.km, 45000); assert.equal(argo.cambio, 'Manual');
+  assert.equal(argo.proprietario_tipo, 'consignado'); assert.equal(argo.compra_valor, 65000); assert.equal(argo.compra_data, '2026-09-05');
+  assert.equal(ruim.ok, false);
+  r = await api('POST', '/api/import/commit', { linhas: r.body.linhas });
+  assert.deepEqual(r.body, { importados: 1, pulados: 1 });
+  const imp = (await api('GET', '/api/vehicles')).body.find((v) => v.modelo.startsWith('Argo'));
+  assert.equal(imp.status, 'rascunho');
+  assert.equal(imp.compra_valor, 65000);
+  globalThis.__v2 = { id, argo: imp.id };
+});
+
+test('v2.0: equipe e permissões do vendedor', async () => {
+  let r = await api('POST', '/api/team', { name: 'Carlos Vendedor', email: 'carlos@x.com', senha: 'vende1234', permissions: ['cadastrar', 'vender', 'xyz'] });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  const carlos = r.body.users.find((u) => u.email === 'carlos@x.com');
+  assert.deepEqual(carlos.permissions.sort(), ['cadastrar', 'vender']);
+  const adminCookie = cookie;
+  cookie = '';
+  await api('POST', '/api/auth/login', { email: 'carlos@x.com', senha: 'vende1234' });
+  r = await api('GET', '/api/me');
+  assert.deepEqual(r.body.user.perms.sort(), ['cadastrar', 'vender']);
+  const v = (await api('GET', `/api/vehicles/${globalThis.__v2.id}`)).body;
+  assert.equal(v.compra_valor, undefined, 'sem permissão financeira não vê valores de compra');
+  assert.equal(v.financeiro, undefined);
+  r = await api('POST', `/api/vehicles/${v.id}/publish`); assert.equal(r.status, 403);
+  r = await api('DELETE', `/api/vehicles/${v.id}`); assert.equal(r.status, 403);
+  r = await api('GET', '/api/results'); assert.equal(r.status, 403);
+  r = await api('PUT', `/api/vehicles/${v.id}`, { ...v, preco: 50000 }); assert.equal(r.status, 403, 'não altera preço');
+  r = await api('PUT', `/api/vehicles/${v.id}`, { ...v, km: 99000 }); assert.equal(r.status, 200, 'mas edita os dados');
+  r = await api('GET', '/api/team'); assert.equal(r.status, 403, 'só o dono gerencia a equipe');
+  // Dono desativa o vendedor: a sessão cai.
+  const sellerCookie = cookie;
+  cookie = adminCookie;
+  r = await api('PUT', `/api/team/${carlos.id}`, { active: false });
+  assert.equal(r.body.users.find((u) => u.id === carlos.id).active, false);
+  cookie = sellerCookie;
+  r = await api('GET', '/api/me'); assert.equal(r.status, 401);
+  cookie = adminCookie;
+  await api('PUT', `/api/team/${carlos.id}`, { active: true });
+  globalThis.__carlos = carlos.id;
+});
+
+test('v2.0: gestão (custos, venda, parceiros, localização) e resultados', async () => {
+  const { id } = globalThis.__v2;
+  let r = await api('PUT', '/api/store/gestao', { parado_dias: 25, impostos_pct: '2' });
+  assert.equal(r.body.impostos_pct, 2);
+  // Carro próprio: compra 40.000 + custos 2.500, anunciado por 54.900
+  await api('PUT', `/api/vehicles/${id}`, { ...(await api('GET', `/api/vehicles/${id}`)).body, proprietario_tipo: 'proprio' });
+  r = await api('PUT', `/api/vehicles/${id}/finance`, { compra_valor: '40.000', compra_data: '2026-08-20', compra_de: 'João' });
+  assert.equal(r.status, 200);
+  r = await api('POST', '/api/partners', { nome: 'Oficina do Zé', tipo: 'oficina', contato: 'José', whatsapp: '(44) 99999-1111' });
+  const ze = r.body.partners[0];
+  assert.equal(ze.wa, '5544999991111');
+  await api('POST', `/api/vehicles/${id}/costs`, { categoria: 'mecanica', descricao: 'Troca de embreagem', valor: '1800', parceiro_id: ze.id });
+  await api('POST', `/api/vehicles/${id}/costs`, { categoria: 'estetica', descricao: 'Polimento', valor: 700 });
+  r = await api('GET', `/api/vehicles/${id}/finance`);
+  assert.equal(r.body.costs.length, 2);
+  assert.equal(r.body.finance.custos_total, 2500);
+  assert.equal(r.body.finance.previsto.bruto, 54900 - 40000 - 2500);
+  assert.equal(r.body.finance.previsto.liquido, 54900 - 40000 - 2500 - Math.round(54900 * 0.02));
+  // Localização: vai para a oficina; link de WhatsApp pronto para pedir o andamento.
+  r = await api('PUT', `/api/vehicles/${id}/location`, { status: 'manutencao', parceiro_id: ze.id, previsao: '2026-10-20', obs: 'Embreagem' });
+  assert.equal(r.body.local_label, 'Em manutenção');
+  assert.equal(r.body.local_parceiro.nome, 'Oficina do Zé');
+  assert.match(r.body.followup_url, /^https:\/\/wa\.me\/5544999991111\?text=.*andamento/);
+  assert.match(decodeURIComponent(r.body.followup_url), /ABC1D23/);
+  r = await api('GET', `/api/vehicles/${id}/moves`);
+  assert.equal(r.body[0].parceiro_nome, 'Oficina do Zé');
+  r = await api('GET', '/api/partners');
+  assert.equal(r.body.partners[0].carros, 1);
+  await api('PUT', `/api/vehicles/${id}/location`, { status: 'patio' });
+  // Carro parado e oferta com um clique
+  require('../src/db').run(`UPDATE vehicles SET created_at = datetime('now', '-30 days'), compra_data = NULL WHERE id = ?`, id);
+  r = await api('GET', `/api/vehicles/${id}`);
+  assert.equal(r.body.parado, true); assert.ok(r.body.dias_estoque >= 30);
+  r = await api('GET', `/api/vehicles/${id}/offer-suggestion`);
+  assert.ok(r.body.sugestao < 54900 && r.body.sugestao >= 49846, String(r.body.sugestao));
+  assert.match(String(r.body.sugestao), /900$/);
+  r = await api('POST', `/api/vehicles/${id}/offer`, { preco_oferta: r.body.sugestao });
+  assert.equal(r.body.oferta_ativa, true);
+  // Venda com dados e resultados do mês
+  r = await api('POST', `/api/vehicles/${id}/sold`, { venda_valor: '52.000', venda_comprador: 'Maria', venda_pagamento: 'Financiado', venda_comissao: 500, venda_vendedor_id: globalThis.__carlos });
+  assert.equal(r.status, 200);
+  r = await api('GET', `/api/vehicles/${id}/finance`);
+  assert.equal(r.body.finance.real.bruto, 52000 - 40000 - 2500);
+  assert.equal(r.body.finance.real.liquido, 52000 - 40000 - 2500 - 500 - 1040);
+  r = await api('GET', '/api/results');
+  assert.equal(r.status, 200);
+  assert.equal(r.body.kpis.vendidos >= 1, true);
+  const linha = r.body.vendidos.find((l) => l.id === id);
+  assert.equal(linha.liquido, 7960);
+  assert.equal(r.body.meses.length, 6);
+  r = await api('GET', `/api/results?vendedor=${globalThis.__carlos}`);
+  assert.deepEqual(r.body.vendidos.map((l) => l.id), [id]);
+  r = await api('GET', '/api/results?tipo=consignado');
+  assert.equal(r.body.vendidos.length, 0);
+});
+
+test('v2.0: agenda de republicação, QR, folha A4, painel TV e fotos prontas', async () => {
+  const sched = require('../src/schedule');
+  const db = require('../src/db');
+  const storeId = db.get('SELECT id FROM stores LIMIT 1').id;
+  let r = await api('PUT', '/api/store/schedule', { ativo: true, dias: [0, 1, 2, 3, 4, 5, 6], horarios: ['10:00', '25:99'], por_vez: 2 });
+  assert.deepEqual(r.body.horarios, ['10:00']);
+  await api('PUT', '/api/store/pub-mode', { mode: 'extensao' });
+  // Dois carros publicados há 10 dias
+  const ids = [];
+  for (const m of ['Gol', 'Uno']) {
+    const v = await api('POST', '/api/vehicles', { marca: 'X', modelo: m, ano_modelo: 2015, km: 1, preco: 30000 });
+    db.run(`UPDATE vehicles SET status='publicado', publicado_em=datetime('now','-10 days') WHERE id=?`, v.body.id);
+    ids.push(v.body.id);
+  }
+  const at = new Date(); at.setUTCHours(13, 5, 0, 0); // 10:05 em Brasília
+  const n1 = sched.tick(storeId, at);
+  assert.equal(n1, 2);
+  assert.equal(sched.tick(storeId, at), 0, 'o mesmo horário não roda duas vezes');
+  const jobs = db.all(`SELECT * FROM ext_jobs WHERE type='republicar' AND note LIKE 'Agendada%'`);
+  assert.ok(ids.every((id) => jobs.some((j) => j.vehicle_id === id)));
+  const cedo = new Date(at); cedo.setUTCHours(12, 0, 0, 0);
+  db.run('DELETE FROM rep_runs');
+  assert.equal(sched.tick(storeId, cedo), 0, 'antes do horário não faz nada');
+  await api('PUT', '/api/store/schedule', { ativo: false });
+
+  const v = (await api('GET', '/api/vehicles')).body.find((x) => x.status !== 'vendido' && x.photos.length);
+  const slug = db.get('SELECT slug FROM stores WHERE id = ?', storeId).slug;
+  let q = await fetch(`${base}/qr/${slug}/${v.id}.png`);
+  assert.equal(q.status, 200); assert.equal(q.headers.get('content-type'), 'image/png');
+  q = await fetch(`${base}/imprimir/${v.id}?modo=pb`, { headers: { cookie } });
+  const html = await q.text();
+  assert.equal(q.status, 200);
+  assert.match(html, /size:A4/); assert.match(html, /data:image\/png;base64/);
+  assert.equal((await fetch(`${base}/imprimir/${v.id}`)).status, 401, 'folha só pelo painel');
+  q = await fetch(`${base}/tv/${slug}`); assert.equal(q.status, 200);
+  q = await (await fetch(`${base}/tv/${slug}/dados`)).json();
+  assert.ok(q.veiculos.length >= 1); assert.match(q.veiculos[0].qr, /^data:image\/png/);
+
+  // Fotos prontas: reduzir tamanho + marca d'água com o logo
+  const { createCanvas } = require('@napi-rs/canvas');
+  const big = createCanvas(3000, 2000); big.getContext('2d').fillStyle = '#346'; big.getContext('2d').fillRect(0, 0, 3000, 2000);
+  const logo = createCanvas(400, 200); logo.getContext('2d').fillStyle = '#f00'; logo.getContext('2d').fillRect(0, 0, 400, 200);
+  let fd = new FormData(); fd.append('logo', new Blob([await logo.encode('png')], { type: 'image/png' }), 'logo.png');
+  r = await api('POST', '/api/store/logo', fd);
+  assert.match(r.body.logo_url, /\/media\/[a-f0-9]{32}\.png$/);
+  await api('PUT', '/api/store/photos', { reduzir: true, max_lado: 1600, marca_dagua: true, posicao: 'inferior_direita', opacidade: 100, tamanho: 20 });
+  fd = new FormData(); fd.append('fotos', new Blob([await big.encode('png')], { type: 'image/png' }), 'grande.png');
+  r = await api('POST', `/api/vehicles/${v.id}/photos`, fd);
+  const nova = r.body.photos[r.body.photos.length - 1];
+  assert.match(nova.filename, /\.jpg$/, 'convertida para JPEG');
+  const { loadImage } = require('@napi-rs/canvas');
+  const img = await loadImage(Buffer.from(await (await fetch(`${base}/media/${nova.filename}`)).arrayBuffer()));
+  assert.equal(img.width, 1600);
+  const px = createCanvas(img.width, img.height); const cx = px.getContext('2d'); cx.drawImage(img, 0, 0);
+  const [rr, gg] = cx.getImageData(1500, 1000, 1, 1).data;
+  assert.ok(rr > 200 && gg < 60, `logo no canto: ${rr},${gg}`);
+  await api('PUT', '/api/store/photos', { reduzir: false, marca_dagua: false });
+  // Foto editada (desfoque) substitui a original na mesma posição
+  fd = new FormData(); fd.append('foto', new Blob([JPG], { type: 'image/jpeg' }), 'editada.jpg');
+  r = await api('PUT', `/api/vehicles/${v.id}/photos/${nova.id}/file`, fd);
+  assert.equal(r.status, 200);
+  assert.notEqual(r.body.photos.find((p) => p.id === nova.id).filename, nova.filename);
+});
