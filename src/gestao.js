@@ -284,11 +284,21 @@ function addExpense(storeId, body) {
   for (let i = 0; i < meses; i++) {
     const d = new Date(`${d0}T12:00:00Z`);
     d.setUTCMonth(d.getUTCMonth() + i);
-    run('INSERT INTO store_expenses (store_id, data, categoria, descricao, valor, vendedor_id, vehicle_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      storeId, d.toISOString().slice(0, 10), cat, str(body.descricao, 200), valor, vend, veic);
+    // Conta a pagar (pago=false): a data é o vencimento. Em repetição, só a primeira pode já estar paga.
+    const pago = body.pago === false || body.pago === '0' ? 0 : (i === 0 ? 1 : (body.repetir_pago ? 1 : 0));
+    run('INSERT INTO store_expenses (store_id, data, categoria, descricao, valor, vendedor_id, vehicle_id, pago, pago_em) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      storeId, d.toISOString().slice(0, 10), cat, str(body.descricao, 200), valor, vend, veic, pago, pago ? d.toISOString().slice(0, 10) : null);
   }
 }
 function deleteExpense(storeId, id) { run('DELETE FROM store_expenses WHERE id = ? AND store_id = ?', Number(id), storeId); }
+function payExpense(storeId, id, pago = true) {
+  run(`UPDATE store_expenses SET pago = ?, pago_em = CASE WHEN ? = 1 THEN date('now') ELSE NULL END WHERE id = ? AND store_id = ?`, pago ? 1 : 0, pago ? 1 : 0, Number(id), storeId);
+}
+// Contas em aberto: vencidas e a vencer nos próximos dias.
+function contasAbertas(storeId, dias = 15) {
+  return all(`SELECT * FROM store_expenses WHERE store_id = ? AND pago = 0 AND data <= date('now', '+${Number(dias)} days') ORDER BY data`, storeId)
+    .map((e) => ({ ...e, categoria_label: EXP_CATS[e.categoria] || e.categoria, vencida: e.data < new Date().toISOString().slice(0, 10) }));
+}
 
 /* ---------------- Indicadores ---------------- */
 
@@ -465,5 +475,5 @@ function resultsCsv(storeId, q) {
 module.exports = {
   TERCEIROS, COST_CATS, PARTNER_TYPES, LOCAL, DOC_STATUS, DOC_DONE, PAGAMENTOS, EXP_CATS,
   costsOf, finance, saveFinance, saleFields, addCost, updateCost, deleteCost, partners, savePartner, setLocation, moves, followUpLink,
-  setDocStatus, docMoves, docList, expenses, addExpense, deleteExpense, results, resultsCsv, daysBetween, waNumber,
+  setDocStatus, docMoves, docList, expenses, addExpense, deleteExpense, payExpense, contasAbertas, results, resultsCsv, daysBetween, waNumber,
 };

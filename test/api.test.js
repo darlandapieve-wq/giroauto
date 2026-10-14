@@ -876,6 +876,79 @@ test('v2.2: margem da loja, edição de custos, comunicação de venda, comissã
   D.run("DELETE FROM plate_cache WHERE placa = 'ART9H77'");
 });
 
+test('v2.4: contatos, histórico, mensagens em massa, contas a pagar e painel', async () => {
+  process.env.WA_DELAY_MS = '0';
+  // Contatos vêm sozinhos dos cadastros: consignatário, comprador e parceiro.
+  let r = await api('POST', '/api/vehicles', { marca: 'Fiat', modelo: 'Toro', ano_modelo: 2021, preco: 120000, placa: 'TOR1A21', proprietario_tipo: 'consignado', proprietario_nome: 'Paulo Lima', proprietario_tel: '(44) 98888-1234', margem_tipo: 'pct', consig_comissao_pct: '5' });
+  const toro = r.body.id;
+  await api('POST', `/api/vehicles/${toro}/sold`, { venda_valor: 118000, venda_comprador: 'Joana Reis', comprador_tel: '44 97777-4321', doc_status: 'pendente' });
+  r = await api('GET', '/api/contacts');
+  assert.equal(r.status, 200);
+  const paulo = r.body.contatos.find((c) => c.telefone === '44988881234');
+  const joana = r.body.contatos.find((c) => c.telefone === '44977774321');
+  assert.ok(paulo.papeis.includes('consignatario')); assert.ok(joana.papeis.includes('comprador')); assert.equal(joana.compras, 1);
+  assert.ok(r.body.contatos.some((c) => c.papeis.includes('fornecedor')), 'parceiros entram como fornecedores');
+  // O mesmo contato pode ter vários papéis ao longo do tempo: Paulo agora compra um carro.
+  r = await api('POST', '/api/vehicles', { marca: 'Jeep', modelo: 'Renegade', ano_modelo: 2022, preco: 110000 });
+  await api('POST', `/api/vehicles/${r.body.id}/sold`, { venda_valor: 108000, venda_comprador: 'Paulo Lima', comprador_tel: '5544988881234' });
+  r = await api('GET', `/api/contacts/${paulo.id}`);
+  assert.deepEqual(r.body.contato.papeis.sort(), ['comprador', 'consignatario']);
+  assert.ok(r.body.historico.some((e) => /Deixou o .*Toro.*consignação/.test(e.texto)));
+  assert.ok(r.body.historico.some((e) => /Comprou o .*Renegade/.test(e.texto)));
+  r = await api('POST', `/api/contacts/${paulo.id}/notes`, { tipo: 'ligacao', texto: 'Quer trocar por uma picape em 2027' });
+  assert.equal(r.status, 201);
+  r = await api('GET', `/api/contacts/${paulo.id}`);
+  assert.equal(r.body.historico[0].tipo, 'ligacao');
+  // Contato manual, duplicado e opt-out.
+  r = await api('POST', '/api/contacts', { nome: 'Lead da feira', telefone: '44 96666-5555', papeis: ['lead'] });
+  assert.equal(r.status, 201); const lead = r.body.id;
+  r = await api('POST', '/api/contacts', { nome: 'Outro', telefone: '(44) 96666-5555' });
+  assert.equal(r.status, 409);
+  r = await api('POST', '/api/contacts', { nome: 'Sem zap', telefone: '44 95555-0000', papeis: ['cliente'] });
+  const semZap = r.body.id;
+  r = await api('POST', '/api/contacts', { nome: 'Não quer', telefone: '44 94444-3333', opt_out: true });
+  const optout = r.body.id;
+  // Envio assistido: links prontos e marcação manual.
+  r = await api('POST', '/api/wa/campaigns', { nome: 'Feirão', mensagem: 'Oi {nome}! Sábado tem feirão na {loja}.', contatos: [paulo.id, lead, optout] });
+  assert.equal(r.status, 201);
+  let w = (await api('GET', `/api/wa/campaigns/${r.body.id}`)).body;
+  assert.equal(w.envios.length, 2, 'quem pediu para não receber fica de fora');
+  assert.match(w.envios[0].texto, /^Oi Paulo! Sábado tem feirão na /);
+  assert.match(w.envios[0].link, /^https:\/\/web\.whatsapp\.com\/send\?phone=5544988881234&text=/);
+  w = (await api('PUT', `/api/wa/campaigns/${w.id}/sends/${w.envios[0].id}`, { status: 'enviado' })).body;
+  assert.equal(w.enviados, 1); assert.equal(w.status, 'aberta');
+  // Envio automático pela API oficial (sem configuração é recusado).
+  r = await api('POST', '/api/wa/campaigns', { nome: 'Pós-venda', mensagem: 'Oi {nome}', modo: 'api', contatos: [lead] });
+  assert.equal(r.status, 400);
+  r = await api('PUT', '/api/wa/config', { token: 'EAAGtoken', phone_id: '1234567890', template: 'Campanha_Loja', lang: 'pt_BR', params: 2 });
+  assert.equal(r.body.configurado, true); assert.equal(r.body.template, 'campanha_loja');
+  mock.state.waCalls = [];
+  r = await api('POST', '/api/wa/campaigns', { nome: 'Pós-venda', mensagem: 'Como está o carro?\nConte com a gente.', modo: 'api', contatos: [lead, semZap] });
+  for (let i = 0; i < 40 && (await api('GET', `/api/wa/campaigns/${r.body.id}`)).body.status !== 'concluida'; i++) await new Promise((ok) => setTimeout(ok, 50));
+  w = (await api('GET', `/api/wa/campaigns/${r.body.id}`)).body;
+  assert.equal(w.status, 'concluida'); assert.equal(w.enviados, 1); assert.equal(w.falhas, 1);
+  assert.match(w.envios.find((e) => e.status === 'falha').erro, /sem WhatsApp/);
+  const call = mock.state.waCalls[0];
+  assert.equal(call.phone, '1234567890'); assert.equal(call.auth, 'Bearer EAAGtoken');
+  assert.equal(call.body.template.name, 'campanha_loja');
+  assert.deepEqual(call.body.template.components[0].parameters.map((p) => p.text), ['Lead', 'Como está o carro? · Conte com a gente.']);
+  r = await api('GET', `/api/contacts/${lead}`);
+  assert.ok(r.body.historico.some((e) => e.tipo === 'campanha'));
+  // Contas a pagar: lançada em aberto, aparece no painel e pode ser paga.
+  const venc = new Date(Date.now() - 2 * 864e5).toISOString().slice(0, 10);
+  await api('POST', '/api/expenses', { data: venc, categoria: 'energia', descricao: 'Copel', valor: 640, pago: false });
+  r = await api('GET', '/api/painel');
+  assert.equal(r.status, 200);
+  const conta = r.body.financeiro.contas.find((c) => c.descricao === 'Copel');
+  assert.equal(conta.vencida, true);
+  assert.ok(r.body.alertas.some((a) => /vencida/.test(a.texto)));
+  assert.ok(r.body.estoque.locais.length >= 1 && 'parados' in r.body.estoque && r.body.docs.pendentes >= 1);
+  await api('PUT', `/api/expenses/${conta.id}/pago`, {});
+  r = await api('GET', '/api/painel?periodo=30');
+  assert.ok(!r.body.financeiro.contas.some((c) => c.descricao === 'Copel'));
+  assert.equal(r.body.periodo.p, '30');
+});
+
 test('v2.0: agenda de republicação, QR, folha A4, painel TV e fotos prontas', async () => {
   const sched = require('../src/schedule');
   const db = require('../src/db');

@@ -2,6 +2,20 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.4 — 13/10/2026
+
+**Painel do administrador, Contatos com histórico e mensagens em massa, contas a pagar**
+
+- **Painel** (primeiro item do menu, para quem tem acesso a resultados): tudo da loja em uma tela, com caixas compactas, filtro de período, atualização automática a cada minuto e **tela cheia** para projetar. Mostra vendas, faturamento, lucro, resultado, dias para vender, estoque, capital investido, carros parados (com botão de oferta), onde estão os carros (pátio, oficina, parceiro, com atraso e WhatsApp do parceiro), documentação pendente, republicação, campanhas pagas, contas a pagar, pós-venda do dia e uma lista **Onde atuar agora** em ordem de prioridade. Tudo é clicável.
+- **Gestão > Contatos**: junta automaticamente parceiros/fornecedores, consignatários, proprietários e compradores, mais os contatos cadastrados à mão. Um mesmo contato acumula papéis (ex.: foi consignatário e depois comprou). Filtros por papel, busca, pós-venda (30 dias), clientes para resgatar (compraram há 6+ meses), sem contato há 90+ dias e quem não quer receber. Cada contato tem **histórico** (carros que deixou, comprou, serviços, ligações e mensagens) e botão de WhatsApp.
+- **Mensagens em massa** para os contatos selecionados, com modelos prontos (feirão, resgate de cliente, pós-venda, novidade no estoque, dica, consignatário) e personalização com {nome} e {loja}:
+  - **Assistido** (gratuito): abre cada conversa no WhatsApp com a mensagem pronta; você só aperta Enviar e o próximo já fica pronto.
+  - **Automático** pela **API oficial do WhatsApp** (Configurações > WhatsApp automático): envia sozinho para todos, com modelo aprovado pela Meta (cobrança da Meta por conversa).
+  - Tudo fica registrado no histórico de cada contato; quem pede para não receber fica de fora.
+- **Contas a pagar**: em Despesas da loja, desmarque "Já está pago" para lançar com vencimento; aparecem no Painel (vencidas em vermelho) e têm botão "Marcar pago".
+- **Venda**: a pergunta do documento de transferência agora tem todas as etapas, iguais às de Gestão > Documentação.
+- **Estoque**: a etiqueta "Consignado" (e parceria/outro) abre o WhatsApp do proprietário quando o telefone está cadastrado.
+
 ## v2.3 — 13/10/2026
 
 - **Estoque**: a etiqueta "Em manutenção: Oficina do Zé" (ou outro local) virou link: abre o WhatsApp do parceiro com a mensagem pronta pedindo o andamento. Ao lado, há quantos dias o carro está lá (em vermelho se passou da previsão).

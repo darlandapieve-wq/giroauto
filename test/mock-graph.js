@@ -99,6 +99,13 @@ function createMock() {
   });
   app.get('/:v/:act/reachestimate', (req, res) => res.json({ data: { users_lower_bound: 38000, users_upper_bound: 44700, estimate_ready: true } }));
   app.post('/:v/:act/adimages', (req, res) => res.json({ images: { bytes: { hash: 'hash_' + id(), url: 'https://x' } } }));
+  // WhatsApp Cloud API (mensagens com template).
+  state.waCalls = [];
+  app.post('/:v/:phone/messages', express.json(), (req, res) => {
+    state.waCalls.push({ phone: req.params.phone, auth: req.headers.authorization, body: req.body });
+    if (String(req.body?.to || '').endsWith('0000')) return res.status(400).json({ error: { message: 'Recipient not on WhatsApp', error_data: { details: 'Número sem WhatsApp' } } });
+    res.json({ messages: [{ id: 'wamid.' + id() }] });
+  });
   app.post('/:v/:node/:edge', (req, res) => res.json({ id: id() }));
   app.post('/:v/:node', (req, res) => res.json({ success: true }));
   app.get('/:v/:node/insights', (req, res) => res.json({ data: [{ impressions: '1200', reach: '900', clicks: '45', spend: '31.50', actions: [{ action_type: 'onsite_conversion.messaging_conversation_started_7d', value: '7' }] }] }));

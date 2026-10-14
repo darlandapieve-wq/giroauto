@@ -300,6 +300,55 @@ db.exec(`CREATE TABLE IF NOT EXISTS doc_moves (
 
 addColumn('store_expenses', 'vendedor_id', 'INTEGER');
 addColumn('store_expenses', 'vehicle_id', 'INTEGER');
+// v2.4: contas a pagar (despesa em aberto com vencimento), contatos, histórico e mensagens em massa.
+addColumn('store_expenses', 'pago', 'INTEGER NOT NULL DEFAULT 1');
+addColumn('store_expenses', 'pago_em', 'TEXT');
+addColumn('stores', 'wa_cloud', "TEXT NOT NULL DEFAULT '{}'");
+db.exec(`CREATE TABLE IF NOT EXISTS contacts (
+  id INTEGER PRIMARY KEY,
+  store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+  nome TEXT DEFAULT '',
+  telefone TEXT NOT NULL,
+  email TEXT DEFAULT '',
+  cidade TEXT DEFAULT '',
+  papeis TEXT NOT NULL DEFAULT '[]',
+  origem TEXT DEFAULT '',
+  obs TEXT DEFAULT '',
+  opt_out INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (store_id, telefone)
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS contact_notes (
+  id INTEGER PRIMARY KEY,
+  contact_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+  tipo TEXT NOT NULL DEFAULT 'nota',
+  texto TEXT NOT NULL,
+  user_id INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS wa_campaigns (
+  id INTEGER PRIMARY KEY,
+  store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+  nome TEXT NOT NULL,
+  mensagem TEXT NOT NULL,
+  modo TEXT NOT NULL DEFAULT 'assistido',
+  status TEXT NOT NULL DEFAULT 'aberta',
+  total INTEGER NOT NULL DEFAULT 0,
+  enviados INTEGER NOT NULL DEFAULT 0,
+  falhas INTEGER NOT NULL DEFAULT 0,
+  created_by INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS wa_sends (
+  id INTEGER PRIMARY KEY,
+  campaign_id INTEGER NOT NULL REFERENCES wa_campaigns(id) ON DELETE CASCADE,
+  contact_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+  texto TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pendente',
+  erro TEXT DEFAULT '',
+  sent_at TEXT
+)`);
 // Conexão direta com o Instagram (v1.9).
 db.exec(`CREATE TABLE IF NOT EXISTS ig_connections (
   store_id INTEGER PRIMARY KEY REFERENCES stores(id) ON DELETE CASCADE,
