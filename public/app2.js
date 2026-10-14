@@ -154,7 +154,7 @@
     const tipo = d.proprietario_tipo || 'proprio';
     const doc = d.doc_tipo || 'loja';
     const radios = (name, list, val) => `<div class="owners">${list.map((p) => `<label class="check"><input type="radio" name="${name}" value="${p.key}" ${p.key === val ? 'checked' : ''}><div><b>${esc(p.label.split(' (')[0])}</b>${p.label.includes('(') ? `<span>${esc(p.label.split('(')[1].replace(')', ''))}</span>` : ''}</div></label>`).join('')}</div>`;
-    return `<div class="panel" id="ownerPanel" style="margin-top:16px">
+    return `<div class="panel" id="ownerPanel">
       <h2>Proprietário e documentação</h2>
       <h3 class="dest-h">Proprietário</h3>
       ${radios('v-ptipo', P, tipo)}
@@ -221,7 +221,8 @@
     }
     // Proprietário e identificação
     if (!$('#ownerPanel') && dados) {
-      dados.insertAdjacentHTML('beforeend', ownerPanelHtml(d));
+      // v2.6: proprietário na coluna esquerda, logo abaixo dos dados (antes dos destaques).
+      ($('#vfDados') || dados).insertAdjacentHTML('afterend', ownerPanelHtml(d));
       $$('input[name="v-ptipo"]').forEach((r) => { r.onchange = () => { $('#ownerExtra').hidden = r.value === 'proprio'; $('#consigBox').hidden = !TERC.includes(r.value); gestaoSync(); }; });
       if ($('#v-margem_tipo')) $('#v-margem_tipo').onchange = () => { $('#v-margem_valor').placeholder = $('#v-margem_tipo').value === 'valor' ? 'ex.: 3000' : 'ex.: 8'; gestaoSync(); };
       $$('input[name="v-dtipo"]').forEach((r) => { r.onchange = () => { $('#procBox').hidden = r.value !== 'procuracao'; $('#procUpload').hidden = r.value !== 'procuracao'; }; });
@@ -229,7 +230,8 @@
     }
     // Gestão do veículo: compra, origem, manutenções feitas e custos previstos, com o lucro previsto na hora.
     if (can('financeiro') && $('#ownerPanel') && !$('#gestaoPanel')) {
-      $('#ownerPanel').insertAdjacentHTML('afterend', '<div class="panel" id="gestaoPanel" style="margin-top:16px"><div class="loading">Carregando…</div></div>');
+      // Gestão do veículo na coluna direita, logo abaixo das fotos.
+      ($('#vfFotos') || $('#ownerPanel')).insertAdjacentHTML('afterend', '<div class="panel" id="gestaoPanel"><div class="loading">Carregando…</div></div>');
       gestaoPanel(d);
     }
     // Câmera no celular e ferramenta de desfoque
@@ -241,8 +243,9 @@
     decoratePhotos(d);
     // Venda já feita: atalho para editar os dados da venda.
     if (d.id && d.status === 'vendido' && can('vender') && !$('#salePanel') && dados) {
-      const anchor = $('#gestaoPanel') || $('#ownerPanel') || dados;
-      anchor.insertAdjacentHTML('afterend', '<div class="panel" id="salePanel" style="margin-top:16px"><div class="loading">Carregando…</div></div>');
+      // Venda ocupa a largura toda, abaixo das duas colunas.
+      const anchor = $('.vform') || $('#gestaoPanel') || dados;
+      anchor.insertAdjacentHTML('afterend', '<div class="panel" id="salePanel" style="margin-top:12px"><div class="loading">Carregando…</div></div>');
       salePanel(d);
     }
   }
@@ -689,7 +692,8 @@
     const data = edit ? String(v.vendido_em || '').slice(0, 10) : today();
     const fin = can('financeiro');
     // Carros que podem ser a troca: os do estoque (não vendidos), exceto o próprio.
-    const trocas = S.vehicles.filter((x) => x.id !== v.id && (x.status !== 'vendido' || x.id === v.venda_troca_id));
+    const recente = (x) => x.vendido_em && Date.now() - Date.parse(String(x.vendido_em).replace(' ', 'T') + 'Z') <= 30 * 864e5;
+    const trocas = S.vehicles.filter((x) => x.id !== v.id && (x.status !== 'vendido' || recente(x) || x.id === v.venda_troca_id));
     const on = (k) => (edit ? !!v[k] : false);
     const avistaOn = edit ? !!v.venda_entrada : true;
     const formaAv = /Dinheiro|Cart|PIX/.test(v.venda_pagamento || '') ? (v.venda_pagamento.match(/Dinheiro|Cartão|PIX/) || ['PIX'])[0] : 'PIX';
@@ -704,7 +708,7 @@
         <div class="payrow"><label class="check"><input type="checkbox" id="s-p-av" ${avistaOn ? 'checked' : ''}><div><b>À vista</b><span>PIX, dinheiro, cartão</span></div></label>
           <div class="fields pay-f" data-pf="av"><div class="f"><label for="s-en">Valor (R$)</label><input id="s-en" inputmode="numeric" value="${edit ? val('venda_entrada') : ''}"></div><div class="f"><label for="s-pg">Forma</label><select id="s-pg">${['PIX', 'Dinheiro', 'Cartão'].map((x) => `<option ${x === formaAv ? 'selected' : ''}>${x}</option>`).join('')}</select></div></div></div>
         <div class="payrow"><label class="check"><input type="checkbox" id="s-p-tr" ${on('venda_troca_valor') || on('venda_troca_id') ? 'checked' : ''}><div><b>Carro na troca</b><span>entra no estoque como compra</span></div></label>
-          <div class="fields pay-f" data-pf="tr"><div class="f w3"><label for="s-tid">Qual carro</label><select id="s-tid"><option value="">Cadastrar agora…</option>${trocas.map((x) => `<option value="${x.id}" ${x.id === v.venda_troca_id ? 'selected' : ''}>${esc(x.marca)} ${esc(x.modelo)} ${esc(x.ano_modelo || '')} ${esc(x.placa || '')}</option>`).join('')}</select></div>
+          <div class="fields pay-f" data-pf="tr"><div class="f w3"><label for="s-tid">Qual carro</label><select id="s-tid"><option value="">Cadastrar agora…</option>${trocas.map((x) => `<option value="${x.id}" ${x.id === v.venda_troca_id ? 'selected' : ''}>${esc(x.marca)} ${esc(x.modelo)} ${esc(x.ano_modelo || '')} ${esc(x.placa || '')}${x.status === 'vendido' ? ' (vendido)' : ''}</option>`).join('')}</select></div>
             <div class="f"><label for="s-tv">Valor dado na troca (R$)</label><input id="s-tv" inputmode="numeric" value="${edit ? val('venda_troca_valor') : ''}"></div>
             <div class="f w6 s-tnew"><div class="fields"><div class="f"><label for="s-tm">Marca</label><input id="s-tm" placeholder="Ford"></div><div class="f"><label for="s-to">Modelo</label><input id="s-to" placeholder="Ecosport"></div><div class="f"><label for="s-ta">Ano</label><input id="s-ta" inputmode="numeric" maxlength="4"></div><div class="f"><label for="s-tp">Placa</label><input id="s-tp" maxlength="8" style="text-transform:uppercase"></div></div></div></div></div>
         <div class="payrow"><label class="check"><input type="checkbox" id="s-p-fi" ${on('venda_financiado') || /Financ/.test(v.venda_pagamento || '') ? 'checked' : ''}><div><b>Financiamento</b><span>banco, parcelas e retorno</span></div></label>
@@ -1748,7 +1752,8 @@
 
   X.after = (view) => {
     navSetup();
-    $$('.nav button').forEach((b) => { if (b.dataset.view === view) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+    const atual = view === 'novo' || view === 'importar' || view === 'rapido' ? 'estoque' : view;
+    $$('.nav button').forEach((b) => { if (b.dataset.view === atual) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
     if (view === 'novo') enhanceForm();
     if (view === 'estoque') enhanceStock();
     if (view === 'config') enhanceConfig();

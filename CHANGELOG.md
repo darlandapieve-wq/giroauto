@@ -2,6 +2,13 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.6 — 14/10/2026
+
+- **Carro na troca**: a lista da venda agora inclui também os carros vendidos nos últimos 30 dias (marcados como "vendido"). Vendidos há mais de 30 dias ficam de fora.
+- **Visual mais compacto** em todas as telas: menu lateral mais estreito com botões menores, títulos, caixas, campos, botões, tabelas, indicadores e janelas com menos espaço sobrando, sem perder a leitura.
+- **Menu lateral**: o item "Novo veículo" saiu do menu; o botão continua dentro de Estoque (e o Estoque fica marcado ao cadastrar ou editar um carro).
+- **Editar veículo reorganizado em duas colunas** que usam toda a largura: à esquerda Dados do veículo, Proprietário e documentação e Destaques; à direita Fotos (com Onde anunciar na mesma caixa), Gestão do veículo e Imagem para divulgação (menor). A venda (carros vendidos) fica embaixo, na largura toda. Os botões Salvar ficam sempre visíveis no rodapé. No celular, os campos curtos ficam dois por linha.
+
 ## v2.5 — 14/10/2026
 
 **Venda com troca sem lucro duplicado, pagamento combinado (à vista + troca + financiamento + boleto) e logo da loja**

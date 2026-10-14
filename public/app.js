@@ -426,8 +426,9 @@
     const inp = (k, label, ph, extra = '', cls = '') => `<div class="f ${cls}"><label for="v-${k}">${label}</label><input id="v-${k}" value="${esc(d[k])}" placeholder="${ph}" ${extra}></div>`;
     return `
     <div class="head"><div><h1>${d.id ? 'Editar veículo' : 'Novo veículo'}</h1><p>Os campos seguem o formulário de veículos do Marketplace, para a extensão preencher tudo sem ajustes.</p></div></div>
-    <div class="grid2">
-      <div class="panel">
+    <div class="vform">
+     <div class="vcol" id="vcolL">
+      <div class="panel" id="vfDados">
         <h2>Dados do veículo</h2>
         <div class="fields">
           ${inp('marca', 'Marca', 'Chevrolet')}${inp('modelo', 'Modelo', 'Onix')}${inp('versao', 'Versão', 'LT 1.0 Turbo')}
@@ -444,24 +445,22 @@
           <div class="f w6"><label for="v-descricao">Descrição do anúncio</label><textarea id="v-descricao" placeholder="Opcionais, revisões, estado de conservação, condições de pagamento">${esc(d.descricao)}</textarea>
             <div><button class="btn sm" id="gerarDesc" type="button">Gerar descrição a partir dos dados</button></div></div>
         </div>
-        ${destaquesHtml(d)}
       </div>
-      <div class="stack">
-        <div class="panel">
-          <h2>Fotos</h2>
-          <p class="lead">Até 20 fotos em JPG, PNG ou WEBP. A primeira é a capa do anúncio.</p>
-          <label class="drop" id="drop" for="v-fotos"><b>Arraste as fotos aqui</b><br>ou toque para escolher no aparelho<input id="v-fotos" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden></label>
+      ${destaquesHtml(d)}
+     </div>
+     <div class="vcol" id="vcolR">
+        <div class="panel" id="vfFotos">
+          <h2>Fotos <span class="sub" style="font-family:var(--f-body);font-size:12.5px;font-weight:400">até 20 · a primeira é a capa</span></h2>
+          <label class="drop" id="drop" for="v-fotos"><b>Arraste as fotos aqui</b> ou toque para escolher<input id="v-fotos" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden></label>
           <div class="photos" id="photos">${photosHtml()}</div>
-        </div>
-        <div class="panel" id="artsPanel">${artsHtml()}</div>
-        <div class="panel">
-          <h2>Onde anunciar</h2>
-          <div class="checks">
-            <label class="check"><input type="checkbox" id="v-organico" ${d.organico ? 'checked' : ''}><div><b>Anúncio orgânico no Marketplace</b><span>A extensão publica pela sua conta do Facebook. Sem custo.</span></div></label>
-            <label class="check"><input type="checkbox" id="v-catalogo" ${d.catalogo ? 'checked' : ''}><div><b>Catálogo para campanhas</b><span>Entra no feed do catálogo Meta e pode ser usado em anúncios pagos.</span></div></label>
+          <h3 class="dest-h">Onde anunciar</h3>
+          <div class="checks two">
+            <label class="check"><input type="checkbox" id="v-organico" ${d.organico ? 'checked' : ''}><div><b>Marketplace (orgânico)</b><span>A extensão publica pela sua conta do Facebook. Sem custo.</span></div></label>
+            <label class="check"><input type="checkbox" id="v-catalogo" ${d.catalogo ? 'checked' : ''}><div><b>Catálogo para campanhas</b><span>Entra no catálogo Meta para anúncios pagos.</span></div></label>
           </div>
         </div>
-      </div>
+        <div class="panel" id="artsPanel">${artsHtml()}</div>
+     </div>
     </div>
     <div class="err" id="vErr" hidden></div>
     <div class="form-foot">
@@ -487,7 +486,7 @@
   function destaquesHtml(d) {
     const all = S.me.options.destaques || [];
     const box = (o) => `<label class="dest ${o.alerta ? 'alert' : ''}"><input type="checkbox" data-dest="${o.key}" data-grupo="${o.grupo}" ${d.destaques?.includes(o.key) ? 'checked' : ''}> ${esc(o.label)}</label>`;
-    return `<div class="panel" style="margin-top:16px">
+    return `<div class="panel" id="vfDest">
       <h2>Destaques e transparência</h2>
       <p class="lead">O que for marcado entra na descrição gerada, na legenda do Instagram e nos dados para Webmotors e OLX.</p>
       <div class="dest-grid">${all.filter((o) => !o.alerta).map(box).join('')}</div>
@@ -1171,7 +1170,7 @@
     const a = (d.artes || [])[0] || { slot: 1, status: 'pendente' };
     return `${head}
       <p class="lead">Gerada sozinha e atualizada quando o preço, os dados ou as primeiras fotos mudam.</p>
-      <div class="arts" style="grid-template-columns:minmax(0,260px)">
+      <div class="arts" style="grid-template-columns:minmax(0,180px)">
         <div class="art">
           <div class="art-img">${a.url && a.status !== 'gerando' ? `<a href="${esc(a.url)}" target="_blank" rel="noopener"><img src="${esc(a.url)}" alt="Arte com preço" loading="lazy"></a>` : ''}
             ${ART_STATUS[a.status] ? `<span class="art-st ${a.status === 'erro' ? 'bad' : ''}">${ART_STATUS[a.status]}</span>` : ''}</div>
