@@ -2,6 +2,10 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.6.1 — 14/10/2026
+
+- **Correção nas campanhas de catálogo**: com um único veículo (ex.: só o Jetta), a Meta recusava o anúncio com "(#194) param child_attachments has too few elements", porque o modelo era sempre carrossel e o carrossel exige ao menos 2 veículos. Agora, com 1 veículo, o anúncio vai como **imagem única** apontando para a página do carro; com 2 ou mais, continua em carrossel.
+
 ## v2.6 — 14/10/2026
 
 - **Carro na troca**: a lista da venda agora inclui também os carros vendidos nos últimos 30 dias (marcados como "vendido"). Vendidos há mais de 30 dias ficam de fora.

@@ -236,6 +236,9 @@ test('catálogo e campanha de catálogo dinâmico', async () => {
   const creative = mock.calls.find((c) => c.path === '/act_111/adcreatives');
   assert.ok(creative.params.product_set_id);
   assert.match(creative.params.object_story_spec.template_data.name, /\{\{vehicle\.make\}\}/);
+  // Um veículo só: imagem única (carrossel com 1 item dá erro #194 na Meta).
+  assert.equal(creative.params.object_story_spec.template_data.format_option, 'single_image');
+  assert.equal(creative.params.object_story_spec.template_data.multi_share_end_card, undefined);
 });
 
 test('publicação assistida (sem extensão): fotos em zip e registro manual', async () => {

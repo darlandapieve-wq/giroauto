@@ -324,13 +324,16 @@ async function buildCreative(ctx) {
   if (conn.ig_user_id) storySpec.instagram_user_id = conn.ig_user_id;
 
   if (mode === 'catalogo') {
+    // Carrossel do catálogo exige ao menos 2 veículos (senão a Meta responde
+    // "(#194) param child_attachments has too few elements"). Com 1 veículo, vai como imagem única.
+    const carrossel = (vehicles || []).length >= 2;
     storySpec.template_data = {
       message,
-      link: `${config.publicUrl}/v/${store.slug}`,
+      link: carrossel ? `${config.publicUrl}/v/${store.slug}` : vehicleUrl(store, vehicles[0]),
       name: '{{vehicle.year}} {{vehicle.make}} {{vehicle.model}}',
       description: '{{vehicle.price}}',
       call_to_action: ctaFor(mode),
-      multi_share_end_card: false,
+      ...(carrossel ? { multi_share_end_card: false } : { format_option: 'single_image' }),
     };
     return graph.post(`/${conn.ad_account_id}/adcreatives`, token, {
       name: `${campaign.name} · criativo`,
