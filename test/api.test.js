@@ -857,7 +857,10 @@ test('v2.2: margem da loja, edição de custos, comunicação de venda, comissã
   const ox = r.body.id;
   r = await api('PUT', `/api/vehicles/${ox}/repasse-preco`, { preco_repasse: '56.500' });
   assert.equal(r.body.preco_repasse, 56500);
-  assert.match(r.body.texto, /REPASSE/); assert.match(r.body.texto, /R\$ 56\.500/); assert.match(r.body.texto, /leilão/i); assert.match(r.body.texto, /Final de placa 3/);
+  assert.match(r.body.texto, /REPASSE/); assert.match(r.body.texto, /R\$ 56\.500/); assert.match(r.body.texto, /leilão/i); assert.match(r.body.texto, /Placa ON\*\*\*23/); assert.match(r.body.texto, /Onix LT 1\.0 2020/);
+  assert.match(r.body.texto, /\/v\/[a-z0-9-]+$/); assert.doesNotMatch(r.body.texto, /Documento:|ONX1A23/);
+  r = await api('PUT', `/api/vehicles/${ox}/repasse-preco`, { detalhes: 'Duas chaves' });
+  assert.match(r.body.texto, /ℹ️ Detalhes: Duas chaves/); assert.equal(r.body.preco_repasse, 56500);
   r = await api('PUT', '/api/store/repasse-grupos', { grupos: [{ nome: 'Repasse PR', link: 'https://chat.whatsapp.com/abc' }, { nome: '' }] });
   assert.equal(r.body.grupos.length, 1); assert.equal(r.body.grupos[0].tipo, 'whatsapp');
   r = await api('POST', `/api/vehicles/${ox}/repasse`, { grupos: ['Repasse PR'] });

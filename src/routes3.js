@@ -57,10 +57,15 @@ function register(app) {
     const store = get('SELECT * FROM stores WHERE id = ?', req.user.storeId);
     res.json(repasse.data(store, own(req)));
   });
-  app.put('/api/vehicles/:id/repasse-preco', team.can('precos'), (req, res) => {
+  // Preço de repasse (precisa da permissão de preços) e detalhes para o texto do grupo.
+  app.put('/api/vehicles/:id/repasse-preco', team.canAny('precos', 'publicar'), (req, res) => {
     const v = own(req);
-    const valor = parseInt(String(req.body?.preco_repasse ?? '').replace(/\D/g, ''), 10) || 0;
-    run(`UPDATE vehicles SET preco_repasse = ?, updated_at = datetime('now') WHERE id = ?`, valor, v.id);
+    const b = req.body || {};
+    if (b.preco_repasse !== undefined) {
+      if (!req.user.perms.has('precos')) throw fail(403, 'Seu usuário não pode alterar preços. Peça ao administrador da loja.');
+      run(`UPDATE vehicles SET preco_repasse = ?, updated_at = datetime('now') WHERE id = ?`, parseInt(String(b.preco_repasse).replace(/\D/g, ''), 10) || 0, v.id);
+    }
+    if (b.detalhes !== undefined) run('UPDATE vehicles SET repasse_detalhes = ? WHERE id = ?', String(b.detalhes).trim().slice(0, 300), v.id);
     const store = get('SELECT * FROM stores WHERE id = ?', req.user.storeId);
     res.json(repasse.data(store, V.findVehicle(req.user.storeId, v.id)));
   });

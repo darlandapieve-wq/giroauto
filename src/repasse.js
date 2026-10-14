@@ -29,26 +29,34 @@ function saveGroups(storeId, list) {
   return g;
 }
 
-// Texto no formato que circula nos grupos de lojistas: direto, com preço de repasse, FIPE e transparência.
+// Placa parcial para grupos: "ABC1D23" -> "AB***23".
+const placaParcial = (p) => (p && p.length >= 5 ? `${p.slice(0, 2)}***${p.slice(-2)}` : '');
+// "44999158307" -> "(44)999158307" (formato usado nos grupos).
+const fone = (x) => { const d = String(x || '').replace(/\D/g, '').replace(/^55(?=\d{10,11}$)/, ''); return d.length >= 10 ? `(${d.slice(0, 2)})${d.slice(2)}` : String(x || ''); };
+// Itens de varejo que não fazem sentido para lojistas.
+const FORA_REPASSE = ['aceita_troca', 'financiamento', 'convite_visita'];
+
+// Texto no formato dos grupos de lojistas: direto, com preço de repasse, FIPE e transparência.
 function texto(store, v) {
   const s = V.serialize(v);
   const preco = v.preco_repasse || V.precoAnuncio(v) || 0;
-  const doc = (V.DOCUMENTACAO.find((d) => d.key === v.doc_tipo) || {}).label || '';
-  const alertas = (V.DESTAQUES || []).filter((d) => d.alerta && (s.destaques || []).includes(d.key)).map((d) => d.texto);
-  const bons = (V.DESTAQUES || []).filter((d) => !d.alerta && !d.rodape && (s.destaques || []).includes(d.key)).map((d) => d.label);
+  const tem = (d) => (s.destaques || []).includes(d.key);
+  const bons = (V.DESTAQUES || []).filter((d) => !d.alerta && !d.rodape && !FORA_REPASSE.includes(d.key) && tem(d)).map((d) => d.label);
+  const alertas = (V.DESTAQUES || []).filter((d) => d.alerta && tem(d)).map((d) => d.label);
+  const site = `${require('./config').publicUrl}/v/${store.slug}`;
   const linhas = [
-    `🔁 *REPASSE* · ${[v.marca, v.modelo, v.versao].filter(Boolean).join(' ')}`,
-    `📅 ${[v.ano_fab, v.ano_modelo].filter(Boolean).join('/')}${v.km ? ` · ${Number(v.km).toLocaleString('pt-BR')} km` : ''}${v.cor ? ` · ${v.cor}` : ''}${v.cambio ? ` · ${v.cambio}` : ''}${v.combustivel ? ` · ${v.combustivel}` : ''}`,
-    `💰 *${brl(preco)}*${v.fipe ? ` · FIPE ${brl(v.fipe)}${preco && preco < v.fipe ? ` (${Math.round((1 - preco / v.fipe) * 100)}% abaixo)` : ''}` : ''}`,
-    v.placa ? `🔢 Final de placa ${v.placa.slice(-1)}` : '',
-    doc ? `📄 Documento: ${doc.toLowerCase()}` : '',
+    `🔁 *REPASSE* · ${[v.marca, v.modelo, v.versao, v.ano_modelo].filter(Boolean).join(' ')}`,
+    `🚗 ${[v.cor, v.cambio, v.combustivel, v.km ? `${Number(v.km).toLocaleString('pt-BR')} km` : ''].filter(Boolean).map((x) => `· ${x}`).join(' ')}`,
+    `💰 *${brl(preco)}*${v.fipe ? ` · FIPE ${brl(v.fipe)}` : ''}`,
+    v.placa ? `🔢 Placa ${placaParcial(v.placa)}` : '',
     bons.length ? `✅ ${bons.join(' · ')}` : '',
     alertas.length ? `⚠️ ${alertas.join(' · ')}` : '',
+    v.repasse_detalhes ? `ℹ️ Detalhes: ${v.repasse_detalhes}` : '',
     [store.city, store.state].filter(Boolean).length ? `📍 ${[store.city, store.state].filter(Boolean).join('/')}` : '',
-    `📞 ${store.name}${store.whatsapp ? ` · ${store.whatsapp}` : ''}`,
-    `🔗 ${require('./printables').vehicleUrl(store, v)}`,
+    `📞 ${store.name}${store.whatsapp ? ` · ${fone(store.whatsapp)}` : ''}`,
+    `🔗 ${site}`,
   ];
-  return linhas.filter(Boolean).join('\n');
+  return linhas.filter((l) => l && l !== '🚗 ').join('\n');
 }
 
 function posts(vehicleId) {
@@ -65,9 +73,9 @@ function data(store, v) {
   const s = V.serialize(v);
   return {
     texto: texto(store, v), grupos: groups(store), tipos: TIPOS, posts: posts(v.id),
-    preco: V.precoAnuncio(v), preco_repasse: v.preco_repasse || 0, fipe: v.fipe || 0,
+    preco: V.precoAnuncio(v), preco_repasse: v.preco_repasse || 0, fipe: v.fipe || 0, detalhes: v.repasse_detalhes || '',
     fotos: (s.photos || []).slice(0, 10).map((p) => p.url),
   };
 }
 
-module.exports = { TIPOS, groups, cleanGroups, saveGroups, texto, posts, record, data };
+module.exports = { placaParcial, TIPOS, groups, cleanGroups, saveGroups, texto, posts, record, data };

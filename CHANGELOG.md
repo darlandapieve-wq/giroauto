@@ -2,6 +2,14 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.3 — 13/10/2026
+
+- **Estoque**: a etiqueta "Em manutenção: Oficina do Zé" (ou outro local) virou link: abre o WhatsApp do parceiro com a mensagem pronta pedindo o andamento. Ao lado, há quantos dias o carro está lá (em vermelho se passou da previsão).
+- **Grupo de repasse**:
+  - Novo botão **WhatsApp (1 foto)**: envia só a foto da capa junto com o texto.
+  - **Emojis corrigidos** no envio só de texto (o link abre direto o WhatsApp no celular ou o WhatsApp Web no computador, sem o wa.me, que quebrava os emojis).
+  - Texto no novo padrão: ano modelo no título, linha 🚗 com cor, câmbio, combustível e km, FIPE sem percentual, **placa parcial (AA\*\*\*11)**, destaques sem "Aceita troca" e "Financiamento", campo **ℹ️ Detalhes** preenchido por você, telefone no formato (44)999158307 e link do **site da loja** com todos os veículos. O documento saiu do texto.
+
 ## v2.2 — 13/10/2026
 
 **Equipe no menu, margem da loja, grupos de repasse, edição depois da venda e placa mais confiável**

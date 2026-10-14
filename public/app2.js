@@ -508,7 +508,13 @@
       const st = row.querySelector('.state');
       if (st) {
         if (v.parado) st.insertAdjacentHTML('beforeend', `<button class="pill p-warn badge-btn" type="button" data-parado="${v.id}" title="Sugerir oferta">Parado ${v.dias_estoque} dias</button>`);
-        if (v.local_status && v.local_status !== 'patio') st.insertAdjacentHTML('beforeend', `<span class="pill p-info" title="${esc(v.local_parceiro?.nome || '')}">${esc(v.local_label)}${v.local_parceiro ? ': ' + esc(v.local_parceiro.nome) : ''}</span>`);
+        if (v.local_status && v.local_status !== 'patio') {
+          const txt = `${esc(v.local_label)}${v.local_parceiro ? ': ' + esc(v.local_parceiro.nome) : ''}`;
+          const dias = `<span class="pill ${v.local_previsao && v.local_previsao < today() ? 'p-bad' : 'p-muted'}" title="${v.local_previsao ? 'Previsão: ' + fmtDate(v.local_previsao) : ''}">${v.local_dias ? `há ${v.local_dias} ${v.local_dias === 1 ? 'dia' : 'dias'}` : 'desde hoje'}</span>`;
+          st.insertAdjacentHTML('beforeend', v.followup_url
+            ? `<a class="pill p-info pill-link" href="${esc(v.followup_url)}" target="_blank" rel="noopener" title="Pedir o andamento do serviço pelo WhatsApp">💬 ${txt}</a>${dias}`
+            : `<span class="pill p-info" title="Cadastre o WhatsApp do parceiro para pedir o andamento com um clique">${txt}</span>${dias}`);
+        }
         if (v.status === 'vendido' && !v.doc_concluido) st.insertAdjacentHTML('beforeend', `<button class="pill p-warn badge-btn" type="button" data-docgo="${v.id}" title="Acompanhar em Gestão > Documentação">Doc: ${esc(v.doc_status_label)}</button>`);
         if (v.proprietario_tipo && v.proprietario_tipo !== 'proprio') st.insertAdjacentHTML('beforeend', `<span class="pill p-muted">${esc((S.me.options.propriedade.find((p) => p.key === v.proprietario_tipo)?.label || '').split(' (')[0])}</span>`);
       }
@@ -1278,23 +1284,25 @@
     try { R = await api('GET', `/api/vehicles/${v.id}/repasse`); } catch (e) { return toast(e.message, 6000); }
     const ultimo = (nome) => R.posts.find((p) => p.grupo === nome);
     const tabs = [['instagram', 'Instagram'], ['webmotors', 'Webmotors'], ['olx', 'OLX'], ['repasse', 'Grupo de repasse']];
-    const waUrl = (t) => `https://wa.me/?text=${encodeURIComponent(t)}`;
+    // wa.me quebra os emojis no WhatsApp Web; por isso abre direto o app (celular) ou o WhatsApp Web (computador).
+    const waUrl = (t) => (isMobile() ? `whatsapp://send?text=${encodeURIComponent(t)}` : `https://web.whatsapp.com/send?text=${encodeURIComponent(t)}`);
     modal(`<h3>Divulgar ${esc(v.marca)} ${esc(v.modelo)}</h3>
       <div class="chips" role="tablist">${tabs.map(([k, l]) => `<button class="chip" type="button" role="tab" data-rtab="${k}" aria-pressed="${k === 'repasse'}">${l}</button>`).join('')}</div>
       <p class="note">Para grupos de lojistas no WhatsApp, Facebook ou Telegram. Esses apps não deixam sistemas postarem sozinhos em grupos, então o GiroAuto deixa o texto e as fotos prontos e registra em quais grupos o carro já foi enviado.</p>
       <div class="fields">
-        <div class="f"><label for="rp-p">Preço de repasse (R$)</label><input id="rp-p" inputmode="numeric" value="${R.preco_repasse || ''}" placeholder="${R.preco ? brl(R.preco) : ''}" ${can('precos') ? '' : 'disabled'}></div>
-        <div class="f" style="align-self:end">${can('precos') ? '<button class="btn" type="button" id="rp-ps">Salvar preço</button>' : ''}</div>
-        <div class="f" style="align-self:end"><span class="note">Anúncio ${brl(R.preco)}${R.fipe ? ` · FIPE ${brl(R.fipe)}` : ''}. O preço de repasse não aparece nos anúncios.</span></div>
+        <div class="f"><label for="rp-p">Preço de repasse (R$)</label><input id="rp-p" inputmode="numeric" value="${R.preco_repasse || ''}" placeholder="${R.preco ? brl(R.preco) : ''}" ${can('precos') ? '' : 'disabled'}><span class="hint">Anúncio ${brl(R.preco)}${R.fipe ? ` · FIPE ${brl(R.fipe)}` : ''}. Não aparece nos anúncios.</span></div>
+        <div class="f w3"><label for="rp-d">Detalhes (opcional)</label><input id="rp-d" maxlength="300" value="${esc(R.detalhes || '')}" placeholder="Ex.: pequeno amassado na porta traseira, 2 chaves"></div>
+        <div class="f" style="align-self:center"><button class="btn" type="button" id="rp-ps">Salvar e atualizar texto</button></div>
       </div>
       <div class="f"><label for="rp-t">Texto para o grupo</label><textarea id="rp-t" rows="9">${esc(R.texto)}</textarea></div>
       <div class="btnrow">
         <button class="btn primary" type="button" id="rp-share">Enviar texto e fotos</button>
+        <button class="btn" type="button" id="rp-one">WhatsApp (1 foto)</button>
         <a class="btn" id="rp-wa" href="${esc(waUrl(R.texto))}" target="_blank" rel="noopener">WhatsApp (só texto)</a>
         <button class="btn" type="button" id="rp-cp">Copiar texto</button>
         <a class="btn" href="/api/vehicles/${v.id}/photos.zip">Baixar fotos (.zip)</a>
       </div>
-      <p class="note">"Enviar texto e fotos" abre o compartilhamento do celular: escolha o WhatsApp e o grupo. No computador, use "WhatsApp (só texto)" e anexe as fotos baixadas.</p>
+      <p class="note">"Enviar texto e fotos" e "WhatsApp (1 foto)" abrem o compartilhamento do aparelho: escolha o WhatsApp e o grupo (no celular e no Chrome do Windows). Onde o compartilhamento não existir, o texto abre no WhatsApp e a foto da capa fica copiada: cole com Ctrl+V na conversa.</p>
       <h4>Grupos da loja</h4>
       <div class="rglist">${R.grupos.length ? R.grupos.map((g) => { const u = ultimo(g.nome); return `<div class="rgrow"><label class="rgl"><input type="checkbox" data-rg="${esc(g.nome)}"><span><b>${esc(g.nome)}</b> <span class="sub">${esc(R.tipos[g.tipo] || g.tipo)}</span></span></label><span>${u ? `<span class="pill p-ok">enviado ${fmtDate(u.created_at)}</span>` : '<span class="sub">ainda não enviado</span>'}</span>${g.link ? `<a class="btn sm" href="${esc(g.link)}" target="_blank" rel="noopener">Abrir grupo</a>` : '<span></span>'}</div>`; }).join('') : '<div class="rgrow"><span class="sub">Nenhum grupo cadastrado. Cadastre abaixo os grupos de repasse da loja (nome e link de convite).</span></div>'}</div>
       ${R.grupos.length && can('publicar') ? '<div class="btnrow" style="margin-top:8px"><button class="btn" type="button" id="rp-mark">Marcar selecionados como enviados</button></div>' : ''}
@@ -1309,27 +1317,39 @@
     $$('[data-rtab]').forEach((b) => { b.onclick = () => { if (b.dataset.rtab !== 'repasse') back(b.dataset.rtab); }; });
     $('#rp-t').oninput = () => { $('#rp-wa').href = waUrl($('#rp-t').value); };
     $('#rp-cp').onclick = (e) => X.copyText($('#rp-t').value, e.target);
-    if ($('#rp-ps')) $('#rp-ps').onclick = async () => {
-      try { await api('PUT', `/api/vehicles/${v.id}/repasse-preco`, { preco_repasse: $('#rp-p').value }); toast('Preço de repasse salvo'); X.repasseModal(v, back); } catch (e) { err(e.message); }
+    $('#rp-ps').onclick = async () => {
+      const body = { detalhes: $('#rp-d').value };
+      if (can('precos')) body.preco_repasse = $('#rp-p').value;
+      try { await api('PUT', `/api/vehicles/${v.id}/repasse-preco`, body); toast('Salvo. Texto atualizado.'); X.repasseModal(v, back); } catch (e) { err(e.message); }
     };
-    $('#rp-share').onclick = async () => {
-      const text = $('#rp-t').value;
+    const fotoFile = async (u, i) => { const bl = await (await fetch(u)).blob(); return new File([bl], `foto-${i + 1}.jpg`, { type: bl.type || 'image/jpeg' }); };
+    // Copia a foto (PNG) para colar com Ctrl+V no WhatsApp Web.
+    const copiarFoto = async (u) => {
       try {
-        if (navigator.share) {
-          const files = [];
-          for (const [i, u] of R.fotos.slice(0, 8).entries()) {
-            const bl = await (await fetch(u)).blob();
-            files.push(new File([bl], `foto-${i + 1}.jpg`, { type: bl.type || 'image/jpeg' }));
-          }
-          if (files.length && navigator.canShare?.({ files })) await navigator.share({ files, text });
-          else await navigator.share({ text });
-          return;
-        }
-      } catch (e) { if (e.name === 'AbortError') return; }
-      X.copyText(text, $('#rp-share'));
-      window.open(waUrl(text), '_blank', 'noopener');
-      toast('Texto copiado. Escolha o grupo no WhatsApp e anexe as fotos baixadas.', 6000);
+        const img = await createImageBitmap(await (await fetch(u)).blob());
+        const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; c.getContext('2d').drawImage(img, 0, 0);
+        const png = await new Promise((r) => c.toBlob(r, 'image/png'));
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
+        return true;
+      } catch { return false; }
     };
+    const enviar = async (n, btn) => {
+      const text = $('#rp-t').value;
+      const fotos = R.fotos.slice(0, n);
+      try {
+        if (navigator.share && fotos.length) {
+          btn.disabled = true;
+          const files = await Promise.all(fotos.map(fotoFile));
+          btn.disabled = false;
+          if (navigator.canShare?.({ files, text })) { await navigator.share({ files, text }); return; }
+        }
+      } catch (e) { btn.disabled = false; if (e.name === 'AbortError') return; }
+      const ok = fotos.length ? await copiarFoto(fotos[0]) : false;
+      window.open(waUrl(text), '_blank', 'noopener');
+      toast(ok ? 'Texto aberto no WhatsApp e foto da capa copiada: escolha o grupo e cole a foto (Ctrl+V).' : 'Texto aberto no WhatsApp: escolha o grupo e anexe as fotos baixadas.', 8000);
+    };
+    $('#rp-share').onclick = () => enviar(8, $('#rp-share'));
+    $('#rp-one').onclick = () => enviar(1, $('#rp-one'));
     if ($('#rp-mark')) $('#rp-mark').onclick = async () => {
       const grupos = $$('[data-rg]').filter((c) => c.checked).map((c) => c.dataset.rg);
       if (!grupos.length) return err('Marque os grupos em que você enviou o carro.');

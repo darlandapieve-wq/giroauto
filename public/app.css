@@ -464,3 +464,5 @@ label.chip{display:inline-flex;gap:6px;align-items:center;cursor:pointer}
 .rgl input{width:18px;height:18px;accent-color:var(--accent)}
 .vpop.noimg{grid-template-columns:minmax(0,1fr)}
 .kv2 span{flex:none}
+a.pill-link{text-decoration:none;cursor:pointer}
+a.pill-link:hover,a.pill-link:focus-visible{text-decoration:underline}

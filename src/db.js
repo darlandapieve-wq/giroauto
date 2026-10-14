@@ -271,7 +271,7 @@ for (const [col, def] of [
 ]) addColumn('vehicles', col, def);
 addColumn('vehicle_costs', 'status', "TEXT NOT NULL DEFAULT 'realizado'");
 // v2.2: margem da loja em valor fixo, preço de repasse, grupos de repasse, comissão lançada como despesa.
-for (const [col, def] of [['margem_tipo', "TEXT NOT NULL DEFAULT 'pct'"], ['margem_fixa', 'INTEGER NOT NULL DEFAULT 0'], ['preco_repasse', 'INTEGER NOT NULL DEFAULT 0']]) addColumn('vehicles', col, def);
+for (const [col, def] of [['margem_tipo', "TEXT NOT NULL DEFAULT 'pct'"], ['margem_fixa', 'INTEGER NOT NULL DEFAULT 0'], ['preco_repasse', 'INTEGER NOT NULL DEFAULT 0'], ['repasse_detalhes', "TEXT DEFAULT ''"]]) addColumn('vehicles', col, def);
 addColumn('stores', 'repasse_grupos', "TEXT NOT NULL DEFAULT '[]'");
 db.exec(`CREATE TABLE IF NOT EXISTS repasse_posts (
   id INTEGER PRIMARY KEY,
