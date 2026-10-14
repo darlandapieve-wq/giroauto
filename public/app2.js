@@ -763,7 +763,7 @@
       const lucro = venda + ret - base - (f.custos_total || 0) - com - imp;
       const trocaNome = payOn('tr') ? ($('#s-tid').value ? $('#s-tid').selectedOptions[0].textContent.trim() : [$('#s-tm').value, $('#s-to').value].filter(Boolean).join(' ') || 'o carro da troca') : '';
       box.innerHTML = `<div class="cl tot ${lucro < 0 ? 'neg' : 'pos'}"><span>Lucro desta venda</span><b>${brl(lucro)} <small>${pct(Math.round((lucro / venda) * 1000) / 10)}% · ${consig ? 'repasse' : 'compra'} ${brl(base)} · custos ${brl(f.custos_total || 0)}${ret ? ` · retorno +${brl(ret)}` : ''}${com ? ` · comissão ${brl(com)}` : ''}${imp ? ` · impostos ${brl(imp)}` : ''}</small></b></div>
-        ${p.tr ? `<p class="note">🔁 Venda com troca: entra ${brl(venda - p.tr)} agora${p.tr ? ` e ${esc(trocaNome)} entra no estoque como compra de ${brl(p.tr)}` : ''}. O lucro desta venda fica <b>a realizar</b> e só entra nos resultados quando ${esc(trocaNome)} for vendido (sem nova troca). Assim o lucro não é contado duas vezes.</p>` : ''}
+        ${p.tr ? `<p class="note">🔁 Venda com troca: entra ${brl(venda - p.tr)} agora${p.tr ? ` e ${esc(trocaNome)} entra no estoque como compra de ${brl(p.tr)}` : ''}. O lucro desta venda entra nos resultados agora; quando ${esc(trocaNome)} for vendido, só a diferença sobre ${brl(p.tr)} vira lucro (sem contar duas vezes).</p>` : ''}
         ${venda < (v.preco_anuncio || 0) ? `<p class="note">Desconto de ${brl(v.preco_anuncio - venda)} sobre o anúncio (${pct(Math.round((1 - venda / v.preco_anuncio) * 1000) / 10)}%).</p>` : ''}`;
     };
     $$('.pay input, .pay select, #s-vv, #s-cm').forEach((el) => el.addEventListener(el.tagName === 'SELECT' || el.type === 'checkbox' ? 'change' : 'input', sync));
@@ -1080,7 +1080,7 @@
           ${card('Vendidos', k.vendidos, `giro de ${k.giro}% do estoque`)}
           ${fin ? card('Faturamento', brl(k.faturamento), `ticket médio ${brl(k.ticket_medio)}`) : ''}
           ${fin ? card('Lucro das vendas', brl(k.lucro_liquido), `${pct(k.margem_media_pct)}% de margem · ${brl(k.lucro_medio)}/carro`, neg(k.lucro_liquido)) : ''}
-          ${fin && k.vendas_em_troca ? card('Lucro a realizar', brl(k.lucro_a_realizar), `${k.vendas_em_troca} venda(s) com troca ainda no estoque`, 'warn') : ''}
+          ${fin && k.vendas_em_troca ? card('Trocas no estoque', brl(k.trocas_estoque_valor), `${k.vendas_em_troca} carro(s) recebido(s) na troca ainda à venda`) : ''}
           ${fin ? card('Despesas da loja', brl(k.despesas_loja), 'lançadas em Gestão') : ''}
           ${fin ? card('Resultado líquido', brl(k.resultado), 'lucro das vendas − despesas', neg(k.resultado)) : ''}
           ${card('Tempo médio de venda', `${k.dias_medios_venda} dias`, 'da compra até a venda')}
@@ -1098,8 +1098,8 @@
             ${dreRow('= Lucro bruto', D.lucro_bruto, 'sub-t')}${dreRow('(−) Comissões de venda', -(D.comissoes + (D.comissoes_extra || 0)))}${dreRow('(−) Impostos sobre a venda', -D.impostos)}
             ${dreRow('= Lucro das vendas', D.lucro_operacoes, 'sub-t')}${D.despesas_categorias.map((c) => dreRow(`(−) ${esc(c.categoria)}`, -c.valor)).join('') || dreRow('(−) Despesas da loja', 0)}
             ${dreRow('= Resultado líquido', D.resultado, 'tot-t')}</tbody></table>
-            <p class="note">O DRE considera o lucro <b>realizado</b>: vendas com troca entram quando o carro da troca é vendido (em cadeia). ${D.receita_em_trocas ? `Da receita, ${brl(D.receita_em_trocas)} vieram em carros na troca.` : ''}</p>
-            ${d.em_troca?.length ? `<p class="note">A realizar: ${d.em_troca.slice(0, 5).map((x) => `<button class="vlink" type="button" data-vp="${x.id}">${esc(x.titulo)}</button> (${brl(x.liquido || 0)}, aguardando <button class="vlink" type="button" data-vp="${x.troca_id}">${esc(x.troca_titulo)}</button>)`).join(' · ')}</p>` : ''}
+            <p class="note">Vendas com troca entram com o lucro na data da venda. O carro da troca entra no estoque com custo igual ao valor dado na troca, então o lucro não é contado duas vezes. ${D.receita_em_trocas ? `Da receita, ${brl(D.receita_em_trocas)} vieram em carros na troca.` : ''}</p>
+            ${d.em_troca?.length ? `<p class="note">Trocas ainda no estoque: ${d.em_troca.slice(0, 5).map((x) => `<button class="vlink" type="button" data-vp="${x.troca_id}">${esc(x.troca_titulo)}</button> (da venda do <button class="vlink" type="button" data-vp="${x.id}">${esc(x.titulo)}</button>)`).join(' · ')}</p>` : ''}
             ${D.fora_do_calculo ? `<p class="note">${D.fora_do_calculo} venda(s) sem valor de compra ou de venda ficaram fora do DRE. Complete em "custos" na lista abaixo.</p>` : ''}</div>` : ''}
         </div>
         <div class="grid2 eq" style="margin-top:16px">
@@ -1118,7 +1118,7 @@
           <div class="panel"><h2>Maiores lucros</h2>${hbars(d.melhores, (x) => x.liquido, brl, (x) => x.titulo)}</div>
           <div class="panel"><h2>Menores lucros</h2>${d.piores.length ? hbars(d.piores, (x) => x.liquido, brl, (x) => x.titulo) : '<p class="sub">Poucas vendas para comparar.</p>'}</div>
         </div>` : ''}
-        <div class="panel" style="margin-top:16px"><h2>Vendidos no período</h2>${d.vendidos.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Veículo</th><th>Venda</th><th>Vendedor / pagamento</th><th class="r">Dias</th>${fin ? '<th class="r">Valor</th><th class="r">Compra</th><th class="r">Custos</th><th class="r">Líquido</th><th></th>' : ''}</tr></thead><tbody>${d.vendidos.map((l) => `<tr><td><button class="vlink" type="button" data-vp="${l.id}">${esc(l.titulo)}</button><br><span class="sub">${esc(l.placa || '')} · ${esc(l.origem_label)}</span></td><td>${fmtDate(l.vendido_em)}<br><span class="sub">${esc(l.comprador || '')}</span></td><td>${esc(l.vendedor || '—')}<br><span class="sub">${esc(l.pagamento)}</span></td><td class="r">${l.dias}</td>${fin ? `<td class="r">${l.venda ? brl(l.venda) : '—'}</td><td class="r">${l.base ? brl(l.base) : '<span class="pill p-warn">informar</span>'}</td><td class="r">${brl(l.custos)}</td><td class="r ${neg(l.liquido)}">${l.liquido !== null ? `${brl(l.liquido)}<br><span class="sub">${pct(l.margem_pct)}%</span>` : '—'}${l.em_troca ? '<br><span class="pill p-warn" title="Lucro entra quando o carro da troca for vendido">🔁 a realizar</span>' : ''}</td><td><button class="btn sm ghost" type="button" data-fin="${l.id}">custos</button></td>` : ''}</tr>`).join('')}</tbody></table></div>` : '<p class="sub">Nenhuma venda no período.</p>'}</div>
+        <div class="panel" style="margin-top:16px"><h2>Vendidos no período</h2>${d.vendidos.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Veículo</th><th>Venda</th><th>Vendedor / pagamento</th><th class="r">Dias</th>${fin ? '<th class="r">Valor</th><th class="r">Compra</th><th class="r">Custos</th><th class="r">Líquido</th><th></th>' : ''}</tr></thead><tbody>${d.vendidos.map((l) => `<tr><td><button class="vlink" type="button" data-vp="${l.id}">${esc(l.titulo)}</button><br><span class="sub">${esc(l.placa || '')} · ${esc(l.origem_label)}</span></td><td>${fmtDate(l.vendido_em)}<br><span class="sub">${esc(l.comprador || '')}</span></td><td>${esc(l.vendedor || '—')}<br><span class="sub">${esc(l.pagamento)}</span></td><td class="r">${l.dias}</td>${fin ? `<td class="r">${l.venda ? brl(l.venda) : '—'}</td><td class="r">${l.base ? brl(l.base) : '<span class="pill p-warn">informar</span>'}</td><td class="r">${brl(l.custos)}</td><td class="r ${neg(l.liquido)}">${l.liquido !== null ? `${brl(l.liquido)}<br><span class="sub">${pct(l.margem_pct)}%</span>` : '—'}${l.em_troca ? '<br><span class="pill p-info" title="O carro recebido na troca ainda está no estoque">🔁 com troca</span>' : ''}</td><td><button class="btn sm ghost" type="button" data-fin="${l.id}">custos</button></td>` : ''}</tr>`).join('')}</tbody></table></div>` : '<p class="sub">Nenhuma venda no período.</p>'}</div>
         <div class="panel" style="margin-top:16px"><h2>Estoque mais antigo</h2>${d.estoque.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Veículo</th><th class="r">Dias</th>${fin ? '<th class="r">Anúncio</th><th class="r">FIPE</th><th class="r">Investido</th><th class="r">Lucro previsto</th>' : ''}<th>Onde</th></tr></thead><tbody>${d.estoque.slice(0, 10).map((e) => `<tr><td><button class="vlink" type="button" data-vp="${e.id}">${esc(e.titulo)}</button><br><span class="sub">${esc(e.placa || '')} · ${esc(e.tipo_label.split(' (')[0])}</span></td><td class="r ${e.parado ? 'warn' : ''}">${e.dias}</td>${fin ? `<td class="r">${brl(e.preco)}</td><td class="r">${e.fipe ? brl(e.fipe) : '—'}</td><td class="r">${brl(e.investido)}</td><td class="r ${neg(e.lucro_previsto)}">${e.lucro_previsto !== null ? brl(e.lucro_previsto) : '—'}</td>` : ''}<td>${esc(e.local || 'Pátio')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="sub">Estoque vazio.</p>'}</div>`;
     },
     bind() {
@@ -1359,6 +1359,13 @@
     if ($('#vp-ed')) $('#vp-ed').onclick = () => { if (vend && !can('cadastrar')) return saleEditModal(id); closeModal(); location.hash = 'editar-' + id; };
     if ($('#vp-fin')) $('#vp-fin').onclick = () => financeModal(id);
   }
+  // Republicação: tirar da lista "Não concluídas" (deu certo ou dispensar).
+  document.addEventListener('click', async (e) => {
+    const j = e.target.closest('[data-jres]'); if (!j) return;
+    j.disabled = true;
+    try { await api('POST', `/api/jobs/${j.dataset.jres}/resolve`, { deu_certo: !!j.dataset.ok }); await X.loadVehicles(); X.S.jobs = await api('GET', '/api/jobs'); X.render(); toast(j.dataset.ok ? 'Marcado como publicado' : 'Aviso dispensado'); }
+    catch (err) { toast(err.message); j.disabled = false; }
+  });
   document.addEventListener('click', (e) => {
     const b = e.target.closest('[data-vp]');
     if (b) { e.preventDefault(); vehiclePop(Number(b.dataset.vp)); }
@@ -1647,6 +1654,8 @@
       X._painel = d;
       const fin = can('financeiro');
       const E = d.estoque; const Vd = d.vendas;
+      // Valores grandes abreviados para caber numa linha (R$ 106 mil); o valor exato fica no título (passe o mouse).
+      const bk = (x) => (Math.abs(x || 0) >= 100000 ? `<span title="${brl(x)}">R$ ${(Math.round(x / 100) / 10).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mil</span>` : brl(x));
       const tile = (k, v, sub = '', go = '', cls = '') => `<button class="pt ${cls}" type="button" ${go ? `data-go2="${go}"` : 'disabled'}><span>${k}</span><b>${v}</b>${sub ? `<em>${sub}</em>` : ''}</button>`;
       const box = (t, go, body, cls = '') => `<section class="pbox ${cls}"><header><h3>${t}</h3>${go ? `<button class="linkbtn" type="button" data-go2="${go}">abrir ›</button>` : ''}</header>${body}</section>`;
       const vrow = (v, right, extra = '') => `<div class="pr"><button class="vlink" type="button" data-vp="${v.id}">${esc(v.titulo)}</button>${extra}<span class="prr">${right}</span></div>`;
@@ -1660,15 +1669,15 @@
         </div>
         <div class="ptiles">
           ${tile('Vendidos', Vd.qtd, `${fmtDate(d.periodo.from)}–${fmtDate(d.periodo.to)}`, 'resultados')}
-          ${fin ? tile('Faturamento', brl(Vd.faturamento), `ticket ${brl(Vd.ticket)}`, 'resultados') : ''}
-          ${fin ? tile('Lucro das vendas', brl(Vd.lucro), `${pct(Vd.margem)}% de margem`, 'resultados', Vd.lucro < 0 ? 'bad' : 'ok') : ''}
-          ${fin ? tile('Resultado', brl(Vd.resultado), 'lucro − despesas', 'resultados', Vd.resultado < 0 ? 'bad' : '') : ''}
+          ${fin ? tile('Faturamento', bk(Vd.faturamento), `ticket ${brl(Vd.ticket)}`, 'resultados') : ''}
+          ${fin ? tile('Lucro', bk(Vd.lucro), `${pct(Vd.margem)}% de margem`, 'resultados', Vd.lucro < 0 ? 'bad' : 'ok') : ''}
+          ${fin ? tile('Resultado', bk(Vd.resultado), 'lucro − despesas', 'resultados', Vd.resultado < 0 ? 'bad' : '') : ''}
           ${tile('Dias p/ vender', Vd.dias, fin ? `desconto médio ${pct(Vd.desconto)}%` : 'média', 'resultados')}
-          ${tile('Estoque', E.qtd, fin ? brl(E.valor) : `${E.idade} dias de idade média`, 'estoque')}
-          ${fin ? tile('Investido', brl(E.investido), `lucro previsto ${brl(E.lucro_previsto)}`, 'gestao:estoque') : ''}
+          ${tile('Estoque', E.qtd, fin ? bk(E.valor) : `${E.idade} dias de idade média`, 'estoque')}
+          ${fin ? tile('Investido', bk(E.investido), `previsto ${bk(E.lucro_previsto)}`, 'gestao:estoque') : ''}
           ${tile('Parados', E.parados_qtd, `${d.loja.parado_dias}+ dias`, 'parados', E.parados_qtd ? 'warn' : '')}
           ${tile('Docs pendentes', d.docs.pendentes, `${d.docs.atrasados} com 30+ dias`, 'gestao:docs', d.docs.atrasados ? 'bad' : '')}
-          ${fin ? tile('Contas 15 dias', brl(d.financeiro.contas_total), `${d.financeiro.contas.length} em aberto`, 'gestao:desp', d.financeiro.contas.some((c) => c.vencida) ? 'bad' : '') : ''}
+          ${fin ? tile('Contas 15 dias', bk(d.financeiro.contas_total), `${d.financeiro.contas.length} em aberto`, 'gestao:desp', d.financeiro.contas.some((c) => c.vencida) ? 'bad' : '') : ''}
         </div>
         <div class="pgrid">
           ${box('Onde atuar agora', '', d.alertas.length ? d.alertas.map((a) => `<button class="palert ${a.nivel}" type="button" data-go2="${a.alvo}"><span>${esc(a.texto)}</span><b>${esc(a.acao)} ›</b></button>`).join('') : '<p class="sub">Tudo em dia. 👍</p>', 'span2')}

@@ -2,6 +2,12 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.6.2 — 14/10/2026
+
+- **Lucro das vendas com troca**: passa a entrar nos Resultados, DRE e Painel **na data da venda** (decisão da loja). Não há lucro em dobro: o carro da troca entra no estoque com custo igual ao valor dado na troca, e na venda dele só a diferença vira lucro. Resultados mostram "Trocas no estoque" (carros recebidos na troca ainda à venda) como informação.
+- **Republicação > Não concluídas**: botões **Deu certo** (o anúncio está no ar: tira da lista e marca o carro como publicado) e **Dispensar**.
+- **Painel**: os indicadores do topo ficam em **uma única linha** no computador, com valores grandes abreviados (ex.: R$ 106 mil; o valor exato aparece ao passar o mouse).
+
 ## v2.6.1 — 14/10/2026
 
 - **Correção nas campanhas de catálogo**: com um único veículo (ex.: só o Jetta), a Meta recusava o anúncio com "(#194) param child_attachments has too few elements", porque o modelo era sempre carrossel e o carrossel exige ao menos 2 veículos. Agora, com 1 veículo, o anúncio vai como **imagem única** apontando para a página do carro; com 2 ou mais, continua em carrossel.

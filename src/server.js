@@ -634,6 +634,20 @@ app.get('/api/jobs', auth.requireUser, (req, res) => {
     WHERE j.store_id = ? ORDER BY j.id DESC LIMIT 50`, req.user.storeId));
 });
 
+// Tarefa que a extensão marcou como não concluída: "deu certo" (o anúncio está no ar) ou só dispensar o aviso.
+app.post('/api/jobs/:id/resolve', team.can('publicar'), (req, res) => {
+  const job = get(`SELECT * FROM ext_jobs WHERE id = ? AND store_id = ? AND status = 'falhou'`, Number(req.params.id), req.user.storeId);
+  if (!job) throw fail(404, 'Tarefa não encontrada.');
+  const v = V.findVehicle(req.user.storeId, job.vehicle_id);
+  const ok = !!req.body?.deu_certo;
+  run(`UPDATE ext_jobs SET status = ?, updated_at = datetime('now') WHERE id = ?`, ok ? 'concluido' : 'dispensado', job.id);
+  if (ok && v && v.status !== 'vendido' && (job.type === 'publicar' || job.type === 'republicar')) {
+    run(`UPDATE vehicles SET status='publicado', publicado_em=datetime('now'), updated_at=datetime('now') WHERE id=?`, v.id);
+    logEvent(req.user.storeId, `${v.marca} ${v.modelo}: publicação confirmada pela loja`);
+  }
+  res.json({ ok: true });
+});
+
 app.post('/api/jobs/:id/cancel', team.can('publicar'), (req, res) => {
   run(`UPDATE ext_jobs SET status='cancelado', updated_at=datetime('now') WHERE id=? AND store_id=? AND status IN ('pendente','em_andamento')`,
     Number(req.params.id), req.user.storeId);

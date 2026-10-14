@@ -610,7 +610,7 @@
         <div class="q-when sub">${when(j.created_at)}</div>
         <div><button class="btn sm ghost" data-cancel="${j.id}" type="button">Cancelar</button></div></div>`).join('') : '<div class="empty">Nenhuma tarefa na fila.</div>'}
     </div>
-    ${recentes.length ? `<div class="panel"><h2>Não concluídas</h2>${recentes.map((j) => `<div class="err"><b>${esc(j.marca)} ${esc(j.modelo)}</b> (${JOBNAME[j.type]}): ${esc(j.error || 'sem detalhes')}</div>`).join('')}</div>` : ''}
+    ${recentes.length ? `<div class="panel"><h2>Não concluídas</h2><p class="note">Se a publicação deu certo mesmo assim (o anúncio está no Marketplace), clique em "Deu certo" para tirar da lista e marcar o carro como publicado.</p>${recentes.map((j) => `<div class="err conn-row"><span><b>${esc(j.marca)} ${esc(j.modelo)}</b> (${JOBNAME[j.type]}): ${esc(j.error || 'sem detalhes')}</span><span class="btnrow" style="gap:4px;flex-wrap:nowrap">${['publicar', 'republicar'].includes(j.type) ? `<button class="btn sm" type="button" data-jres="${j.id}" data-ok="1">Deu certo</button>` : ''}<button class="btn sm ghost" type="button" data-jres="${j.id}">Dispensar</button></span></div>`).join('')}</div>` : ''}
     <div class="panel" style="padding:0;gap:0">
       <div style="padding:16px 16px 6px"><h2>Anúncios no Marketplace</h2><p class="note" style="margin-top:4px">Republicação liberada a cada ${days} dias por anúncio, para reduzir o risco de a conta ser marcada como spam.</p></div>
       ${pub.length ? pub.map((v) => {

@@ -580,3 +580,11 @@ main{gap:12px;padding-block:16px 40px;padding-inline:clamp(12px,2.2vw,28px)}
 #artsPanel .arts{grid-template-columns:repeat(auto-fill,minmax(110px,170px))}
 .vform ~ .form-foot,.vform ~ #vErr + .form-foot{position:sticky;bottom:0;z-index:5;background:var(--bg);padding:8px 0;margin-top:4px;border-top:1px solid var(--line)}
 @media (max-width:760px){.fields .f{grid-column:span 1}.fields .f.w3,.fields .f.w6,.fields .f.wfull{grid-column:span 2}.vform ~ .form-foot{flex-wrap:wrap}}
+/* v2.6.2: indicadores do Painel em uma única linha no computador */
+@media (min-width:900px){
+  .ptiles{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:5px}
+  .pt{padding:5px 7px}
+  .pt span{font-size:9.5px;letter-spacing:.03em}
+  .pt b{font-size:18px}
+  .pt em{font-size:10.5px}
+}

@@ -195,13 +195,11 @@ function trocaPendente(v) {
 
 // Data em que o lucro de uma venda fica realizado: venda sem troca = data da venda;
 // venda com troca = quando o carro da troca for vendido (em cadeia, até uma venda sem troca).
-function realizadoEm(v, byId, depth = 0) {
-  if (!v || v.status !== 'vendido') return null;
-  if (!v.venda_troca_id || depth > 20) return v.vendido_em;
-  const t = byId.get(v.venda_troca_id);
-  if (!t) return v.vendido_em;
-  if (t.status !== 'vendido') return null;
-  return realizadoEm(t, byId, depth + 1);
+// v2.6.2 (decisão da loja): o lucro de cada venda entra na data da venda, inclusive com troca.
+// Não há lucro em dobro porque o carro da troca entra no estoque com custo = valor dado na troca;
+// quando ele for vendido, só a diferença (venda − valor da troca − custos) vira lucro.
+function realizadoEm(v) {
+  return v && v.status === 'vendido' ? v.vendido_em : null;
 }
 
 function addCost(storeId, vehicleId, body, userId) {
@@ -397,14 +395,15 @@ function results(storeId, q = {}) {
       comprador: v.venda_comprador || '', doc_status: v.doc_status || 'pendente', anunciado: V.precoAnuncio(v) || 0,
       retorno: v.venda_retorno || 0, troca_valor: v.venda_troca_valor || 0, troca_id: v.venda_troca_id || null,
       troca_titulo: v.venda_troca_id && byId.get(v.venda_troca_id) ? V.title(byId.get(v.venda_troca_id)) : (v.venda_troca_desc || ''),
-      realizado_em: realizadoEm(v, byId), em_troca: !realizadoEm(v, byId),
+      realizado_em: realizadoEm(v), em_troca: !!(v.venda_troca_id && byId.get(v.venda_troca_id) && byId.get(v.venda_troca_id).status !== 'vendido'),
     };
   };
   const linhas = vendidos.map(linha);
   // Lucro realizado no período: vendas sem troca no período e cadeias de troca que terminaram no período.
   const realizIn = (v, a, b) => { const r = realizadoEm(v, byId); return r && r.slice(0, 10) >= a && r.slice(0, 10) <= b; };
   const realizadas = all_.filter((v) => v.status === 'vendido' && filtro(v) && (!vendedor || v.venda_vendedor_id === vendedor) && realizIn(v, from, to)).map(linha);
-  const aRealizar = all_.filter((v) => v.status === 'vendido' && filtro(v) && (!vendedor || v.venda_vendedor_id === vendedor) && !realizadoEm(v, byId)).map(linha);
+  // Informativo: vendas cujo carro da troca ainda está no estoque.
+  const aRealizar = all_.filter((v) => v.status === 'vendido' && filtro(v) && (!vendedor || v.venda_vendedor_id === vendedor) && v.venda_troca_id && byId.get(v.venda_troca_id) && byId.get(v.venda_troca_id).status !== 'vendido').map(linha);
   const sum = (arr, k) => arr.reduce((s, x) => s + (Number(x[k]) || 0), 0);
   const avg = (arr, k) => (arr.length ? Math.round(sum(arr, k) / arr.length) : 0);
   const comLucro = realizadas.filter((l) => l.liquido !== null);
@@ -445,7 +444,7 @@ function results(storeId, q = {}) {
     despesas_loja: despesas,
     despesas_categorias: Object.entries(porCat).map(([categoria, valor]) => ({ categoria, valor })).sort((a, b) => b.valor - a.valor),
     resultado: sum(comLucro, 'liquido') - comissoesExtra - despesas,
-    fora_do_calculo: linhas.filter((l) => !l.em_troca && l.liquido === null).length,
+    fora_do_calculo: linhas.filter((l) => l.liquido === null).length,
     // Lucro de vendas com troca que só fica realizado quando o carro da troca for vendido.
     a_realizar: aRealizar.reduce((s, l) => s + (l.liquido || 0), 0),
     a_realizar_qtd: aRealizar.length,
@@ -497,7 +496,8 @@ function results(storeId, q = {}) {
       dias_medios_venda: avg(linhas, 'dias'),
       desconto_medio_pct: (() => { const c = linhas.filter((l) => l.venda && l.anunciado); return c.length ? Math.round((1 - sum(c, 'venda') / sum(c, 'anunciado')) * 1000) / 10 : 0; })(),
       sem_valor_venda: linhas.filter((l) => !l.venda).length,
-      sem_lucro: linhas.filter((l) => !l.em_troca && l.liquido === null).length,
+      sem_lucro: linhas.filter((l) => l.liquido === null).length,
+      trocas_estoque_valor: aRealizar.reduce((s, l) => s + (l.troca_valor || 0), 0),
       lucro_a_realizar: aRealizar.reduce((s, l) => s + (l.liquido || 0), 0),
       vendas_em_troca: aRealizar.length,
       recebido_sem_troca: sum(linhas, 'venda') - sum(linhas, 'troca_valor'),

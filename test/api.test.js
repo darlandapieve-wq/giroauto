@@ -970,12 +970,12 @@ test('v2.5: venda com troca (lucro realizado em cadeia), financiamento, boleto e
   assert.equal(eco.compra_de, 'Ana Troca');
   r = await api('GET', `/api/vehicles/${cruze}/finance`);
   assert.equal(r.body.finance.troca_pendente, true);
-  // Enquanto a Ecosport não é vendida, o lucro do Cruze fica "a realizar".
+  // Decisão da loja: o lucro da venda com troca entra na data da venda.
   r = await api('GET', `/api/results?from=${from}&to=${to}`);
-  assert.equal(r.body.kpis.lucro_liquido, base0.lucro_liquido);
-  assert.ok(r.body.kpis.lucro_a_realizar <= base0.lucro_a_realizar + 0 || true);
+  assert.equal(r.body.kpis.lucro_liquido - base0.lucro_liquido, 50000 - 50000 - Math.round(50000 * 0.02));
   assert.ok(r.body.em_troca.some((x) => x.id === cruze && /Ecosport/.test(x.troca_titulo)));
   assert.ok(r.body.vendidos.find((l) => l.id === cruze).em_troca);
+  assert.equal(r.body.kpis.trocas_estoque_valor, 30000);
   // Ecosport vendida: 10.000 de entrada + 25.000 financiados (BV, 48x) + 2 boletos de 1.000 + retorno de 1.200 da financeira.
   r = await api('POST', `/api/vehicles/${eco.id}/sold`, { venda_data: '2026-10-20', venda_entrada: 10000, venda_financiado: 25000, venda_financeira: 'BV', venda_fin_parcelas: 48, venda_fin_parcela: 790, venda_boleto_qtd: 2, venda_boleto_valor: 1000, venda_retorno: 1200 });
   const ev = D.get('SELECT * FROM vehicles WHERE id = ?', eco.id);
