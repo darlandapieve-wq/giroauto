@@ -20,7 +20,7 @@ const own = (req) => {
   return v;
 };
 
-const FIN_KEYS = ['compra_valor', 'compra_data', 'compra_de', 'compra_origem', 'consig_repasse', 'venda_valor', 'venda_comissao', 'venda_entrada', 'venda_troca_valor', 'financeiro'];
+const FIN_KEYS = ['venda_retorno', 'compra_valor', 'compra_data', 'compra_de', 'compra_origem', 'consig_repasse', 'venda_valor', 'venda_comissao', 'venda_entrada', 'venda_troca_valor', 'financeiro'];
 
 // Quem não tem a permissão "financeiro" não recebe valores de compra, custos e margem.
 function stripFinance(req, res, next) {
@@ -188,6 +188,7 @@ function register(app) {
     const f = G.saleFields(req.user.storeId, v, b, true);
     const cols = Object.keys(f);
     if (cols.length) run(`UPDATE vehicles SET ${cols.map((c) => `${c}=?`).join(',')}, updated_at=datetime('now') WHERE id=?`, ...cols.map((c) => f[c]), v.id);
+    G.applyTrade(req.user.storeId, v.id, b, req.user.id);
     res.json(V.serialize(V.findVehicle(req.user.storeId, v.id)));
   });
 

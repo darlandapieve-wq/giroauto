@@ -28,7 +28,7 @@ const DOC_STATUS = {
   nao_aplica: 'Não se aplica',
 };
 const DOC_DONE = ['entregue', 'nao_aplica'];
-const PAGAMENTOS = ['À vista', 'PIX', 'Financiamento', 'Cartão', 'Consórcio', 'Troca + volta', 'Outro'];
+const PAGAMENTOS = ['À vista', 'PIX', 'Dinheiro', 'Cartão', 'Financiamento', 'Boleto', 'Consórcio', 'Troca + volta', 'Outro'];
 const EXP_CATS = {
   aluguel: 'Aluguel', salarios: 'Salários e pró-labore', energia: 'Energia', agua_internet: 'Água, telefone e internet',
   marketing: 'Marketing e anúncios', sistemas: 'Sistemas e assinaturas', contador: 'Contador', impostos: 'Impostos da loja',
@@ -75,13 +75,13 @@ function finance(v, store) {
     if (v.consig_comissao_pct) return Math.round(venda * (1 - v.consig_comissao_pct / 100));
     return v.compra_valor || 0;
   };
-  const calc = (venda, comissao) => {
+  const calc = (venda, comissao, retorno = 0) => {
     if (!venda) return null;
     if (!baseFor(venda)) return null; // sem valor de compra/repasse não dá para calcular lucro
-    const bruto = venda - baseFor(venda) - custos;
+    const bruto = venda + retorno - baseFor(venda) - custos;
     const impostos = Math.round(venda * impostosPct);
     const liquido = bruto - (comissao || 0) - impostos;
-    return { venda, base: baseFor(venda), custos, bruto, comissao: comissao || 0, impostos, liquido, margem_pct: venda ? Math.round((liquido / venda) * 1000) / 10 : 0 };
+    return { venda, retorno, base: baseFor(venda), custos, bruto, comissao: comissao || 0, impostos, liquido, margem_pct: venda ? Math.round((liquido / venda) * 1000) / 10 : 0 };
   };
   const investido = (consig ? 0 : (v.compra_valor || 0)) + realizados;
   return {
@@ -91,7 +91,8 @@ function finance(v, store) {
     investido,
     investimento_total: investido + previstos,
     previsto: calc(preco, 0),
-    real: v.status === 'vendido' ? calc(v.venda_valor || 0, v.venda_comissao) : null,
+    real: v.status === 'vendido' ? calc(v.venda_valor || 0, v.venda_comissao, v.venda_retorno || 0) : null,
+    troca_pendente: trocaPendente(v),
     base_label: consig ? 'Repasse ao dono' : 'Valor de compra',
     terceiro: consig,
     margem_loja: consig ? (v.margem_tipo === 'valor' && v.margem_fixa ? { tipo: 'valor', valor: v.margem_fixa } : v.consig_comissao_pct ? { tipo: 'pct', valor: v.consig_comissao_pct } : null) : null,
@@ -108,6 +109,7 @@ function saveFinance(storeId, vehicleId, body) {
   if (has('compra_valor')) f.compra_valor = int(body.compra_valor);
   if (has('compra_data')) f.compra_data = date(body.compra_data);
   if (has('compra_de')) f.compra_de = str(body.compra_de, 120);
+  if (has('compra_de_tel')) f.compra_de_tel = str(body.compra_de_tel, 20);
   if (has('compra_origem')) f.compra_origem = ORIGEM_LABEL[body.compra_origem] ? body.compra_origem : '';
   if (has('consig_repasse')) f.consig_repasse = int(body.consig_repasse);
   if (v.status === 'vendido' || has('venda_valor')) Object.assign(f, saleFields(storeId, v, body, true));
@@ -135,8 +137,71 @@ function saleFields(storeId, v, body, partial) {
     const s = body.venda_vendedor_id ? get('SELECT id FROM users WHERE id = ? AND store_id = ?', Number(body.venda_vendedor_id), storeId) : null;
     f.venda_vendedor_id = s?.id || null;
   }
+  // v2.5: composição do pagamento (à vista + troca + financiamento + boletos, em qualquer combinação).
+  for (const k of ['venda_financiado', 'venda_fin_parcelas', 'venda_fin_parcela', 'venda_retorno', 'venda_boleto_qtd', 'venda_boleto_valor']) if (has(k)) f[k] = int(body[k]);
+  if (has('venda_troca_id')) {
+    const t = body.venda_troca_id ? get('SELECT id FROM vehicles WHERE id = ? AND store_id = ? AND id != ?', Number(body.venda_troca_id), storeId, v.id) : null;
+    f.venda_troca_id = t?.id || null;
+  }
+  // Total = soma das partes, quando informadas e o total não veio.
+  const partes = (f.venda_entrada ?? v.venda_entrada ?? 0) + (f.venda_troca_valor ?? v.venda_troca_valor ?? 0) + (f.venda_financiado ?? v.venda_financiado ?? 0)
+    + (f.venda_boleto_qtd ?? v.venda_boleto_qtd ?? 0) * (f.venda_boleto_valor ?? v.venda_boleto_valor ?? 0);
+  if (has('venda_valor') && !f.venda_valor && partes) f.venda_valor = partes;
   if (body.venda_data !== undefined && date(body.venda_data)) f.vendido_em = `${body.venda_data} 12:00:00`;
   return f;
+}
+
+// Carro que entrou na troca: liga ao carro vendido e grava a compra pelo valor dado na troca.
+// O lucro da venda com troca só é "realizado" quando o carro da troca for vendido (ver realizadoEm).
+function applyTrade(storeId, vehicleId, body, userId) {
+  const v = get('SELECT * FROM vehicles WHERE id = ? AND store_id = ?', Number(vehicleId), storeId);
+  if (!v) return null;
+  let trocaId = v.venda_troca_id;
+  const n = body.troca_novo;
+  if (!trocaId && n && str(n.marca) && str(n.modelo)) {
+    const d = V.cleanInput({ marca: n.marca, modelo: n.modelo, versao: n.versao, ano_fab: n.ano, ano_modelo: n.ano, placa: n.placa, km: n.km, cor: n.cor });
+    d.created_by = userId;
+    const cols = Object.keys(d);
+    trocaId = run(`INSERT INTO vehicles (store_id, ${cols.join(',')}) VALUES (?, ${cols.map(() => '?').join(',')})`, storeId, ...cols.map((k) => d[k])).lastInsertRowid;
+    run('UPDATE vehicles SET venda_troca_id = ? WHERE id = ?', trocaId, v.id);
+    if (!v.venda_troca_desc) run('UPDATE vehicles SET venda_troca_desc = ? WHERE id = ?', `${d.marca} ${d.modelo}${d.placa ? ' ' + d.placa : ''}`, v.id);
+    logEvent(storeId, `${d.marca} ${d.modelo} entrou na troca do ${v.marca} ${v.modelo}`);
+  }
+  // Desfaz a ligação antiga se a troca mudou.
+  run('UPDATE vehicles SET troca_de_id = NULL WHERE store_id = ? AND troca_de_id = ? AND id != ?', storeId, v.id, trocaId || 0);
+  if (!trocaId) return null;
+  const t = get('SELECT * FROM vehicles WHERE id = ?', trocaId);
+  const upd = { troca_de_id: v.id, compra_origem: 'troca' };
+  if (v.venda_troca_valor && (!t.compra_valor || t.troca_de_id === v.id || !t.troca_de_id)) upd.compra_valor = v.venda_troca_valor;
+  if (!t.compra_data && v.vendido_em) upd.compra_data = String(v.vendido_em).slice(0, 10);
+  if (!t.compra_de && v.venda_comprador) upd.compra_de = v.venda_comprador;
+  if (!t.compra_de_tel && v.comprador_tel) upd.compra_de_tel = v.comprador_tel;
+  const cols = Object.keys(upd);
+  run(`UPDATE vehicles SET ${cols.map((c) => `${c}=?`).join(',')} WHERE id = ?`, ...cols.map((c) => upd[c]), t.id);
+  return t.id;
+}
+
+// Lucro ainda "em troca": algum carro da cadeia de trocas não foi vendido.
+function trocaPendente(v) {
+  let cur = v;
+  for (let i = 0; i < 20 && cur && cur.status === 'vendido' && cur.venda_troca_id; i++) {
+    const t = get('SELECT id, status, venda_troca_id FROM vehicles WHERE id = ?', cur.venda_troca_id);
+    if (!t) return false;
+    if (t.status !== 'vendido') return true;
+    cur = t;
+  }
+  return false;
+}
+
+// Data em que o lucro de uma venda fica realizado: venda sem troca = data da venda;
+// venda com troca = quando o carro da troca for vendido (em cadeia, até uma venda sem troca).
+function realizadoEm(v, byId, depth = 0) {
+  if (!v || v.status !== 'vendido') return null;
+  if (!v.venda_troca_id || depth > 20) return v.vendido_em;
+  const t = byId.get(v.venda_troca_id);
+  if (!t) return v.vendido_em;
+  if (t.status !== 'vendido') return null;
+  return realizadoEm(t, byId, depth + 1);
 }
 
 function addCost(storeId, vehicleId, body, userId) {
@@ -318,6 +383,7 @@ function results(storeId, q = {}) {
   const estoque = all_.filter((v) => v.status !== 'vendido' && filtro(v));
   const soldIn = (v, a, b) => v.status === 'vendido' && v.vendido_em && v.vendido_em.slice(0, 10) >= a && v.vendido_em.slice(0, 10) <= b;
   const vendidos = all_.filter((v) => soldIn(v, from, to) && filtro(v) && (!vendedor || v.venda_vendedor_id === vendedor));
+  const byId = new Map(all_.map((v) => [v.id, v]));
 
   const linha = (v) => {
     const f = finance(v, store);
@@ -329,12 +395,19 @@ function results(storeId, q = {}) {
       comissao: v.venda_comissao || 0, impostos: f.real?.impostos || 0, liquido: f.real?.liquido ?? null, margem_pct: f.real?.margem_pct ?? null,
       vendedor_id: v.venda_vendedor_id, vendedor: users[v.venda_vendedor_id] || '', pagamento: v.venda_pagamento || 'Não informado',
       comprador: v.venda_comprador || '', doc_status: v.doc_status || 'pendente', anunciado: V.precoAnuncio(v) || 0,
+      retorno: v.venda_retorno || 0, troca_valor: v.venda_troca_valor || 0, troca_id: v.venda_troca_id || null,
+      troca_titulo: v.venda_troca_id && byId.get(v.venda_troca_id) ? V.title(byId.get(v.venda_troca_id)) : (v.venda_troca_desc || ''),
+      realizado_em: realizadoEm(v, byId), em_troca: !realizadoEm(v, byId),
     };
   };
   const linhas = vendidos.map(linha);
+  // Lucro realizado no período: vendas sem troca no período e cadeias de troca que terminaram no período.
+  const realizIn = (v, a, b) => { const r = realizadoEm(v, byId); return r && r.slice(0, 10) >= a && r.slice(0, 10) <= b; };
+  const realizadas = all_.filter((v) => v.status === 'vendido' && filtro(v) && (!vendedor || v.venda_vendedor_id === vendedor) && realizIn(v, from, to)).map(linha);
+  const aRealizar = all_.filter((v) => v.status === 'vendido' && filtro(v) && (!vendedor || v.venda_vendedor_id === vendedor) && !realizadoEm(v, byId)).map(linha);
   const sum = (arr, k) => arr.reduce((s, x) => s + (Number(x[k]) || 0), 0);
   const avg = (arr, k) => (arr.length ? Math.round(sum(arr, k) / arr.length) : 0);
-  const comLucro = linhas.filter((l) => l.liquido !== null);
+  const comLucro = realizadas.filter((l) => l.liquido !== null);
   const paradoDias = store.parado_dias || 25;
 
   // Estoque com idade, investimento e lucro previsto.
@@ -360,6 +433,8 @@ function results(storeId, q = {}) {
   if (!vendedor) desp.forEach((e) => { porCat[e.categoria_label] = (porCat[e.categoria_label] || 0) + e.valor; });
   const dre = {
     receita: sum(comLucro, 'venda'),
+    retorno_financiamento: sum(comLucro, 'retorno'),
+    receita_em_trocas: sum(comLucro, 'troca_valor'),
     custo_veiculos: sum(comLucro, 'base'),
     preparacao: sum(comLucro, 'custos'),
     lucro_bruto: sum(comLucro, 'bruto'),
@@ -370,7 +445,10 @@ function results(storeId, q = {}) {
     despesas_loja: despesas,
     despesas_categorias: Object.entries(porCat).map(([categoria, valor]) => ({ categoria, valor })).sort((a, b) => b.valor - a.valor),
     resultado: sum(comLucro, 'liquido') - comissoesExtra - despesas,
-    fora_do_calculo: linhas.length - comLucro.length,
+    fora_do_calculo: linhas.filter((l) => !l.em_troca && l.liquido === null).length,
+    // Lucro de vendas com troca que só fica realizado quando o carro da troca for vendido.
+    a_realizar: aRealizar.reduce((s, l) => s + (l.liquido || 0), 0),
+    a_realizar_qtd: aRealizar.length,
   };
 
   const group = (arr, keyFn, labelFn) => {
@@ -391,8 +469,9 @@ function results(storeId, q = {}) {
     const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
     const key = d.toISOString().slice(0, 7);
     const ls = all_.filter((v) => v.status === 'vendido' && filtro(v) && String(v.vendido_em || '').startsWith(key)).map(linha);
+    const lr = all_.filter((v) => v.status === 'vendido' && filtro(v) && String(realizadoEm(v, byId) || '').startsWith(key)).map(linha);
     const dsp = get('SELECT COALESCE(SUM(valor),0) s FROM store_expenses WHERE store_id = ? AND substr(data,1,7) = ?', storeId, key).s;
-    meses.push({ mes: key, vendidos: ls.length, faturamento: sum(ls, 'venda'), lucro: sum(ls, 'liquido'), despesas: dsp, dias_medio: avg(ls, 'dias') });
+    meses.push({ mes: key, vendidos: ls.length, faturamento: sum(ls, 'venda'), lucro: sum(lr, 'liquido'), despesas: dsp, dias_medio: avg(ls, 'dias') });
   }
 
   const faixasVenda = FAIXAS.map(([, , label]) => ({ label, qtd: 0 }));
@@ -418,7 +497,10 @@ function results(storeId, q = {}) {
       dias_medios_venda: avg(linhas, 'dias'),
       desconto_medio_pct: (() => { const c = linhas.filter((l) => l.venda && l.anunciado); return c.length ? Math.round((1 - sum(c, 'venda') / sum(c, 'anunciado')) * 1000) / 10 : 0; })(),
       sem_valor_venda: linhas.filter((l) => !l.venda).length,
-      sem_lucro: linhas.length - comLucro.length,
+      sem_lucro: linhas.filter((l) => !l.em_troca && l.liquido === null).length,
+      lucro_a_realizar: aRealizar.reduce((s, l) => s + (l.liquido || 0), 0),
+      vendas_em_troca: aRealizar.length,
+      recebido_sem_troca: sum(linhas, 'venda') - sum(linhas, 'troca_valor'),
       estoque_qtd: est.length,
       estoque_valor_venda: sum(est, 'preco'),
       estoque_fipe: sum(est, 'fipe'),
@@ -440,6 +522,7 @@ function results(storeId, q = {}) {
     dre,
     parado_dias: paradoDias,
     vendidos: linhas.sort((a, b) => String(b.vendido_em).localeCompare(String(a.vendido_em))),
+    em_troca: aRealizar.map((l) => ({ id: l.id, titulo: l.titulo, vendido_em: l.vendido_em, liquido: l.liquido, troca_id: l.troca_id, troca_titulo: l.troca_titulo })),
     estoque: est,
     meses,
     faixas_venda: faixasVenda,
@@ -475,5 +558,5 @@ function resultsCsv(storeId, q) {
 module.exports = {
   TERCEIROS, COST_CATS, PARTNER_TYPES, LOCAL, DOC_STATUS, DOC_DONE, PAGAMENTOS, EXP_CATS,
   costsOf, finance, saveFinance, saleFields, addCost, updateCost, deleteCost, partners, savePartner, setLocation, moves, followUpLink,
-  setDocStatus, docMoves, docList, expenses, addExpense, deleteExpense, payExpense, contasAbertas, results, resultsCsv, daysBetween, waNumber,
+  applyTrade, realizadoEm, setDocStatus, docMoves, docList, expenses, addExpense, deleteExpense, payExpense, contasAbertas, results, resultsCsv, daysBetween, waNumber,
 };

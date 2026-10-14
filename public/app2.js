@@ -275,6 +275,8 @@
         <div class="f"><label for="g-cd">Data da compra</label><input id="g-cd" type="date" value="${esc(dataCompra || '')}"></div>
         <div class="f"><label for="g-or">Origem da compra</label><select id="g-or"><option value="">Selecione</option>${(O.origem || []).map((o) => `<option value="${o.key}" ${o.key === (fin.compra_origem ?? d.compra_origem) ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}</select></div>
         <div class="f w3"><label for="g-cf">Comprado de</label><input id="g-cf" value="${esc(fin.compra_de ?? (d.compra_de || ''))}" placeholder="Nome do vendedor, loja ou leilão"></div>
+        <div class="f"><label for="g-ct">WhatsApp de quem vendeu</label><input id="g-ct" inputmode="tel" value="${esc(fin.compra_de_tel ?? (d.compra_de_tel || ''))}" placeholder="(44) 99999-0000">${(fin.compra_de_tel ?? d.compra_de_tel) ? `<span class="hint"><a class="link" href="${esc(waLink(fin.compra_de_tel ?? d.compra_de_tel))}" target="_blank" rel="noopener">abrir WhatsApp</a></span>` : ''}</div>
+        ${d.troca_de_id ? `<div class="f w6"><span class="pill p-info">🔁 Entrou na troca de <button class="vlink" type="button" data-vp="${d.troca_de_id}">outro veículo</button></span></div>` : ''}
       </div>
       <div class="grid2 gcost" style="margin-top:12px">
         <div><h3 class="dest-h">Manutenções e custos já feitos</h3><div id="g-real"></div></div>
@@ -386,7 +388,7 @@
   function readGestao(d) {
     if (!$('#gestaoPanel') || !$('#g-cv')) return;
     const consig = consigOf();
-    d._fin = { base: $('#g-cv').value, compra_data: $('#g-cd').value, compra_origem: $('#g-or').value, compra_de: $('#g-cf').value };
+    d._fin = { base: $('#g-cv').value, compra_data: $('#g-cd').value, compra_origem: $('#g-or').value, compra_de: $('#g-cf').value, compra_de_tel: $('#g-ct').value };
     d._fin[consig ? 'consig_repasse' : 'compra_valor'] = num($('#g-cv').value);
   }
   X.afterSave = async (v, d) => {
@@ -498,6 +500,13 @@
       $('#goQuick') && ($('#goQuick').onclick = () => X.go('rapido'));
       if (head.querySelector('#stockTools')) head.style.flexWrap = 'wrap';
     }
+    // Filtro por propriedade (loja, consignado…) e origem da compra.
+    if ($('.list') && !$('#stFiltro')) {
+      const O = S.me.options;
+      $('.list').insertAdjacentHTML('beforebegin', `<div class="btnrow" style="margin:0 0 8px;align-items:center"><label for="stFiltro" class="sub">Mostrar:</label><select id="stFiltro" style="width:auto"><option value="">Todas as propriedades e origens</option><optgroup label="Propriedade">${(O.propriedade || []).map((p) => `<option value="p:${p.key}" ${STF === 'p:' + p.key ? 'selected' : ''}>${esc(p.label.split(' (')[0])}</option>`).join('')}</optgroup><optgroup label="Origem da compra">${(O.origem || []).map((p) => `<option value="o:${p.key}" ${STF === 'o:' + p.key ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}<option value="o:" ${STF === 'o:' ? 'selected' : ''}>Origem não informada</option></optgroup></select><span class="sub" id="stFiltroN"></span></div>`);
+      $('#stFiltro').onchange = () => { STF = $('#stFiltro').value; aplicarFiltroEstoque(); };
+    }
+    aplicarFiltroEstoque();
     if (parados.length && !$('#stalled')) {
       $('.strip')?.insertAdjacentHTML('beforebegin', `<div class="warnbox conn-row" id="stalled"><span><b>${parados.length} ${parados.length === 1 ? 'carro parado' : 'carros parados'}</b> há ${S.vehicles[0]?.parado_dias || 25} dias ou mais. Uma oferta com o preço de ocasião ajuda a girar.</span><button class="btn sm" type="button" id="stalledList">Ver e sugerir ofertas</button></div>`);
       $('#stalledList').onclick = () => stalledModal(parados);
@@ -535,6 +544,18 @@
     $$('[data-more]').forEach((b) => { b.onclick = (e) => moreMenu(V.find((x) => x.id === Number(b.dataset.more)), e.currentTarget); });
   }
 
+  let STF = '';
+  function aplicarFiltroEstoque() {
+    let n = 0; let t = 0;
+    $$('.list .row').forEach((row) => {
+      const id = Number(row.querySelector('[data-id]')?.dataset.id);
+      const v = S.vehicles.find((x) => x.id === id); if (!v) return;
+      const [k, val] = STF ? STF.split(':') : ['', ''];
+      const ok = !STF || (k === 'p' ? (v.proprietario_tipo || 'proprio') === val : (v.compra_origem || '') === val);
+      row.hidden = !ok; t++; if (ok) n++;
+    });
+    if ($('#stFiltroN')) $('#stFiltroN').textContent = STF ? `${n} de ${t}` : '';
+  }
   function moreMenu(v, anchor) {
     $('#moreMenu')?.remove();
     const items = [
@@ -663,20 +684,37 @@
   /* ======================= Venda (v2.1) ======================= */
   const DOC_INICIAL = [['pendente', 'Ainda não preenchido'], ['preenchido', 'Sim, ATPV-e / recibo preenchido'], ['assinado', 'Preenchido e assinado (firma reconhecida)'], ['nao_aplica', 'Não se aplica']];
   function saleFieldsHtml(v, sellers, edit) {
-    const pg = S.me.options.pagamentos || [];
     const val = (k, def = '') => esc(v[k] ?? def);
     const vend = v.venda_vendedor_id || S.me.user.id;
     const data = edit ? String(v.vendido_em || '').slice(0, 10) : today();
+    const fin = can('financeiro');
+    // Carros que podem ser a troca: os do estoque (não vendidos), exceto o próprio.
+    const trocas = S.vehicles.filter((x) => x.id !== v.id && (x.status !== 'vendido' || x.id === v.venda_troca_id));
+    const on = (k) => (edit ? !!v[k] : false);
+    const avistaOn = edit ? !!v.venda_entrada : true;
+    const formaAv = /Dinheiro|Cart|PIX/.test(v.venda_pagamento || '') ? (v.venda_pagamento.match(/Dinheiro|Cartão|PIX/) || ['PIX'])[0] : 'PIX';
     return `<div class="fields">
-        <div class="f"><label for="s-vv">Valor da venda (R$)</label><input id="s-vv" inputmode="numeric" value="${edit ? val('venda_valor') : esc(v.preco_anuncio || '')}" style="font-size:18px"></div>
+        <div class="f"><label for="s-vv">Valor total da venda (R$)</label><input id="s-vv" inputmode="numeric" value="${edit ? val('venda_valor') : esc(v.preco_anuncio || '')}" style="font-size:18px"><span class="hint" id="s-soma"></span></div>
         <div class="f"><label for="s-dt">Data da venda</label><input id="s-dt" type="date" value="${esc(data)}" max="${today()}"></div>
         <div class="f"><label for="s-vs">Vendedor</label><select id="s-vs">${sellers.map((s) => `<option value="${s.id}" ${s.id === vend ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>
-        ${can('financeiro') ? `<div class="f"><label for="s-cm">Comissão do vendedor (R$)</label><input id="s-cm" inputmode="numeric" value="${edit ? val('venda_comissao') : ''}"></div>` : ''}
-        <div class="f"><label for="s-pg">Forma de pagamento</label><select id="s-pg"><option value="">Selecione</option>${pg.map((p) => `<option ${p === v.venda_pagamento ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></div>
-        <div class="f s-fin"><label for="s-en">Entrada (R$)</label><input id="s-en" inputmode="numeric" value="${edit ? val('venda_entrada') : ''}"></div>
-        <div class="f s-fin"><label for="s-fi">Financeira / banco</label><input id="s-fi" value="${edit ? val('venda_financeira') : ''}" placeholder="Ex.: BV, Santander"></div>
-        <div class="f s-tr"><label for="s-tv">Carro na troca (R$)</label><input id="s-tv" inputmode="numeric" value="${edit ? val('venda_troca_valor') : ''}"></div>
-        <div class="f w3 s-tr"><label for="s-td">Qual carro entrou na troca</label><input id="s-td" value="${edit ? val('venda_troca_desc') : ''}" placeholder="Ex.: Gol 2015, placa ABC1234"></div>
+        ${fin ? `<div class="f"><label for="s-cm">Comissão do vendedor (R$)</label><input id="s-cm" inputmode="numeric" value="${edit ? val('venda_comissao') : ''}"></div>` : ''}
+      </div>
+      <h4>Como foi pago <span class="sub">(marque uma ou mais partes)</span></h4>
+      <div class="pay">
+        <div class="payrow"><label class="check"><input type="checkbox" id="s-p-av" ${avistaOn ? 'checked' : ''}><div><b>À vista</b><span>PIX, dinheiro, cartão</span></div></label>
+          <div class="fields pay-f" data-pf="av"><div class="f"><label for="s-en">Valor (R$)</label><input id="s-en" inputmode="numeric" value="${edit ? val('venda_entrada') : ''}"></div><div class="f"><label for="s-pg">Forma</label><select id="s-pg">${['PIX', 'Dinheiro', 'Cartão'].map((x) => `<option ${x === formaAv ? 'selected' : ''}>${x}</option>`).join('')}</select></div></div></div>
+        <div class="payrow"><label class="check"><input type="checkbox" id="s-p-tr" ${on('venda_troca_valor') || on('venda_troca_id') ? 'checked' : ''}><div><b>Carro na troca</b><span>entra no estoque como compra</span></div></label>
+          <div class="fields pay-f" data-pf="tr"><div class="f w3"><label for="s-tid">Qual carro</label><select id="s-tid"><option value="">Cadastrar agora…</option>${trocas.map((x) => `<option value="${x.id}" ${x.id === v.venda_troca_id ? 'selected' : ''}>${esc(x.marca)} ${esc(x.modelo)} ${esc(x.ano_modelo || '')} ${esc(x.placa || '')}</option>`).join('')}</select></div>
+            <div class="f"><label for="s-tv">Valor dado na troca (R$)</label><input id="s-tv" inputmode="numeric" value="${edit ? val('venda_troca_valor') : ''}"></div>
+            <div class="f w6 s-tnew"><div class="fields"><div class="f"><label for="s-tm">Marca</label><input id="s-tm" placeholder="Ford"></div><div class="f"><label for="s-to">Modelo</label><input id="s-to" placeholder="Ecosport"></div><div class="f"><label for="s-ta">Ano</label><input id="s-ta" inputmode="numeric" maxlength="4"></div><div class="f"><label for="s-tp">Placa</label><input id="s-tp" maxlength="8" style="text-transform:uppercase"></div></div></div></div></div>
+        <div class="payrow"><label class="check"><input type="checkbox" id="s-p-fi" ${on('venda_financiado') || /Financ/.test(v.venda_pagamento || '') ? 'checked' : ''}><div><b>Financiamento</b><span>banco, parcelas e retorno</span></div></label>
+          <div class="fields pay-f" data-pf="fi"><div class="f"><label for="s-fi">Banco / financeira</label><input id="s-fi" value="${edit ? val('venda_financeira') : ''}" placeholder="BV, Santander…"></div>
+            <div class="f"><label for="s-ff">Valor financiado (R$)</label><input id="s-ff" inputmode="numeric" value="${edit ? val('venda_financiado') || '' : ''}"></div>
+            <div class="f"><label for="s-fp">Parcelas</label><input id="s-fp" inputmode="numeric" value="${edit && v.venda_fin_parcelas ? val('venda_fin_parcelas') : ''}" placeholder="48"></div>
+            <div class="f"><label for="s-fv">Valor da parcela (R$)</label><input id="s-fv" inputmode="numeric" value="${edit && v.venda_fin_parcela ? val('venda_fin_parcela') : ''}"></div>
+            ${fin ? `<div class="f"><label for="s-fr">Retorno da financeira (R$)</label><input id="s-fr" inputmode="numeric" value="${edit && v.venda_retorno ? val('venda_retorno') : ''}"><span class="hint">Entra na receita deste carro.</span></div>` : ''}</div></div>
+        <div class="payrow"><label class="check"><input type="checkbox" id="s-p-bo" ${on('venda_boleto_qtd') ? 'checked' : ''}><div><b>Boleto / promissória</b><span>parcelado pela loja</span></div></label>
+          <div class="fields pay-f" data-pf="bo"><div class="f"><label for="s-bq">Quantidade</label><input id="s-bq" inputmode="numeric" value="${edit && v.venda_boleto_qtd ? val('venda_boleto_qtd') : ''}"></div><div class="f"><label for="s-bv">Valor de cada (R$)</label><input id="s-bv" inputmode="numeric" value="${edit && v.venda_boleto_valor ? val('venda_boleto_valor') : ''}"></div></div></div>
       </div>
       <h4>Comprador</h4>
       <div class="fields">
@@ -689,33 +727,61 @@
       <div class="fields"><div class="f w6"><label for="s-ob">Observações da venda</label><textarea id="s-ob" rows="2" placeholder="Garantia combinada, itens entregues, pendências…">${edit ? val('venda_obs') : ''}</textarea></div></div>
       <div class="calc" id="s-calc"></div>`;
   }
+  const payOn = (k) => !!$(`#s-p-${k}`)?.checked;
+  function salePartes() {
+    const av = payOn('av') ? num($('#s-en').value) : 0;
+    const tr = payOn('tr') ? num($('#s-tv').value) : 0;
+    const fi = payOn('fi') ? num($('#s-ff').value) : 0;
+    const bo = payOn('bo') ? num($('#s-bq').value) * num($('#s-bv').value) : 0;
+    return { av, tr, fi, bo, total: av + tr + fi + bo };
+  }
   function bindSaleFields(v) {
+    // Na venda nova, o preço do anúncio é só sugestão: a soma das partes substitui. Em venda antiga sem partes, vale o total digitado.
+    let manual = v.status === 'vendido' && !!num($('#s-vv').value) && !(v.venda_entrada || v.venda_troca_valor || v.venda_financiado || v.venda_boleto_qtd);
+    $('#s-vv').addEventListener('input', () => { manual = true; });
     const sync = () => {
-      const p = $('#s-pg').value;
-      $$('.s-fin').forEach((e) => { e.hidden = !/Financ|Cons/.test(p); });
-      $$('.s-tr').forEach((e) => { e.hidden = !/Troca/.test(p) && !num($('#s-tv').value); });
+      ['av', 'tr', 'fi', 'bo'].forEach((k) => { const box = $(`[data-pf="${k}"]`); if (box) box.hidden = !payOn(k); });
+      if ($('.s-tnew')) $('.s-tnew').hidden = !payOn('tr') || !!$('#s-tid').value;
+      const p = salePartes();
+      if (p.total && (!manual || !num($('#s-vv').value))) { $('#s-vv').value = p.total; manual = false; }
+      const total = num($('#s-vv').value);
+      $('#s-soma').innerHTML = p.total ? `Soma das partes: <b>${brl(p.total)}</b>${p.total !== total ? ' <span class="neg">(diferente do total)</span>' : ''}` : '';
       const f = v.financeiro; const box = $('#s-calc');
       if (!box) return;
       if (!can('financeiro') || !f) { box.innerHTML = ''; return; }
-      const venda = num($('#s-vv').value);
+      const venda = total;
       const consig = TERC.includes(v.proprietario_tipo);
       const base = baseOfVehicle(v, venda);
-      if (!venda || !base) { box.innerHTML = `<p class="note">${base ? '' : `Sem ${consig ? 'repasse/comissão' : 'valor de compra'} no cadastro: o lucro desta venda não será calculado até você informar.`}</p>`; return; }
+      if (!venda || !base) { box.innerHTML = `<p class="note">${base ? '' : `Sem ${consig ? 'margem/repasse' : 'valor de compra'} no cadastro: o lucro desta venda não será calculado até você informar.`}</p>`; return; }
       const imp = Math.round(venda * Number(S.me.store.impostos_pct || 0) / 100);
       const com = num($('#s-cm')?.value);
-      const lucro = venda - base - (f.custos_total || 0) - com - imp;
-      box.innerHTML = `<div class="cl tot ${lucro < 0 ? 'neg' : 'pos'}"><span>Lucro desta venda</span><b>${brl(lucro)} <small>${pct(Math.round((lucro / venda) * 1000) / 10)}% · ${consig ? 'repasse' : 'compra'} ${brl(base)} · custos ${brl(f.custos_total || 0)}${com ? ` · comissão ${brl(com)}` : ''}${imp ? ` · impostos ${brl(imp)}` : ''}</small></b></div>
+      const ret = payOn('fi') ? num($('#s-fr')?.value) : 0;
+      const lucro = venda + ret - base - (f.custos_total || 0) - com - imp;
+      const trocaNome = payOn('tr') ? ($('#s-tid').value ? $('#s-tid').selectedOptions[0].textContent.trim() : [$('#s-tm').value, $('#s-to').value].filter(Boolean).join(' ') || 'o carro da troca') : '';
+      box.innerHTML = `<div class="cl tot ${lucro < 0 ? 'neg' : 'pos'}"><span>Lucro desta venda</span><b>${brl(lucro)} <small>${pct(Math.round((lucro / venda) * 1000) / 10)}% · ${consig ? 'repasse' : 'compra'} ${brl(base)} · custos ${brl(f.custos_total || 0)}${ret ? ` · retorno +${brl(ret)}` : ''}${com ? ` · comissão ${brl(com)}` : ''}${imp ? ` · impostos ${brl(imp)}` : ''}</small></b></div>
+        ${p.tr ? `<p class="note">🔁 Venda com troca: entra ${brl(venda - p.tr)} agora${p.tr ? ` e ${esc(trocaNome)} entra no estoque como compra de ${brl(p.tr)}` : ''}. O lucro desta venda fica <b>a realizar</b> e só entra nos resultados quando ${esc(trocaNome)} for vendido (sem nova troca). Assim o lucro não é contado duas vezes.</p>` : ''}
         ${venda < (v.preco_anuncio || 0) ? `<p class="note">Desconto de ${brl(v.preco_anuncio - venda)} sobre o anúncio (${pct(Math.round((1 - venda / v.preco_anuncio) * 1000) / 10)}%).</p>` : ''}`;
     };
-    ['#s-pg', '#s-vv', '#s-cm', '#s-tv'].forEach((s) => { const el = $(s); if (el) el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', sync); });
+    $$('.pay input, .pay select, #s-vv, #s-cm').forEach((el) => el.addEventListener(el.tagName === 'SELECT' || el.type === 'checkbox' ? 'change' : 'input', sync));
     sync();
   }
-  const saleBody = () => ({
-    venda_valor: num($('#s-vv').value), venda_data: $('#s-dt').value, venda_vendedor_id: $('#s-vs').value, venda_pagamento: $('#s-pg').value,
-    venda_entrada: num($('#s-en').value), venda_financeira: $('#s-fi').value, venda_troca_valor: num($('#s-tv').value), venda_troca_desc: $('#s-td').value,
-    venda_comprador: $('#s-cn').value, comprador_doc: $('#s-cd').value, comprador_tel: $('#s-ct').value, venda_obs: $('#s-ob').value,
-    ...($('#s-cm') ? { venda_comissao: num($('#s-cm').value) } : {}),
-  });
+  const saleBody = () => {
+    const p = salePartes();
+    const formas = [payOn('av') && $('#s-pg').value, payOn('tr') && 'Troca', payOn('fi') && 'Financiamento', payOn('bo') && 'Boleto'].filter(Boolean);
+    const b = {
+      venda_valor: num($('#s-vv').value), venda_data: $('#s-dt').value, venda_vendedor_id: $('#s-vs').value, venda_pagamento: formas.join(' + '),
+      venda_entrada: p.av, venda_troca_valor: p.tr, venda_financiado: p.fi, venda_financeira: payOn('fi') ? $('#s-fi').value : '',
+      venda_fin_parcelas: payOn('fi') ? num($('#s-fp').value) : 0, venda_fin_parcela: payOn('fi') ? num($('#s-fv').value) : 0,
+      venda_boleto_qtd: payOn('bo') ? num($('#s-bq').value) : 0, venda_boleto_valor: payOn('bo') ? num($('#s-bv').value) : 0,
+      venda_troca_id: payOn('tr') ? $('#s-tid').value || null : null,
+      venda_comprador: $('#s-cn').value, comprador_doc: $('#s-cd').value, comprador_tel: $('#s-ct').value, venda_obs: $('#s-ob').value,
+      ...($('#s-cm') ? { venda_comissao: num($('#s-cm').value) } : {}),
+      ...($('#s-fr') ? { venda_retorno: payOn('fi') ? num($('#s-fr').value) : 0 } : {}),
+    };
+    if (payOn('tr') && !$('#s-tid').value && $('#s-tm').value.trim() && $('#s-to').value.trim()) b.troca_novo = { marca: $('#s-tm').value, modelo: $('#s-to').value, ano: $('#s-ta').value, placa: $('#s-tp').value };
+    if (payOn('tr') && $('#s-tid').value) b.venda_troca_desc = $('#s-tid').selectedOptions[0].textContent.trim();
+    return b;
+  };
   X.sellModal = async (v, sold) => {
     const sellers = await api('GET', '/api/team/sellers').catch(() => [{ id: S.me.user.id, name: S.me.user.name }]);
     modal(`<h3>Vender ${esc(v.marca)} ${esc(v.modelo)} ${esc(v.versao || '')}</h3>
@@ -764,6 +830,7 @@
         <div class="f"><label for="fn-cd">Data da compra</label><input id="fn-cd" type="date" value="${esc(v.compra_data || String(v.created_at || '').slice(0, 10))}"></div>
         <div class="f"><label for="fn-or">Origem</label><select id="fn-or"><option value="">—</option>${(F.origens || []).map((o) => `<option value="${o.key}" ${o.key === v.compra_origem ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}</select></div>
         <div class="f"><label for="fn-cf">Comprado de</label><input id="fn-cf" value="${esc(v.compra_de || v.proprietario_nome || '')}"></div>
+        <div class="f"><label for="fn-ct">WhatsApp de quem vendeu</label><input id="fn-ct" inputmode="tel" value="${esc(v.compra_de_tel || '')}"></div>
         <div class="f" style="align-self:end"><button class="btn" type="button" id="fn-save">Salvar</button></div>
       </div>
       ${v.status === 'vendido' && can('vender') ? `<div class="btnrow" style="margin-top:8px"><button class="btn" type="button" id="fn-sale">Editar dados da venda</button></div>` : ''}
@@ -785,7 +852,7 @@
     const err = (m) => { $('#fn-err').textContent = m; $('#fn-err').hidden = false; };
     $('#fn-close').onclick = () => { closeModal(); if (['gestao', 'resultados'].includes(S.view)) X.render(); };
     $('#fn-save').onclick = async () => {
-      const b = { compra_data: $('#fn-cd').value, compra_de: $('#fn-cf').value, compra_origem: $('#fn-or').value };
+      const b = { compra_data: $('#fn-cd').value, compra_de: $('#fn-cf').value, compra_de_tel: $('#fn-ct').value, compra_origem: $('#fn-or').value };
       if ($('#fn-cv')) b.compra_valor = $('#fn-cv').value; else b.consig_repasse = $('#fn-rep').value;
       try { await api('PUT', `/api/vehicles/${id}/finance`, b); await X.loadVehicles(); toast('Valores salvos'); financeModal(id); } catch (e) { err(e.message); }
     };
@@ -878,7 +945,7 @@
             <div class="kpi"><span>Lucro previsto</span><b class="${tot.lp < 0 ? 'neg' : ''}">${brl(tot.lp)}</b><em>${tot.sb ? `${tot.sb} carro(s) sem valor de compra` : 'pelos preços anunciados'}</em></div>
           </div>
           <div class="table-wrap"><table class="tbl"><thead><tr><th>Veículo</th><th>Propriedade</th><th>Origem</th><th class="r">Dias</th><th class="r">Compra / repasse</th><th class="r">Feitos</th><th class="r">Previstos</th><th class="r">Anúncio</th><th class="r">Lucro previsto</th><th></th></tr></thead><tbody>
-          ${linhas.map(({ v, f }) => `<tr><td><button class="vlink" type="button" data-vp="${v.id}">${esc(v.marca)} ${esc(v.modelo)}</button><br><span class="sub">${esc(v.versao || '')} ${esc(v.placa || '')}</span></td><td>${esc(label(v.proprietario_tipo, S.me.options.propriedade))}${v.doc_tipo && v.doc_tipo !== 'loja' ? `<br><span class="sub">doc: ${esc(label(v.doc_tipo, S.me.options.documentacao))}</span>` : ''}</td><td>${esc(label(v.compra_origem, S.me.options.origem)) || '<span class="sub">—</span>'}</td>
+          ${linhas.map(({ v, f }) => `<tr><td><div class="vcell"><div><button class="vlink" type="button" data-vp="${v.id}">${esc(v.marca)} ${esc(v.modelo)}</button><br><span class="sub">${esc(v.versao || '')} ${esc(v.placa || '')}</span></div>${v.photos?.[0] ? `<img class="vthumb" src="${esc(v.photos[0].url)}" alt="" loading="lazy" data-vp="${v.id}">` : '<span class="vthumb none"></span>'}</div></td><td>${esc(label(v.proprietario_tipo, S.me.options.propriedade))}${TERC.includes(v.proprietario_tipo) && v.proprietario_nome ? `<br>${v.proprietario_tel ? `<a class="link sub" href="${esc(waLink(v.proprietario_tel, `Olá ${v.proprietario_nome.split(' ')[0]}, aqui é da ${S.me.store.name}. Sobre o seu ${v.marca} ${v.modelo}:`))}" target="_blank" rel="noopener">💬 ${esc(v.proprietario_nome)}</a>` : `<span class="sub">${esc(v.proprietario_nome)}</span>`}` : v.doc_tipo && v.doc_tipo !== 'loja' ? `<br><span class="sub">doc: ${esc(label(v.doc_tipo, S.me.options.documentacao))}</span>` : ''}${v.troca_de_id ? '<br><span class="pill p-info">🔁 troca</span>' : ''}</td><td>${esc(label(v.compra_origem, S.me.options.origem)) || '<span class="sub">—</span>'}</td>
             <td class="r ${v.parado ? 'warn' : ''}">${v.dias_estoque}</td><td class="r">${f.previsto ? brl(f.previsto.base) : (v.compra_valor ? brl(v.compra_valor) : '<span class="pill p-warn">informar</span>')}</td><td class="r">${brl(f.custos_realizados ?? f.custos_total ?? 0)}</td><td class="r">${f.custos_previstos ? brl(f.custos_previstos) : '—'}</td><td class="r">${brl(v.preco_anuncio)}</td>
             <td class="r ${f.previsto?.liquido < 0 ? 'neg' : ''}">${f.previsto ? `${brl(f.previsto.liquido)}<br><span class="sub">${pct(f.previsto.margem_pct)}%</span>` : '—'}</td>
             <td><button class="btn sm" type="button" data-fin="${v.id}">Abrir</button></td></tr>`).join('') || '<tr><td colspan="10" class="sub">Nenhum carro no estoque.</td></tr>'}</tbody></table></div>
@@ -1009,6 +1076,7 @@
           ${card('Vendidos', k.vendidos, `giro de ${k.giro}% do estoque`)}
           ${fin ? card('Faturamento', brl(k.faturamento), `ticket médio ${brl(k.ticket_medio)}`) : ''}
           ${fin ? card('Lucro das vendas', brl(k.lucro_liquido), `${pct(k.margem_media_pct)}% de margem · ${brl(k.lucro_medio)}/carro`, neg(k.lucro_liquido)) : ''}
+          ${fin && k.vendas_em_troca ? card('Lucro a realizar', brl(k.lucro_a_realizar), `${k.vendas_em_troca} venda(s) com troca ainda no estoque`, 'warn') : ''}
           ${fin ? card('Despesas da loja', brl(k.despesas_loja), 'lançadas em Gestão') : ''}
           ${fin ? card('Resultado líquido', brl(k.resultado), 'lucro das vendas − despesas', neg(k.resultado)) : ''}
           ${card('Tempo médio de venda', `${k.dias_medios_venda} dias`, 'da compra até a venda')}
@@ -1022,10 +1090,12 @@
         <div class="grid2 eq" style="margin-top:6px">
           <div class="panel"><h2>Vendas nos últimos 12 meses</h2>${bars(d.meses, fin)}${fin ? '<p class="note">Número de carros por mês; abaixo, o lucro das vendas.</p>' : ''}</div>
           ${fin ? `<div class="panel"><h2>DRE do período</h2><table class="tbl dre"><tbody>
-            ${dreRow('Receita das vendas', D.receita)}${dreRow('(−) Custo dos veículos (compra / repasse)', -D.custo_veiculos)}${dreRow('(−) Preparação e manutenção', -D.preparacao)}
+            ${dreRow('Receita das vendas', D.receita)}${D.retorno_financiamento ? dreRow('(+) Retorno de financiamento', D.retorno_financiamento) : ''}${dreRow('(−) Custo dos veículos (compra / repasse)', -D.custo_veiculos)}${dreRow('(−) Preparação e manutenção', -D.preparacao)}
             ${dreRow('= Lucro bruto', D.lucro_bruto, 'sub-t')}${dreRow('(−) Comissões de venda', -(D.comissoes + (D.comissoes_extra || 0)))}${dreRow('(−) Impostos sobre a venda', -D.impostos)}
             ${dreRow('= Lucro das vendas', D.lucro_operacoes, 'sub-t')}${D.despesas_categorias.map((c) => dreRow(`(−) ${esc(c.categoria)}`, -c.valor)).join('') || dreRow('(−) Despesas da loja', 0)}
             ${dreRow('= Resultado líquido', D.resultado, 'tot-t')}</tbody></table>
+            <p class="note">O DRE considera o lucro <b>realizado</b>: vendas com troca entram quando o carro da troca é vendido (em cadeia). ${D.receita_em_trocas ? `Da receita, ${brl(D.receita_em_trocas)} vieram em carros na troca.` : ''}</p>
+            ${d.em_troca?.length ? `<p class="note">A realizar: ${d.em_troca.slice(0, 5).map((x) => `<button class="vlink" type="button" data-vp="${x.id}">${esc(x.titulo)}</button> (${brl(x.liquido || 0)}, aguardando <button class="vlink" type="button" data-vp="${x.troca_id}">${esc(x.troca_titulo)}</button>)`).join(' · ')}</p>` : ''}
             ${D.fora_do_calculo ? `<p class="note">${D.fora_do_calculo} venda(s) sem valor de compra ou de venda ficaram fora do DRE. Complete em "custos" na lista abaixo.</p>` : ''}</div>` : ''}
         </div>
         <div class="grid2 eq" style="margin-top:16px">
@@ -1044,7 +1114,7 @@
           <div class="panel"><h2>Maiores lucros</h2>${hbars(d.melhores, (x) => x.liquido, brl, (x) => x.titulo)}</div>
           <div class="panel"><h2>Menores lucros</h2>${d.piores.length ? hbars(d.piores, (x) => x.liquido, brl, (x) => x.titulo) : '<p class="sub">Poucas vendas para comparar.</p>'}</div>
         </div>` : ''}
-        <div class="panel" style="margin-top:16px"><h2>Vendidos no período</h2>${d.vendidos.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Veículo</th><th>Venda</th><th>Vendedor / pagamento</th><th class="r">Dias</th>${fin ? '<th class="r">Valor</th><th class="r">Compra</th><th class="r">Custos</th><th class="r">Líquido</th><th></th>' : ''}</tr></thead><tbody>${d.vendidos.map((l) => `<tr><td><button class="vlink" type="button" data-vp="${l.id}">${esc(l.titulo)}</button><br><span class="sub">${esc(l.placa || '')} · ${esc(l.origem_label)}</span></td><td>${fmtDate(l.vendido_em)}<br><span class="sub">${esc(l.comprador || '')}</span></td><td>${esc(l.vendedor || '—')}<br><span class="sub">${esc(l.pagamento)}</span></td><td class="r">${l.dias}</td>${fin ? `<td class="r">${l.venda ? brl(l.venda) : '—'}</td><td class="r">${l.base ? brl(l.base) : '<span class="pill p-warn">informar</span>'}</td><td class="r">${brl(l.custos)}</td><td class="r ${neg(l.liquido)}">${l.liquido !== null ? `${brl(l.liquido)}<br><span class="sub">${pct(l.margem_pct)}%</span>` : '—'}</td><td><button class="btn sm ghost" type="button" data-fin="${l.id}">custos</button></td>` : ''}</tr>`).join('')}</tbody></table></div>` : '<p class="sub">Nenhuma venda no período.</p>'}</div>
+        <div class="panel" style="margin-top:16px"><h2>Vendidos no período</h2>${d.vendidos.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Veículo</th><th>Venda</th><th>Vendedor / pagamento</th><th class="r">Dias</th>${fin ? '<th class="r">Valor</th><th class="r">Compra</th><th class="r">Custos</th><th class="r">Líquido</th><th></th>' : ''}</tr></thead><tbody>${d.vendidos.map((l) => `<tr><td><button class="vlink" type="button" data-vp="${l.id}">${esc(l.titulo)}</button><br><span class="sub">${esc(l.placa || '')} · ${esc(l.origem_label)}</span></td><td>${fmtDate(l.vendido_em)}<br><span class="sub">${esc(l.comprador || '')}</span></td><td>${esc(l.vendedor || '—')}<br><span class="sub">${esc(l.pagamento)}</span></td><td class="r">${l.dias}</td>${fin ? `<td class="r">${l.venda ? brl(l.venda) : '—'}</td><td class="r">${l.base ? brl(l.base) : '<span class="pill p-warn">informar</span>'}</td><td class="r">${brl(l.custos)}</td><td class="r ${neg(l.liquido)}">${l.liquido !== null ? `${brl(l.liquido)}<br><span class="sub">${pct(l.margem_pct)}%</span>` : '—'}${l.em_troca ? '<br><span class="pill p-warn" title="Lucro entra quando o carro da troca for vendido">🔁 a realizar</span>' : ''}</td><td><button class="btn sm ghost" type="button" data-fin="${l.id}">custos</button></td>` : ''}</tr>`).join('')}</tbody></table></div>` : '<p class="sub">Nenhuma venda no período.</p>'}</div>
         <div class="panel" style="margin-top:16px"><h2>Estoque mais antigo</h2>${d.estoque.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Veículo</th><th class="r">Dias</th>${fin ? '<th class="r">Anúncio</th><th class="r">FIPE</th><th class="r">Investido</th><th class="r">Lucro previsto</th>' : ''}<th>Onde</th></tr></thead><tbody>${d.estoque.slice(0, 10).map((e) => `<tr><td><button class="vlink" type="button" data-vp="${e.id}">${esc(e.titulo)}</button><br><span class="sub">${esc(e.placa || '')} · ${esc(e.tipo_label.split(' (')[0])}</span></td><td class="r ${e.parado ? 'warn' : ''}">${e.dias}</td>${fin ? `<td class="r">${brl(e.preco)}</td><td class="r">${e.fipe ? brl(e.fipe) : '—'}</td><td class="r">${brl(e.investido)}</td><td class="r ${neg(e.lucro_previsto)}">${e.lucro_previsto !== null ? brl(e.lucro_previsto) : '—'}</td>` : ''}<td>${esc(e.local || 'Pátio')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="sub">Estoque vazio.</p>'}</div>`;
     },
     bind() {
@@ -1276,7 +1346,7 @@
             ${fin ? kv(f.base_label || 'Compra', f.previsto ? brl(f.previsto.base) : v.compra_valor ? brl(v.compra_valor) : '<span class="pill p-warn">informar</span>') : ''}
             ${fin ? kv('Custos', `${brl(f.custos_realizados ?? f.custos_total ?? 0)}${f.custos_previstos ? ` + ${brl(f.custos_previstos)} previstos` : ''}`) : ''}
             ${fin && !vend && f.previsto ? kv('Lucro previsto', `<span class="${f.previsto.liquido < 0 ? 'neg' : ''}">${brl(f.previsto.liquido)} · ${pct(f.previsto.margem_pct)}%</span>`) : ''}
-            ${vend ? kv('Vendido em', fmtDate(v.vendido_em)) + kv('Valor da venda', v.venda_valor ? brl(v.venda_valor) : '') + kv('Comprador', esc(v.venda_comprador || '')) + kv('Vendedor', esc(sellers.find((x) => x.id === v.venda_vendedor_id)?.name || '')) + kv('Pagamento', esc(v.venda_pagamento || '')) + kv('Documento', esc(v.doc_status_label || '')) : ''}
+            ${vend ? kv('Vendido em', fmtDate(v.vendido_em)) + kv('Valor da venda', v.venda_valor ? brl(v.venda_valor) : '') + kv('Comprador', esc(v.venda_comprador || '')) + kv('Vendedor', esc(sellers.find((x) => x.id === v.venda_vendedor_id)?.name || '')) + kv('Pagamento', esc(v.venda_pagamento || '')) + (v.venda_troca_valor ? kv('Na troca', `${brl(v.venda_troca_valor)}${v.venda_troca_id ? ` · <button class="vlink" type="button" data-vp="${v.venda_troca_id}">${esc(v.venda_troca_desc || 'ver carro')}</button>` : ''}`) : '') + (v.venda_financiado ? kv('Financiado', `${brl(v.venda_financiado)}${v.venda_financeira ? ' · ' + esc(v.venda_financeira) : ''}${v.venda_fin_parcelas ? ` · ${v.venda_fin_parcelas}x ${brl(v.venda_fin_parcela)}` : ''}`) : '') + (v.venda_boleto_qtd ? kv('Boletos', `${v.venda_boleto_qtd}x ${brl(v.venda_boleto_valor)}`) : '') + kv('Documento', esc(v.doc_status_label || '')) : ''}
             ${fin && vend && f.real ? kv('Lucro da venda', `<span class="${f.real.liquido < 0 ? 'neg' : ''}">${brl(f.real.liquido)} · ${pct(f.real.margem_pct)}%</span>`) : ''}
           </div>
         </div>
@@ -1581,7 +1651,7 @@
       const hora = new Date(d.agora).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
       return `<div class="painel">
         <div class="pn-head">
-          <div><h1>Painel</h1><span class="sub">${esc(d.loja.nome)} · atualizado às ${hora} · atualiza sozinho a cada minuto</span></div>
+          <div class="pn-title">${S.me.store.logo_file ? `<img src="/media/${esc(S.me.store.logo_file)}" alt="" class="pn-logo">` : ''}<div><h1>Painel</h1><span class="sub">${esc(d.loja.nome)} · atualizado às ${hora} · atualiza sozinho a cada minuto</span></div></div>
           <div class="chips">${[['hoje', 'Hoje'], ['7', '7 dias'], ['mes', 'Mês'], ['30', '30 dias'], ['anterior', 'Mês passado'], ['ano', 'Ano']].map(([k, l]) => `<button class="chip" type="button" data-pp2="${k}" aria-pressed="${d.periodo.p === k}">${l}</button>`).join('')}<button class="chip" type="button" id="pn-full" title="Tela cheia (para projetar)">⛶ Tela cheia</button></div>
         </div>
         <div class="ptiles">
@@ -1664,6 +1734,7 @@
   function navSetup() {
     const nav = $('.nav'); if (!nav || $('[data-view="gestao"]')) return;
     const cfg = nav.querySelector('[data-view="config"]');
+    if (S.me.store.logo_file && !$('#storeLogo')) $('.side-foot .store')?.insertAdjacentHTML('beforebegin', `<img id="storeLogo" class="store-logo" src="/media/${esc(S.me.store.logo_file)}" alt="${esc(S.me.store.name)}">`);
     if (can('gestao')) nav.querySelector('[data-view="estoque"]')?.insertAdjacentHTML('beforebegin', '<button data-view="painel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Painel</button>');
     cfg.insertAdjacentHTML('beforebegin', `
       <button data-view="gestao"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v16"/></svg>Gestão</button>

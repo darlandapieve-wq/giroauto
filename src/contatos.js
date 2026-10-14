@@ -7,7 +7,7 @@ const V = require('./vehicles');
 
 const PAPEIS = {
   cliente: 'Cliente', comprador: 'Comprador', consignatario: 'Consignatário', proprietario: 'Proprietário',
-  parceiro: 'Parceiro', fornecedor: 'Fornecedor', lead: 'Interessado', outro: 'Outro',
+  parceiro: 'Parceiro', fornecedor: 'Fornecedor', vendeu: 'Vendeu carro à loja', lead: 'Interessado', outro: 'Outro',
 };
 const NOTA_TIPOS = { nota: 'Anotação', ligacao: 'Ligação', mensagem: 'Mensagem', visita: 'Visita', campanha: 'Campanha', proposta: 'Proposta' };
 
@@ -39,6 +39,9 @@ function sync(storeId) {
   tx(() => {
     for (const p of all('SELECT nome, contato, whatsapp, tipo FROM partners WHERE store_id = ? AND whatsapp != \'\'', storeId)) {
       upsert(storeId, { nome: p.contato ? `${p.contato} (${p.nome})` : p.nome, telefone: p.whatsapp, papel: p.tipo === 'loja_parceira' ? 'parceiro' : 'fornecedor', origem: 'parceiros' });
+    }
+    for (const v of all(`SELECT compra_de, compra_de_tel FROM vehicles WHERE store_id = ? AND compra_de_tel != ''`, storeId)) {
+      upsert(storeId, { nome: v.compra_de, telefone: v.compra_de_tel, papel: 'vendeu', origem: 'compras' });
     }
     for (const v of all(`SELECT proprietario_tipo, proprietario_nome, proprietario_tel, comprador_tel, venda_comprador FROM vehicles WHERE store_id = ? AND (proprietario_tel != '' OR comprador_tel != '')`, storeId)) {
       if (v.proprietario_tel && v.proprietario_tipo !== 'proprio') {

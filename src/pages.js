@@ -34,6 +34,8 @@ p.desc{white-space:pre-line;margin:0}
 </style></head><body><div class="wrap">${body}</div></body></html>`;
 }
 
+// Logo discreto da loja no topo das páginas públicas (v2.5).
+const logoTag = (store, h = 44) => (store.logo_file ? `<img src="/media/${esc(store.logo_file)}" alt="${esc(store.name)}" style="height:${h}px;max-width:180px;object-fit:contain;display:block">` : '');
 function waLink(store, text) {
   const n = String(store.whatsapp || '').replace(/\D/g, '');
   if (!n) return '';
@@ -47,7 +49,7 @@ function storefront(store, vehicles) {
     <div><b>${esc(v.marca)} ${esc(v.modelo)}</b> <span class="muted">${esc(v.versao)}</span>
     <div class="muted">${esc(v.ano_fab || '')}/${esc(v.ano_modelo || '')} · ${km(v.km)}</div>
     <div class="price">${v.oferta_ativa ? `<s class="muted" style="font-size:.8em">${brl(v.preco)}</s> ` : ''}${brl(v.preco_anuncio || v.preco)}</div></div></a>`).join('');
-  return shell(`${store.name} · Seminovos`, `<h1>${esc(store.name)}</h1>
+  return shell(`${store.name} · Seminovos`, `<div style="display:flex;gap:12px;align-items:center">${logoTag(store, 52)}<h1>${esc(store.name)}</h1></div>
     <p class="muted">${esc([store.city, store.state].filter(Boolean).join(' - '))}</p>
     <div class="grid">${cards || '<p class="muted">Nenhum veículo disponível no momento.</p>'}</div>`);
 }
@@ -55,7 +57,7 @@ function storefront(store, vehicles) {
 function vehiclePage(store, v) {
   const wa = waLink(store, `Olá! Tenho interesse no ${v.titulo} anunciado por ${brl(v.preco_anuncio || v.preco)}.`);
   const sold = v.status === 'vendido';
-  return shell(`${v.titulo} · ${store.name}`, `<a href="/v/${esc(store.slug)}" class="muted">← ${esc(store.name)}</a>
+  return shell(`${v.titulo} · ${store.name}`, `<a href="/v/${esc(store.slug)}" class="muted" style="display:flex;gap:10px;align-items:center;text-decoration:none">${logoTag(store, 32)}← ${esc(store.name)}</a>
     <h1 style="margin-top:8px">${esc(v.marca)} ${esc(v.modelo)} ${esc(v.versao)}</h1>
     <div class="vp"><div class="gal">${v.photos.map((p) => `<img src="${esc(p.url)}" alt="" loading="lazy">`).join('')}</div>
     <div class="box"><div class="price">${sold ? 'Vendido' : `${v.oferta_ativa ? `<s class="muted" style="font-size:.7em">${brl(v.preco)}</s><br>Oferta: ` : ''}${brl(v.preco_anuncio || v.preco)}`}</div>

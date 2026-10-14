@@ -2,6 +2,19 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.5 — 14/10/2026
+
+**Venda com troca sem lucro duplicado, pagamento combinado (à vista + troca + financiamento + boleto) e logo da loja**
+
+- **Venda com troca**: escolha o carro da troca na lista do estoque ou cadastre na hora (marca, modelo, ano, placa). Ele entra no estoque como compra pelo valor dado na troca, com origem "Troca", comprado de = comprador, e fica ligado ao carro vendido.
+- **Lucro realizado em cadeia**: o lucro de uma venda com troca fica **a realizar** e só entra nos Resultados/DRE quando o carro da troca for vendido sem nova troca; aí toda a cadeia é realizada junta. Resultados mostram "Lucro a realizar" e quais vendas aguardam a troca. Assim o lucro não é contado duas vezes.
+- **Pagamento combinado**: à vista (PIX, dinheiro, cartão), carro na troca, **financiamento** (banco, valor financiado, parcelas, valor da parcela e **retorno da financeira**, que entra na receita do carro) e **boleto/promissória** (quantidade e valor), em qualquer combinação. O total é a soma das partes.
+- **Gestão do veículo**: campo **WhatsApp de quem vendeu** o carro para a loja (vira contato "Vendeu carro à loja").
+- **Estoque**: filtro por propriedade (loja, consignado, parceria…) e por origem da compra.
+- **Gestão > Estoque e margem**: foto da capa ao lado de cada carro; em consignado/parceria/outro aparece o nome do dono com link para o WhatsApp; carros que entraram na troca têm o selo 🔁.
+- **Logo da loja** (enviado em Configurações > Fotos prontas) no menu lateral, no Painel e nas páginas públicas (vitrine e página do carro); a folha A4 e o painel da TV já usavam.
+- Forma de pagamento inclui **Boleto**.
+
 ## v2.4 — 13/10/2026
 
 **Painel do administrador, Contatos com histórico e mensagens em massa, contas a pagar**

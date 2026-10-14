@@ -545,6 +545,7 @@ app.post('/api/vehicles/:id/sold', team.can('vender'), (req, res) => {
   const cols = Object.keys(f);
   run(`UPDATE vehicles SET ${cols.map((c) => `${c}=?`).join(',')}, doc_atualizado=datetime('now') WHERE id=?`, ...cols.map((c) => f[c]), v.id);
   run('INSERT INTO doc_moves (vehicle_id, status, obs, user_id) VALUES (?, ?, ?, ?)', v.id, f.doc_status, f.doc_obs, req.user.id);
+  G.applyTrade(req.user.storeId, v.id, b, req.user.id);
   run(`UPDATE ext_jobs SET status='cancelado', updated_at=datetime('now') WHERE vehicle_id=? AND status='pendente'`, v.id);
   if (wasPublished && pubMode === 'extensao') run('INSERT INTO ext_jobs (store_id, vehicle_id, type) VALUES (?, ?, ?)', req.user.storeId, v.id, 'excluir');
   logEvent(req.user.storeId, `${v.marca} ${v.modelo} ${v.versao} marcado como vendido`);

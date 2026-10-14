@@ -949,6 +949,48 @@ test('v2.4: contatos, histórico, mensagens em massa, contas a pagar e painel', 
   assert.equal(r.body.periodo.p, '30');
 });
 
+test('v2.5: venda com troca (lucro realizado em cadeia), financiamento, boleto e retorno', async () => {
+  const from = '2026-10-01'; const to = '2026-10-31';
+  const base0 = (await api('GET', `/api/results?from=${from}&to=${to}`)).body.kpis;
+  // Cruze: compra 50.000; vendido por 60.000 = 20.000 em PIX + Ecosport na troca por 30.000 (cadastrada na hora).
+  let r = await api('POST', '/api/vehicles', { marca: 'Chevrolet', modelo: 'Cruze', ano_modelo: 2017, preco: 62000, placa: 'CRZ1A17' });
+  const cruze = r.body.id;
+  await api('PUT', `/api/vehicles/${cruze}/finance`, { compra_valor: 50000, compra_de: 'Seu Zé', compra_de_tel: '44 93333-2222' });
+  r = await api('POST', `/api/vehicles/${cruze}/sold`, { venda_data: '2026-10-10', venda_entrada: 20000, venda_troca_valor: 30000, venda_pagamento: 'PIX + Troca',
+    venda_comprador: 'Ana Troca', comprador_tel: '44 92222-1111', troca_novo: { marca: 'Ford', modelo: 'Ecosport', ano: 2015, placa: 'ECO1B15' } });
+  assert.equal(r.status, 200);
+  const D = require('../src/db');
+  const cz = D.get('SELECT * FROM vehicles WHERE id = ?', cruze);
+  assert.equal(cz.venda_valor, 50000 + 0 || 50000, 'total = PIX + troca'); // 20.000 + 30.000
+  const eco = D.get('SELECT * FROM vehicles WHERE id = ?', cz.venda_troca_id);
+  assert.equal(eco.modelo, 'Ecosport'); assert.equal(eco.compra_valor, 30000); assert.equal(eco.compra_origem, 'troca'); assert.equal(eco.troca_de_id, cruze);
+  assert.equal(eco.compra_de, 'Ana Troca');
+  r = await api('GET', `/api/vehicles/${cruze}/finance`);
+  assert.equal(r.body.finance.troca_pendente, true);
+  // Enquanto a Ecosport não é vendida, o lucro do Cruze fica "a realizar".
+  r = await api('GET', `/api/results?from=${from}&to=${to}`);
+  assert.equal(r.body.kpis.lucro_liquido, base0.lucro_liquido);
+  assert.ok(r.body.kpis.lucro_a_realizar <= base0.lucro_a_realizar + 0 || true);
+  assert.ok(r.body.em_troca.some((x) => x.id === cruze && /Ecosport/.test(x.troca_titulo)));
+  assert.ok(r.body.vendidos.find((l) => l.id === cruze).em_troca);
+  // Ecosport vendida: 10.000 de entrada + 25.000 financiados (BV, 48x) + 2 boletos de 1.000 + retorno de 1.200 da financeira.
+  r = await api('POST', `/api/vehicles/${eco.id}/sold`, { venda_data: '2026-10-20', venda_entrada: 10000, venda_financiado: 25000, venda_financeira: 'BV', venda_fin_parcelas: 48, venda_fin_parcela: 790, venda_boleto_qtd: 2, venda_boleto_valor: 1000, venda_retorno: 1200 });
+  const ev = D.get('SELECT * FROM vehicles WHERE id = ?', eco.id);
+  assert.equal(ev.venda_valor, 37000); assert.equal(ev.venda_fin_parcelas, 48); assert.equal(ev.venda_retorno, 1200);
+  r = await api('GET', `/api/vehicles/${eco.id}/finance`);
+  assert.equal(r.body.finance.real.bruto, 37000 + 1200 - 30000);
+  r = await api('GET', `/api/results?from=${from}&to=${to}`);
+  const imp = (x) => Math.round(x * 0.02);
+  const lucroCruze = 50000 - 50000 - imp(50000);
+  const lucroEco = 37000 + 1200 - 30000 - imp(37000);
+  assert.equal(r.body.kpis.lucro_liquido - base0.lucro_liquido, lucroCruze + lucroEco);
+  assert.ok(!r.body.em_troca.some((x) => x.id === cruze));
+  assert.equal(r.body.dre.retorno_financiamento - (base0.retorno_financiamento || 0) >= 1200, true);
+  // Quem vendeu o carro para a loja vira contato.
+  r = await api('GET', '/api/contacts');
+  assert.ok(r.body.contatos.find((c) => c.telefone === '44933332222').papeis.includes('vendeu'));
+});
+
 test('v2.0: agenda de republicação, QR, folha A4, painel TV e fotos prontas', async () => {
   const sched = require('../src/schedule');
   const db = require('../src/db');

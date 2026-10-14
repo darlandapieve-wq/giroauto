@@ -507,3 +507,16 @@ a.pill-link:hover,a.pill-link:focus-visible{text-decoration:underline}
 @media (max-width:640px){.pgrid{grid-template-columns:minmax(0,1fr)}.pbox.span2{grid-column:auto}}
 :fullscreen .side{display:none}:fullscreen #app{grid-template-columns:minmax(0,1fr)}
 .ct-bar select,.ct-bar input{width:auto;max-width:100%}
+
+/* v2.5 */
+.vcell{display:flex;justify-content:space-between;gap:10px;align-items:center}
+.vthumb{width:64px;height:46px;object-fit:cover;border-radius:5px;flex:none;cursor:pointer;background:var(--sunken)}
+.vthumb.none{display:inline-block}
+.store-logo{max-width:120px;max-height:44px;object-fit:contain;align-self:center;opacity:.9}
+.pn-title{display:flex;gap:10px;align-items:center}
+.pn-logo{height:38px;max-width:120px;object-fit:contain}
+.pay{display:flex;flex-direction:column;gap:6px}
+.payrow{border:1px solid var(--line);border-radius:8px;padding:6px 8px;display:flex;flex-direction:column;gap:6px}
+.payrow > .check{border:0;padding:2px}
+.payrow:has(> .check input:checked){border-color:var(--accent);background:var(--accent-soft)}
+@media (max-width:760px){.store-logo{display:none}}

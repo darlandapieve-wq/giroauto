@@ -304,6 +304,12 @@ addColumn('store_expenses', 'vehicle_id', 'INTEGER');
 addColumn('store_expenses', 'pago', 'INTEGER NOT NULL DEFAULT 1');
 addColumn('store_expenses', 'pago_em', 'TEXT');
 addColumn('stores', 'wa_cloud', "TEXT NOT NULL DEFAULT '{}'");
+// v2.5: contato de quem vendeu o carro para a loja, troca ligada a outro veículo e composição do pagamento.
+for (const [col, def] of [
+  ['compra_de_tel', "TEXT DEFAULT ''"], ['venda_troca_id', 'INTEGER'], ['troca_de_id', 'INTEGER'],
+  ['venda_financiado', 'INTEGER NOT NULL DEFAULT 0'], ['venda_fin_parcelas', 'INTEGER NOT NULL DEFAULT 0'], ['venda_fin_parcela', 'INTEGER NOT NULL DEFAULT 0'],
+  ['venda_retorno', 'INTEGER NOT NULL DEFAULT 0'], ['venda_boleto_qtd', 'INTEGER NOT NULL DEFAULT 0'], ['venda_boleto_valor', 'INTEGER NOT NULL DEFAULT 0'],
+]) addColumn('vehicles', col, def);
 db.exec(`CREATE TABLE IF NOT EXISTS contacts (
   id INTEGER PRIMARY KEY,
   store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
