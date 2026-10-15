@@ -9,7 +9,7 @@ const C = require('./contatos');
 const CRM = require('./crm');
 
 const BASE = () => (process.env.GEMINI_URL || 'https://generativelanguage.googleapis.com').replace(/\/+$/, '');
-const MODELOS = () => [process.env.GEMINI_CHAT_MODEL, 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'].filter(Boolean);
+const MODELOS = () => [...new Set([require('./settings').chatAi().model, 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'].filter(Boolean))];
 const str = (x, max = 500) => String(x ?? '').trim().slice(0, max);
 const httpError = (status, message) => Object.assign(new Error(message), { status });
 const json = (s, d) => { try { return JSON.parse(s || ''); } catch { return d; } };
@@ -34,7 +34,7 @@ function saveBotConfig(storeId, b) {
   CRM.saveConfig(storeId, { bot: novo });
   return novo;
 }
-function iaKey() { return require('./settings').ai().gemini.key || ''; }
+function iaKey() { return require('./settings').chatAi().key || ''; }
 
 /* ---------------- Estoque para a IA e para o chat ---------------- */
 function fotos(vehicleId, n = 8) {
@@ -310,4 +310,4 @@ function widget(store, vehicleId) {
   return `<div id="gaChat"></div><script>window.GA_CHAT=${cfg};</script><script src="/chat-widget.js" defer></script>`;
 }
 
-module.exports = { botConfig, saveBotConfig, conversar, conversas, conversa, status, widget, prompt, roteiro, card };
+module.exports = { gerar, botConfig, saveBotConfig, conversar, conversas, conversa, status, widget, prompt, roteiro, card };

@@ -229,6 +229,31 @@ app.put('/api/admin/ai', requireAdmin, wrap(async (req, res) => {
   res.json(aiInfo());
 }));
 
+// IA do assistente de vendas (texto).
+function chatAiInfo() { const c = settings.chatAi(); return { configured: !!c.key, propria: c.propria, source: c.source, model: c.model }; }
+app.get('/api/admin/ai-chat', requireAdmin, (req, res) => res.json(chatAiInfo()));
+app.put('/api/admin/ai-chat', requireAdmin, wrap(async (req, res) => {
+  const b = req.body || {};
+  const key = b.key === undefined ? undefined : String(b.key).trim();
+  const model = b.model === undefined ? undefined : String(b.model).trim().replace(/^models\//, '').slice(0, 80);
+  if (model && !/^[a-z0-9./\-]+$/i.test(model)) throw fail(400, 'Nome de modelo inválido.');
+  if (key) {
+    if (!/^[A-Za-z0-9_.\-]{20,120}$/.test(key)) throw fail(400, 'Essa não parece uma chave da IA do Google. Copie de novo no Google AI Studio.');
+    try { await require('./arts/gemini').checkKey(key); } catch (e) { throw fail(400, `O Google não aceitou a chave: ${e.message}`); }
+  }
+  settings.saveChatAi({ key: b.remover ? '' : key, model });
+  logEvent(req.user.storeId, 'IA do assistente de vendas configurada');
+  res.json(chatAiInfo());
+}));
+app.post('/api/admin/ai-chat/test', requireAdmin, wrap(async (req, res) => {
+  const c = settings.chatAi();
+  if (!c.key) throw fail(400, 'Cole e salve a chave primeiro.');
+  try {
+    const r = await require('./bot').gerar(c.key, 'Você é um assistente de testes. Responda só JSON {"resposta": "..."}.', [{ papel: 'user', texto: 'Diga "Olá, estou funcionando!"' }]);
+    res.json({ ok: true, resposta: r.resposta });
+  } catch (e) { throw fail(400, `A IA não respondeu: ${e.message}`); }
+}));
+
 app.get('/api/admin/storage', requireAdmin, (req, res) => res.json(storage.status()));
 app.post('/api/admin/storage/backup', requireAdmin, wrap(async (req, res) => {
   if (!storage.enabled()) throw fail(400, 'O armazenamento permanente não está configurado.');

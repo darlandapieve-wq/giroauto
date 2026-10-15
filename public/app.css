@@ -702,3 +702,13 @@ main{gap:12px;padding-block:16px 40px;padding-inline:clamp(12px,2.2vw,28px)}
 .botteste .chatlog{height:380px;max-height:none}
 @media (max-width:1000px){.botwrap{grid-template-columns:1fr}.botteste{position:static}}
 .copyrow{display:flex;gap:6px}.copyrow input{flex:1;min-width:0;border:1px solid var(--line);border-radius:7px;padding:7px 9px;background:var(--bg);font-family:var(--f-mono);font-size:12.5px}
+
+/* ---------- v2.10.1: menu lateral mais compacto ---------- */
+.nav button{padding:4px 9px;gap:7px;font-size:13px;border-radius:6px;line-height:1.25}
+.nav button svg{width:16px;height:16px;flex:none}
+.nav .count{font-size:11px;padding:0 6px}
+@media (max-width:760px){.nav button{padding:5px 8px}}
+/* Configurações em abas: os painéis da aba escolhida se distribuem em colunas. */
+#main:has(#cfgTabs) .grid2{display:grid;grid-template-columns:repeat(auto-fill,minmax(440px,1fr));gap:16px;align-items:start}
+#main:has(#cfgTabs) .grid2 .stack{display:contents}
+@media (max-width:760px){#main:has(#cfgTabs) .grid2{grid-template-columns:minmax(0,1fr)}}

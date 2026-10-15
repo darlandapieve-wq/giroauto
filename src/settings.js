@@ -60,6 +60,17 @@ function ai() {
   if (!provider) provider = gemini.key ? 'gemini' : pollinations.key ? 'pollinations' : 'manual'; // instalações da v1.7
   return { provider, auto: read('gemini_auto') !== '0', gemini, pollinations };
 }
+// IA de texto do assistente de vendas e da leitura de e-mails (v2.10.1): chave própria (pode ser do plano grátis do
+// Google AI Studio); sem ela, usa a mesma chave do Google das imagens.
+function chatAi() {
+  const own = secret('chat_key_enc', 'GEMINI_CHAT_KEY');
+  const img = ai().gemini;
+  return { key: own.key || img.key, source: own.key ? own.source : img.key ? 'imagens' : '', propria: !!own.key, model: read('chat_model') || process.env.GEMINI_CHAT_MODEL || '' };
+}
+function saveChatAi({ key, model }) {
+  if (key !== undefined) write('chat_key_enc', key ? encrypt(key) : '');
+  if (model !== undefined) write('chat_model', model || '');
+}
 // Compatibilidade com a v1.7.
 function gemini() {
   const a = ai();
@@ -91,4 +102,4 @@ function saveAi({ provider, geminiKey, geminiModel, pollinationsKey, pollination
 applyMetaApp();
 applyScopes();
 
-module.exports = { applyMetaApp, saveMetaApp, clearMetaApp, saveExtraScopes, applyScopes, gemini, ai, saveAi, instagramApp, saveInstagramApp };
+module.exports = { chatAi, saveChatAi, applyMetaApp, saveMetaApp, clearMetaApp, saveExtraScopes, applyScopes, gemini, ai, saveAi, instagramApp, saveInstagramApp };

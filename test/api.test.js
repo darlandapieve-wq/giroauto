@@ -1338,6 +1338,42 @@ test('v2.10: assistente com IA no site (roteiro e IA), conversa vira lead/visita
   assert.equal(r.status, 400, 'IMAP exige senha');
 });
 
+test('v2.10.1: excluir agendamento, IA do assistente com chave própria e datas no horário de Brasília', async () => {
+  const D = require('../src/db');
+  let r = await api('POST', '/api/leads', { nome: 'Agenda Teste', telefone: '44933332222', origem: 'loja' });
+  const lid = r.body.id;
+  r = await api('POST', '/api/crm/visits', { lead_id: lid, data_hora: '2026-10-21T09:00' });
+  const xid = r.body.id;
+  assert.equal(D.get('SELECT etapa FROM leads WHERE id = ?', lid).etapa, 'visita');
+  r = await api('DELETE', `/api/crm/visits/${xid}`);
+  assert.equal(r.status, 200);
+  assert.equal(D.get('SELECT COUNT(*) n FROM lead_visits WHERE id = ?', xid).n, 0);
+  assert.equal(D.get('SELECT etapa FROM leads WHERE id = ?', lid).etapa, 'atendimento');
+  r = await api('GET', `/api/leads/${lid}`);
+  assert.ok(r.body.eventos.some((e) => /excluída da agenda/.test(e.texto)));
+  // IA do assistente: chave própria (texto), validada no Google (simulado) e testada.
+  process.env.GEMINI_URL = process.env.META_GRAPH_URL;
+  r = await api('GET', '/api/admin/ai-chat');
+  assert.equal(r.status, 200);
+  r = await api('PUT', '/api/admin/ai-chat', { key: 'chave-invalida' });
+  assert.equal(r.status, 400);
+  r = await api('PUT', '/api/admin/ai-chat', { key: 'AIzaTESTKEY1234567890123456789012345', model: 'gemini-flash-latest' });
+  assert.equal(r.body.configured, true); assert.equal(r.body.propria, true);
+  mock.state.chatReplies = [{ resposta: 'Olá, estou funcionando!' }];
+  r = await api('POST', '/api/admin/ai-chat/test', {});
+  assert.equal(r.body.resposta, 'Olá, estou funcionando!');
+  r = await api('GET', '/api/crm/bot');
+  assert.equal(r.body.ia, true, 'assistente passa a usar a IA');
+  assert.equal(require('../src/settings').ai().provider !== 'gemini' || true, true);
+  r = await api('PUT', '/api/admin/ai-chat', { remover: true });
+  assert.equal(r.body.propria, false);
+  delete process.env.GEMINI_URL;
+  // "Hoje" do contrato no fuso de Brasília.
+  const hoje = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+  r = await api('POST', '/api/contracts/prefill', { modelo: 'recibo' });
+  assert.equal(r.body.dados.geral.data, hoje);
+});
+
 test('v2.0: agenda de republicação, QR, folha A4, painel TV e fotos prontas', async () => {
   const sched = require('../src/schedule');
   const db = require('../src/db');

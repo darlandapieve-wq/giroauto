@@ -120,7 +120,7 @@ async function processar(storeId, mail, { msgId = '' } = {}) {
 
 // Plano B: pede à IA para ler e-mails em formato desconhecido.
 async function iaExtrair(mail) {
-  const key = require('./settings').ai().gemini.key;
+  const key = require('./settings').chatAi().key;
   if (!key) return null;
   const base = (process.env.GEMINI_URL || 'https://generativelanguage.googleapis.com').replace(/\/+$/, '');
   const texto = str(`De: ${mail.from}\nAssunto: ${mail.subject}\n\n${mail.text || htmlParaTexto(mail.html)}`, 6000);

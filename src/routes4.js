@@ -38,6 +38,7 @@ function register(app) {
   app.get('/api/crm/visits', crm, (req, res) => res.json(CRM.visits(req.user, req.query)));
   app.post('/api/crm/visits', crm, (req, res) => res.status(201).json({ id: CRM.addVisit(req.user, req.body || {}) }));
   app.put('/api/crm/visits/:xid', crm, (req, res) => { CRM.updateVisit(req.user, req.params.xid, req.body || {}); res.json({ ok: true }); });
+  app.delete('/api/crm/visits/:xid', crm, (req, res) => { CRM.deleteVisit(req.user, req.params.xid); res.json({ ok: true }); });
   app.get('/api/crm/tasks', crm, (req, res) => res.json(CRM.tasks(req.user, req.query)));
   app.post('/api/crm/tasks', crm, (req, res) => res.status(201).json({ id: CRM.addTask(req.user, req.body || {}) }));
   app.put('/api/crm/tasks/:tid', crm, (req, res) => { CRM.doneTask(req.user, req.params.tid, req.body?.feita !== false); res.json({ ok: true }); });

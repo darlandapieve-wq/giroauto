@@ -8,7 +8,7 @@ const schedule = require('./schedule');
 const date = (x) => (/^\d{4}-\d{2}-\d{2}$/.test(String(x || '')) ? String(x) : null);
 
 function periodo(q) {
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
   const d = new Date();
   const iso = (x) => x.toISOString().slice(0, 10);
   const p = q.periodo || 'mes';
@@ -27,7 +27,7 @@ function painel(storeId, q = {}, fin = true) {
   const R = G.results(storeId, { from: per.from, to: per.to, tipo: q.tipo || '' });
   const vs = all('SELECT * FROM vehicles WHERE store_id = ?', storeId).map(V.serialize);
   const estoque = vs.filter((v) => v.status !== 'vendido');
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
   const mini = (v) => ({ id: v.id, titulo: `${v.marca} ${v.modelo}`, placa: v.placa, dias: v.dias_estoque, preco: v.preco_anuncio, fipe: v.fipe, status: v.status, oferta: v.oferta_ativa, foto: v.photos?.[0]?.url || '' });
 
   // Onde estão os carros.

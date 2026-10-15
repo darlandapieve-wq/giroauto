@@ -1495,7 +1495,7 @@
       $$('[data-camp]').forEach((b) => { b.onclick = () => campAction(b.dataset.camp, Number(b.dataset.id)); });
       bindCamp();
     }
-    if (S.view === 'config') {
+    if (S.view === 'config' && $('#sSave')) {
       $('#sSave').onclick = async () => {
         try {
           await api('PUT', '/api/store', { name: $('#s-name').value, phone: $('#s-phone').value, whatsapp: $('#s-wa').value, address: $('#s-addr').value, city: $('#s-city').value, state: $('#s-uf').value, postal_code: $('#s-cep').value });

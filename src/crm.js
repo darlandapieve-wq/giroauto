@@ -297,9 +297,25 @@ function updateVisit(user, id, b) {
   }
 }
 
+function deleteVisit(user, id) {
+  const x = get('SELECT * FROM lead_visits WHERE id = ? AND store_id = ?', Number(id), user.storeId);
+  if (!x) throw httpError(404, 'Visita não encontrada.');
+  if (!user.perms.has('gestao') && x.vendedor_id && x.vendedor_id !== user.id) throw httpError(403, 'Esta visita é de outro vendedor.');
+  run('DELETE FROM lead_visits WHERE id = ?', x.id);
+  if (x.lead_id) {
+    addEvent(x.lead_id, 'visita', `${VISITA_TIPOS[x.tipo] || 'Visita'} de ${fmt(x.data_hora)} excluída da agenda`, user.id);
+    const l = get('SELECT * FROM leads WHERE id = ?', x.lead_id);
+    const outra = get(`SELECT 1 FROM lead_visits WHERE lead_id = ? AND status IN ('agendada','confirmada')`, x.lead_id);
+    if (l && l.etapa === 'visita' && !outra) {
+      run(`UPDATE leads SET etapa = 'atendimento', etapa_em = datetime('now'), updated_at = datetime('now') WHERE id = ?`, l.id);
+      addEvent(l.id, 'etapa', 'Visita agendada → Em atendimento', user.id);
+    }
+  }
+}
+
 function visits(user, q = {}) {
-  const from = /^\d{4}-\d{2}-\d{2}$/.test(q.from || '') ? q.from : new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
-  const to = /^\d{4}-\d{2}-\d{2}$/.test(q.to || '') ? q.to : new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10);
+  const from = /^\d{4}-\d{2}-\d{2}$/.test(q.from || '') ? q.from : new Date(Date.now() - 7 * 864e5 - 3 * 3600e3).toISOString().slice(0, 10);
+  const to = /^\d{4}-\d{2}-\d{2}$/.test(q.to || '') ? q.to : new Date(Date.now() + 30 * 864e5 - 3 * 3600e3).toISOString().slice(0, 10);
   const meus = !user.perms.has('gestao') || q.meus === '1';
   return all(`SELECT x.*, l.nome AS lead_nome, l.telefone AS lead_tel, u.name AS vendedor_nome, v.marca, v.modelo, v.ano_modelo, v.placa
     FROM lead_visits x LEFT JOIN leads l ON l.id = x.lead_id LEFT JOIN users u ON u.id = x.vendedor_id LEFT JOIN vehicles v ON v.id = x.vehicle_id
@@ -312,7 +328,7 @@ function addTask(user, b) {
   const l = b.lead_id ? findFor(user, b.lead_id) : null;
   const titulo = str(b.titulo, 200);
   if (!titulo) throw httpError(400, 'Descreva a tarefa.');
-  const vence = /^\d{4}-\d{2}-\d{2}/.test(b.vence_em || '') ? String(b.vence_em).replace('T', ' ').slice(0, 16) : new Date().toISOString().slice(0, 10);
+  const vence = /^\d{4}-\d{2}-\d{2}/.test(b.vence_em || '') ? String(b.vence_em).replace('T', ' ').slice(0, 16) : new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
   const id = Number(run('INSERT INTO lead_tasks (store_id, lead_id, vendedor_id, titulo, vence_em, created_by) VALUES (?, ?, ?, ?, ?, ?)',
     user.storeId, l?.id || null, Number(b.vendedor_id) || l?.vendedor_id || user.id, titulo, vence, user.id).lastInsertRowid);
   if (l) addEvent(l.id, 'tarefa', `Tarefa: ${titulo} (até ${vence.slice(8, 10)}/${vence.slice(5, 7)})`, user.id);
@@ -334,8 +350,8 @@ function tasks(user, q = {}) {
 /* ---------------- Relatório ---------------- */
 function stats(user, q = {}) {
   const sid = user.storeId;
-  const from = /^\d{4}-\d{2}-\d{2}$/.test(q.from || '') ? q.from : new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
-  const to = /^\d{4}-\d{2}-\d{2}$/.test(q.to || '') ? q.to : new Date().toISOString().slice(0, 10);
+  const from = /^\d{4}-\d{2}-\d{2}$/.test(q.from || '') ? q.from : new Date(Date.now() - 30 * 864e5 - 3 * 3600e3).toISOString().slice(0, 10);
+  const to = /^\d{4}-\d{2}-\d{2}$/.test(q.to || '') ? q.to : new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
   const leads = all(`SELECT * FROM leads WHERE store_id = ? AND substr(created_at,1,10) BETWEEN ? AND ?`, sid, from, to);
   const vis = all(`SELECT * FROM lead_visits WHERE store_id = ? AND substr(data_hora,1,10) BETWEEN ? AND ?`, sid, from, to);
   const resp = (ls) => {
@@ -422,5 +438,5 @@ function publicLead(store, b, ip) {
 module.exports = {
   ETAPAS, ABERTAS, ORIGENS, MOTIVOS, TEMPERATURAS, VISITA_STATUS, VISITA_TIPOS, PAGAMENTOS, NOTA,
   config, saveConfig, publicConfig, updateConfig, vendedores, createLead, find, findFor, list, detail, update, note, addEvent,
-  addVisit, updateVisit, visits, addTask, doneTask, tasks, stats, resumo, onSold, publicLead, limite, marcaResposta,
+  addVisit, updateVisit, deleteVisit, visits, addTask, doneTask, tasks, stats, resumo, onSold, publicLead, limite, marcaResposta,
 };

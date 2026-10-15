@@ -2,6 +2,17 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.10.1 — 15/10/2026
+
+- **Horário**: datas e horas gravadas pelo sistema (histórico do lead, conversas, e-mails processados) agora aparecem no horário de Brasília (antes, 3 horas à frente). O "hoje" do sistema (contratos, painel, despesas, resultados, CRM) também segue Brasília, inclusive depois das 21h.
+- **CRM > Agenda**: botão 🗑 para **excluir o agendamento**. Fica registrado no histórico do lead; se não sobrar visita marcada, o lead volta para "Em atendimento".
+- **Configurações em abas**: Loja e equipe · Publicação e fotos · WhatsApp · Minha conta · Sistema (administrador). Os painéis da aba se distribuem em colunas.
+- **Configurações > Sistema > Inteligência artificial** (administrador do sistema):
+  - **chave própria para o assistente de vendas e a leitura de e-mails**, que pode ser do plano gratuito do Google AI Studio, com passo a passo e botão **Testar**;
+  - na mesma tela, a escolha de como gerar as fotos no estacionamento (à mão, Pollinations ou Gemini pago). O antigo painel "Imagens com IA" não estava aparecendo.
+- No CRM, o aviso de "modo roteiro" ganhou o botão **Configurar a IA agora**.
+- Menu lateral mais compacto (botões menores).
+
 ## v2.10 — 15/10/2026
 
 **Assistente de vendas com IA no site e leads dos portais por e-mail**

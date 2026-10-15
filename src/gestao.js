@@ -210,7 +210,7 @@ function addCost(storeId, vehicleId, body, userId) {
   const parceiro = body.parceiro_id ? get('SELECT id FROM partners WHERE id = ? AND store_id = ?', Number(body.parceiro_id), storeId) : null;
   const status = body.status === 'previsto' ? 'previsto' : 'realizado';
   return run('INSERT INTO vehicle_costs (vehicle_id, categoria, descricao, valor, data, parceiro_id, created_by, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    v.id, COST_CATS[body.categoria] ? body.categoria : 'outros', str(body.descricao, 200), valor, date(body.data) || new Date().toISOString().slice(0, 10), parceiro?.id || null, userId, status).lastInsertRowid;
+    v.id, COST_CATS[body.categoria] ? body.categoria : 'outros', str(body.descricao, 200), valor, date(body.data) || new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10), parceiro?.id || null, userId, status).lastInsertRowid;
 }
 
 // Custo previsto que foi feito: vira realizado (com o valor final, se mudou).
@@ -221,7 +221,7 @@ function updateCost(storeId, vehicleId, costId, body) {
   if (!c) throw httpError(404, 'Custo não encontrado.');
   const status = body.status === 'previsto' ? 'previsto' : body.status === 'realizado' ? 'realizado' : c.status;
   const valor = body.valor !== undefined ? int(body.valor) || c.valor : c.valor;
-  const data = date(body.data) || (status === 'realizado' && c.status === 'previsto' ? new Date().toISOString().slice(0, 10) : c.data);
+  const data = date(body.data) || (status === 'realizado' && c.status === 'previsto' ? new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10) : c.data);
   const descricao = body.descricao !== undefined ? str(body.descricao, 200) : c.descricao;
   const categoria = COST_CATS[body.categoria] ? body.categoria : c.categoria;
   const parceiro = body.parceiro_id !== undefined ? (body.parceiro_id ? get('SELECT id FROM partners WHERE id = ? AND store_id = ?', Number(body.parceiro_id), storeId)?.id || null : null) : c.parceiro_id;
@@ -296,7 +296,7 @@ function setDocStatus(storeId, vehicleId, body, userId) {
   if (v.status !== 'vendido') throw httpError(409, 'A transferência só é acompanhada depois da venda.');
   const status = DOC_STATUS[body.status] ? body.status : (v.doc_status || 'pendente');
   const obs = str(body.obs, 500);
-  const entrega = status === 'entregue' ? (date(body.entrega) || new Date().toISOString().slice(0, 10)) : null;
+  const entrega = status === 'entregue' ? (date(body.entrega) || new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10)) : null;
   run(`UPDATE vehicles SET doc_status=?, doc_atualizado=datetime('now'), doc_obs=?, doc_entrega=? WHERE id=?`, status, obs || v.doc_obs || '', entrega, v.id);
   run('INSERT INTO doc_moves (vehicle_id, status, obs, user_id) VALUES (?, ?, ?, ?)', v.id, status, obs, userId);
   if (status !== v.doc_status) logEvent(storeId, `Documento do ${v.marca} ${v.modelo}: ${DOC_STATUS[status].toLowerCase()}`);
@@ -339,7 +339,7 @@ function addExpense(storeId, body) {
   const valor = int(body.valor);
   if (!valor) throw httpError(400, 'Informe o valor da despesa.');
   const meses = Math.max(1, Math.min(12, parseInt(body.repetir, 10) || 1));
-  const d0 = date(body.data) || new Date().toISOString().slice(0, 10);
+  const d0 = date(body.data) || new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
   const cat = EXP_CATS[body.categoria] ? body.categoria : 'outros';
   const vend = body.vendedor_id ? get('SELECT id FROM users WHERE id = ? AND store_id = ?', Number(body.vendedor_id), storeId)?.id || null : null;
   if (cat === 'comissao' && !vend) throw httpError(400, 'Informe o vendedor da comissão.');
@@ -360,7 +360,7 @@ function payExpense(storeId, id, pago = true) {
 // Contas em aberto: vencidas e a vencer nos próximos dias.
 function contasAbertas(storeId, dias = 15) {
   return all(`SELECT * FROM store_expenses WHERE store_id = ? AND pago = 0 AND data <= date('now', '+${Number(dias)} days') ORDER BY data`, storeId)
-    .map((e) => ({ ...e, categoria_label: EXP_CATS[e.categoria] || e.categoria, vencida: e.data < new Date().toISOString().slice(0, 10) }));
+    .map((e) => ({ ...e, categoria_label: EXP_CATS[e.categoria] || e.categoria, vencida: e.data < new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10) }));
 }
 
 /* ---------------- Indicadores ---------------- */
@@ -371,7 +371,7 @@ const faixaDe = (d) => FAIXAS.findIndex(([a, b]) => d >= a && d <= b);
 function results(storeId, q = {}) {
   const store = get('SELECT * FROM stores WHERE id = ?', storeId);
   const from = date(q.from) || new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)).toISOString().slice(0, 10);
-  const to = date(q.to) || new Date().toISOString().slice(0, 10);
+  const to = date(q.to) || new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
   const tipo = V.PROPRIEDADE.some((p) => p.key === q.tipo) ? q.tipo : '';
   const origem = ORIGEM_LABEL[q.origem] ? q.origem : '';
   const vendedor = q.vendedor ? Number(q.vendedor) : null;

@@ -1315,6 +1315,93 @@
     };
     waConfigPanel();
     if ($('#appInstall')) $('#appInstall').onclick = async () => { X.installEvt.prompt(); await X.installEvt.userChoice; X.installEvt = null; };
+    if (S.me.user.is_admin) iaPanel();
+    cfgOrganize();
+  }
+
+  /* ---- Configurações organizadas em abas (v2.10.1) ---- */
+  const CFG = { tab: 'loja' };
+  const CFG_TABS = [
+    ['loja', 'Loja e equipe', /^(Loja|Equipe|Dados da loja|Gestão|Painel na TV|Logo|Imagem para divulga)/i],
+    ['publicacao', 'Publicação e fotos', /^(Facebook e Instagram|Publicação no Marketplace|Extensão do Chrome|Republicação|Fotos prontas|Grupos de repasse|Repasse)/i],
+    ['mensagens', 'WhatsApp', /^WhatsApp/i],
+    ['conta', 'Minha conta', /^(Minha senha|App no celular)/i],
+    ['sistema', 'Sistema (administrador)', /^(Inteligência artificial|Imagens com IA|Armazenamento|App da Meta|App do Instagram)/i],
+  ];
+  function cfgCat(panel) {
+    const t = (panel.querySelector('h2')?.textContent || '').trim();
+    return (CFG_TABS.find(([, , re]) => re.test(t)) || ['loja'])[0];
+  }
+  function cfgApply() {
+    const main = $('#main'); if (!main || S.view !== 'config') return;
+    for (const p of $$('.panel', main)) {
+      if (p.parentElement?.closest('.panel')) continue;
+      const cat = p.dataset.cfg || (p.dataset.cfg = cfgCat(p));
+      const show = cat === CFG.tab;
+      if (show && p.dataset.cfgHidden) { p.hidden = false; delete p.dataset.cfgHidden; }
+      if (!show && !p.hidden) { p.hidden = true; p.dataset.cfgHidden = '1'; }
+    }
+    $$('[data-cfgt]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.cfgt === CFG.tab)));
+  }
+  function cfgOrganize() {
+    const head = $('#main .head'); if (!head || $('#cfgTabs')) return;
+    const tabs = CFG_TABS.filter(([k]) => k !== 'sistema' || S.me.user.is_admin);
+    head.querySelector('p') && (head.querySelector('p').textContent = 'Escolha o assunto abaixo.');
+    head.insertAdjacentHTML('afterend', `<div class="chips tabs" id="cfgTabs" style="margin:6px 0 14px">${tabs.map(([k, l]) => `<button class="chip" type="button" data-cfgt="${k}">${l}</button>`).join('')}</div>`);
+    $$('[data-cfgt]').forEach((b) => { b.onclick = () => { CFG.tab = b.dataset.cfgt; cfgApply(); }; });
+    cfgApply();
+    // Painéis que chegam depois (carregados em segundo plano) entram na aba certa.
+    const mo = new MutationObserver(() => { clearTimeout(CFG.t); CFG.t = setTimeout(cfgApply, 30); });
+    mo.observe($('#main'), { childList: true, subtree: true });
+    CFG.mo?.disconnect(); CFG.mo = mo;
+  }
+
+  /* ---- Inteligência artificial (administrador do sistema) ---- */
+  async function iaPanel() {
+    const col = $('#main .grid2 > .stack:last-child') || $('#main .grid2 > .stack');
+    if (!col || $('#cfgIa')) return;
+    const [C, A] = await Promise.all([api('GET', '/api/admin/ai-chat').catch(() => null), api('GET', '/api/admin/ai').catch(() => null)]);
+    if (!C || $('#cfgIa')) return;
+    const prov = A?.provider || 'manual';
+    const opt = (k, t, d) => `<label class="check"><input type="radio" name="ia-prov" value="${k}" ${prov === k ? 'checked' : ''}><div><b>${t}</b><span>${d}</span></div></label>`;
+    col.insertAdjacentHTML('afterbegin', `<div class="panel" id="cfgIa"><h2>Inteligência artificial</h2>
+      <h4 style="margin:0">Assistente de vendas e leitura de e-mails (texto)</h4>
+      ${C.configured ? `<div class="okbox">Configurada${C.propria ? '' : ' (usando a chave das imagens)'}. O assistente do site está conversando com IA.</div>` : '<div class="warnbox">Sem chave: o assistente do site está no modo roteiro (só pede nome e WhatsApp).</div>'}
+      <ol class="note" style="padding-left:18px;display:flex;flex-direction:column;gap:4px;margin:4px 0 8px">
+        <li>Abra <a class="link" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> com uma conta Google e clique em <b>Criar chave de API</b>.</li>
+        <li>Copie a chave (começa com <b>AIza</b>), cole abaixo e salve. O plano gratuito do Google já atende o assistente; com muito movimento, ative o faturamento no AI Studio para tirar os limites diários.</li>
+        <li>Clique em <b>Testar</b>. Pronto: vale para todas as lojas.</li>
+      </ol>
+      <div class="fields">
+        <div class="f w3"><label for="ia-k">Chave da API do Google (texto)</label><input id="ia-k" type="password" autocomplete="new-password" placeholder="${C.propria ? '•••••••• (guardada)' : 'AIza…'}"></div>
+        <div class="f w3"><label for="ia-m">Modelo (opcional)</label><input id="ia-m" value="${esc(C.model || '')}" placeholder="gemini-flash-latest"></div>
+      </div>
+      <p class="note">No plano gratuito, o Google pode usar o conteúdo das conversas para melhorar os produtos dele. Para lojas com muitos dados de clientes, prefira ativar o faturamento.</p>
+      <div class="form-foot">${C.propria ? '<button class="btn ghost danger" type="button" id="ia-rm">Remover chave</button>' : ''}<button class="btn" type="button" id="ia-t">Testar</button><button class="btn primary" type="button" id="ia-s">Salvar</button></div>
+      <h4 style="margin:14px 0 0">Fotos do carro no estacionamento (imagens)</h4>
+      <div class="modes">
+        ${opt('manual', 'Grátis, à mão (ChatGPT ou Gemini)', 'O painel entrega a foto e a instrução prontas; você gera no ChatGPT/Gemini gratuitos e envia o resultado.')}
+        ${opt('pollinations', 'Automático com cota grátis (Pollinations)', 'Gera sozinho com a cota gratuita diária da Pollinations.')}
+        ${opt('gemini', 'Automático pago (Google Gemini)', 'Melhor qualidade. Cerca de R$ 0,75 por carro; exige faturamento ativo na chave do Google.')}
+      </div>
+      <div class="fields" id="ia-imgk">
+        <div class="f w3" data-p="pollinations"><label for="ia-pk">Chave da Pollinations</label><input id="ia-pk" type="password" autocomplete="new-password" placeholder="${A?.pollinations?.configured ? '•••••••• (guardada)' : 'sk_…'}"></div>
+        <div class="f w3" data-p="gemini"><label for="ia-gk">Chave do Google para imagens</label><input id="ia-gk" type="password" autocomplete="new-password" placeholder="${A?.gemini?.configured ? '•••••••• (guardada)' : 'AIza… (com faturamento)'}"></div>
+      </div>
+      <label class="check"><input type="checkbox" id="ia-auto" ${A?.auto ? 'checked' : ''}><div><b>Gerar sozinho para cada veículo</b><span>Desmarcado, a loja gera quando quiser, no cadastro do veículo.</span></div></label>
+      <div class="form-foot"><button class="btn primary" type="button" id="ia-is">Salvar imagens</button></div>
+    </div>`);
+    const showK = () => { const v = $('input[name="ia-prov"]:checked')?.value; $$('#ia-imgk [data-p]').forEach((d) => { d.hidden = d.dataset.p !== v; }); };
+    $$('input[name="ia-prov"]').forEach((r) => { r.onchange = showK; }); showK();
+    const reload = () => { $('#cfgIa')?.remove(); iaPanel(); };
+    $('#ia-s').onclick = async () => { try { await api('PUT', '/api/admin/ai-chat', { key: $('#ia-k').value || undefined, model: $('#ia-m').value }); toast('IA do assistente salva'); reload(); } catch (e) { toast(e.message, 7000); } };
+    $('#ia-t').onclick = async () => { try { const r = await api('POST', '/api/admin/ai-chat/test', {}); toast(`IA respondeu: "${r.resposta}"`, 6000); } catch (e) { toast(e.message, 8000); } };
+    if ($('#ia-rm')) $('#ia-rm').onclick = async () => { await api('PUT', '/api/admin/ai-chat', { remover: true }); toast('Chave removida'); reload(); };
+    $('#ia-is').onclick = async () => {
+      const provider = $('input[name="ia-prov"]:checked').value;
+      try { await api('PUT', '/api/admin/ai', { provider, gemini_key: $('#ia-gk').value || undefined, pollinations_key: $('#ia-pk').value || undefined, auto: $('#ia-auto').checked }); toast('Imagens com IA salvas'); reload(); }
+      catch (e) { toast(e.message, 7000); }
+    };
   }
 
   function userModal(u, team) {
@@ -1869,6 +1956,8 @@
     if (min < 1) return 'agora'; if (min < 60) return `${min} min`; if (min < 1440) return `${Math.floor(min / 60)} h`; return `${Math.floor(min / 1440)} d`;
   };
   const dh = (s) => { const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/); return m ? `${m[3]}/${m[2]} ${m[4]}:${m[5]}` : fmtDate(s); };
+  // Datas gravadas pelo servidor (UTC) mostradas no horário local; data_hora de visitas/tarefas já é local.
+  const dhu = (s) => { if (!s) return ''; const d = new Date(String(s).replace(' ', 'T') + (/[zZ]|[+-]\d\d:?\d\d$/.test(String(s)) ? '' : 'Z')); return isNaN(d) ? String(s) : `${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`; };
   const primeiroNome = (n) => String(n || '').trim().split(/\s+/)[0] || '';
   const tempIco = { quente: '🔥', morno: '🌤️', frio: '❄️' };
   async function crMeta(force) {
@@ -2049,8 +2138,8 @@
           ${D.tarefas.length ? `<h4>Tarefas</h4>${D.tarefas.map((t) => `<label class="rgrow" style="cursor:pointer"><span><input type="checkbox" data-tkd="${t.id}" ${t.feita_em ? 'checked' : ''}> ${esc(t.titulo)}</span><span class="sub">${dh(t.vence_em)}</span></label>`).join('')}` : ''}
           <h4>Histórico</h4>
           <div class="ldnote"><select id="ln-t">${Object.entries(M.notas).map(([k, lb]) => `<option value="${k}">${lb}</option>`).join('')}</select><input id="ln-x" placeholder="Registrar contato, anotação, proposta…"><button class="btn sm" type="button" id="ln-ok">Adicionar</button></div>
-          <div class="timeline ldtl">${D.eventos.map((e) => `<div>${ico[e.tipo] || '•'} ${esc(e.texto)} <span class="sub">${dh(e.created_at)}${e.user_name ? ' · ' + esc(e.user_name) : ''}</span></div>`).join('')}</div>
-          ${D.conversa.length ? `<details style="margin-top:8px"><summary><b>🤖 Conversa com o assistente (${D.conversa.length})</b></summary><div class="chatlog">${D.conversa.map((m) => `<div class="cm ${m.papel === 'user' ? 'u' : 'b'}">${esc(m.texto)}<span>${dh(m.created_at)}</span></div>`).join('')}</div></details>` : ''}
+          <div class="timeline ldtl">${D.eventos.map((e) => `<div>${ico[e.tipo] || '•'} ${esc(e.texto)} <span class="sub">${dhu(e.created_at)}${e.user_name ? ' · ' + esc(e.user_name) : ''}</span></div>`).join('')}</div>
+          ${D.conversa.length ? `<details style="margin-top:8px"><summary><b>🤖 Conversa com o assistente (${D.conversa.length})</b></summary><div class="chatlog">${D.conversa.map((m) => `<div class="cm ${m.papel === 'user' ? 'u' : 'b'}">${esc(m.texto)}<span>${dhu(m.created_at)}</span></div>`).join('')}</div></details>` : ''}
         </div>
       </div>
       <div class="modal-foot"><button class="btn" data-close type="button">Fechar</button></div>`, true);
@@ -2129,6 +2218,7 @@
         <span>${x.lead_id ? `<button class="vlink" type="button" data-lead="${x.lead_id}">${esc(x.lead_nome || x.lead_tel || 'Lead')}</button>` : esc(x.obs || 'Visita')} <span class="sub">${esc(x.tipo_label)}${x.veiculo ? ' · ' + esc(x.veiculo) : ''} · ${esc(x.vendedor_nome || '')}</span></span>
         <span class="pill ${x.status === 'realizada' ? 'p-ok' : ['faltou', 'cancelada'].includes(x.status) ? 'p-bad' : x.status === 'confirmada' ? 'p-info' : 'p-muted'}">${esc(x.status_label)}</span>
         <span class="btnrow" style="gap:4px">${x.lead_tel && ['agendada', 'confirmada'].includes(x.status) ? `<a class="btn sm" href="${esc(waVisita(x))}" target="_blank" rel="noopener">💬 Confirmar</a>` : ''}
+          <button class="btn sm ghost danger" type="button" data-vdel="${x.id}" title="Excluir agendamento">🗑</button>
           <select data-vst="${x.id}" class="sm">${Object.entries(M.visita_status).map(([k, lb]) => `<option value="${k}" ${k === x.status ? 'selected' : ''}>${esc(lb)}</option>`).join('')}</select></span></div>`).join('')}</div>`).join('');
     return `<div class="btnrow" style="margin-bottom:10px"><button class="btn" type="button" id="agNova">+ Agendar visita</button>${can('gestao') ? `<label class="chip"><input type="checkbox" id="crM2" ${CR.meus ? 'checked' : ''}> Só as minhas</label>` : ''}</div>
       ${linhas || '<p class="sub">Nenhuma visita nos últimos 7 e próximos 30 dias. Agende pelo lead ou pelo botão acima.</p>'}`;
@@ -2136,6 +2226,7 @@
   function crAgendaBind() {
     if ($('#agNova')) $('#agNova').onclick = () => visitaModal({});
     if ($('#crM2')) $('#crM2').onchange = () => { CR.meus = $('#crM2').checked; X.render(); };
+    $$('[data-vdel]').forEach((b) => { b.onclick = () => confirmBox('Excluir este agendamento?', 'Ele sai da agenda e fica registrado no histórico do lead. Para manter o registro de que o cliente não veio, use "Não compareceu".', 'Excluir', async () => { await api('DELETE', `/api/crm/visits/${b.dataset.vdel}`); toast('Agendamento excluído'); setTimeout(() => X.render(), 0); }, true); });
     $$('[data-vst]').forEach((s) => { s.onchange = async () => { try { await api('PUT', `/api/crm/visits/${s.dataset.vst}`, { status: s.value }); toast('Visita atualizada'); X.render(); } catch (e) { toast(e.message); } }; });
   }
 
@@ -2217,7 +2308,7 @@
       <div class="stack">
         <div class="panel"><h2>Assistente de vendas no site</h2>
           <p class="lead">Atende na hora, 24h, quem entra na vitrine ou na página de um carro: tira dúvidas sobre o estoque, manda fotos, pergunta sobre troca e pagamento, pega nome e WhatsApp, agenda a visita e passa para um vendedor. Cada conversa com telefone vira lead no CRM (origem "Assistente do site").</p>
-          ${B.ia ? '<div class="okbox">IA ativa (Google Gemini).</div>' : '<div class="warnbox">A IA não está configurada no sistema: o assistente funciona no modo roteiro (pede nome e WhatsApp e avisa a equipe). Para respostas completas, o administrador do sistema coloca a chave do Google em Configurações &gt; Imagens com IA.</div>'}
+          ${B.ia ? '<div class="okbox">IA ativa (Google Gemini).</div>' : `<div class="warnbox">A IA ainda não está ligada: o assistente funciona no modo roteiro (pede nome e WhatsApp e avisa a equipe). ${S.me.user.is_admin ? '<a class="btn sm" href="#config" id="bt-cfgia">Configurar a IA agora</a> (leva 2 minutos, plano gratuito do Google).' : 'Peça ao administrador do sistema para configurar em Configurações &gt; Sistema &gt; Inteligência artificial.'}</div>`}
           <div class="pchips" style="margin:10px 0"><span><b>${B.conversas_7d}</b> conversas em 7 dias</span><span><b>${B.leads_7d}</b> leads gerados</span></div>
           <label class="check"><input type="checkbox" id="bt-on" ${B.ativo ? 'checked' : ''} ${dis}><div><b>Mostrar o assistente no site da loja</b><span>Botão "Fale com a gente" na vitrine e "Dúvidas sobre este carro?" em cada carro.</span></div></label>
           <div class="fields" style="margin-top:10px">
@@ -2229,7 +2320,7 @@
           ${ok ? '<div class="form-foot"><button class="btn primary" type="button" id="bt-save">Salvar</button></div>' : ''}
         </div>
         <div class="panel"><h2>Conversas recentes</h2>
-          ${B.conversas.length ? `<div class="rglist">${B.conversas.map((c) => `<div class="rgrow"><span><button class="vlink" type="button" data-cv="${esc(c.id)}">${esc(c.lead_nome || c.dados.nome || 'Visitante')}</button> <span class="sub">${c.msgs} msg · ${c.marca ? esc(c.marca + ' ' + c.modelo) + ' · ' : ''}${dh(c.updated_at)}</span></span>${c.lead_id ? `<button class="btn sm" type="button" data-lead="${c.lead_id}">Abrir lead</button>` : '<span class="sub">sem contato</span>'}<span></span></div>`).join('')}</div>` : '<p class="sub">Nenhuma conversa ainda.</p>'}
+          ${B.conversas.length ? `<div class="rglist">${B.conversas.map((c) => `<div class="rgrow"><span><button class="vlink" type="button" data-cv="${esc(c.id)}">${esc(c.lead_nome || c.dados.nome || 'Visitante')}</button> <span class="sub">${c.msgs} msg · ${c.marca ? esc(c.marca + ' ' + c.modelo) + ' · ' : ''}${dhu(c.updated_at)}</span></span>${c.lead_id ? `<button class="btn sm" type="button" data-lead="${c.lead_id}">Abrir lead</button>` : '<span class="sub">sem contato</span>'}<span></span></div>`).join('')}</div>` : '<p class="sub">Nenhuma conversa ainda.</p>'}
         </div>
       </div>
       <div class="panel botteste"><h2>Testar o assistente</h2><p class="sub">Converse como se fosse um cliente. No teste nada é salvo no CRM.</p>
@@ -2245,6 +2336,7 @@
       catch (e) { toast(e.message); }
     };
     $$('[data-cv]').forEach((b) => { b.onclick = () => conversaModal(b.dataset.cv); });
+    if ($('#bt-cfgia')) $('#bt-cfgia').addEventListener('click', () => { CFG.tab = 'sistema'; });
     let sid = '';
     const log = $('#bt-log');
     const add = (m) => {
@@ -2270,7 +2362,7 @@
   }
   async function conversaModal(sid) {
     let D; try { D = await api('GET', `/api/crm/bot/conversas/${sid}`); } catch (e) { return toast(e.message); }
-    modal(`<h3>Conversa no site</h3><div class="chatlog" style="max-height:60vh">${D.mensagens.map((m) => `<div class="cm ${m.papel === 'user' ? 'u' : 'b'}">${esc(m.texto)}<span>${dh(m.created_at)}</span></div>`).join('')}</div>
+    modal(`<h3>Conversa no site</h3><div class="chatlog" style="max-height:60vh">${D.mensagens.map((m) => `<div class="cm ${m.papel === 'user' ? 'u' : 'b'}">${esc(m.texto)}<span>${dhu(m.created_at)}</span></div>`).join('')}</div>
       <div class="modal-foot">${D.sessao.lead_id ? `<button class="btn" type="button" id="cv-l">Abrir lead</button>` : ''}<button class="btn primary" data-close type="button">Fechar</button></div>`, true);
     if ($('#cv-l')) $('#cv-l').onclick = () => leadModal(D.sessao.lead_id);
   }
@@ -2306,7 +2398,7 @@
           <textarea id="cl-t" rows="8" style="width:100%" placeholder="Cole aqui o conteúdo do e-mail do Webmotors, OLX, iCarros…"></textarea>
           <div id="cl-prev"></div>
           <div class="btnrow" style="margin-top:8px"><button class="btn" type="button" id="cl-ver">Ver o que foi encontrado</button><button class="btn primary" type="button" id="cl-ok">Criar lead</button></div></div>
-        ${E?.recentes?.length ? `<div class="panel"><h2>E-mails processados</h2><div class="rglist">${E.recentes.map((r) => `<div class="rgrow"><span><b>${esc(r.portal || 'e-mail')}</b> <span class="sub">${esc(r.assunto || '')} · ${dh(r.created_at)}</span>${r.erro ? `<br><span class="sub">${esc(r.erro)}</span>` : ''}</span>${r.lead_id ? `<button class="btn sm" type="button" data-lead="${r.lead_id}">Lead</button>` : `<span class="pill ${r.status === 'ok' ? 'p-ok' : 'p-muted'}">${esc(r.status)}</span>`}<span></span></div>`).join('')}</div></div>` : ''}
+        ${E?.recentes?.length ? `<div class="panel"><h2>E-mails processados</h2><div class="rglist">${E.recentes.map((r) => `<div class="rgrow"><span><b>${esc(r.portal || 'e-mail')}</b> <span class="sub">${esc(r.assunto || '')} · ${dhu(r.created_at)}</span>${r.erro ? `<br><span class="sub">${esc(r.erro)}</span>` : ''}</span>${r.lead_id ? `<button class="btn sm" type="button" data-lead="${r.lead_id}">Lead</button>` : `<span class="pill ${r.status === 'ok' ? 'p-ok' : 'p-muted'}">${esc(r.status)}</span>`}<span></span></div>`).join('')}</div></div>` : ''}
       </div></div>`;
   }
   function crPortaisBind() {

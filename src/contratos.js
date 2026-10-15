@@ -194,7 +194,7 @@ function prefill(storeId, b) {
   const chave = String(b.modelo || 'venda');
   const m = model(storeId, chave);
   const dados = { loja: lojaDados(storeId), geral: {}, cliente: {}, veiculo: {} };
-  dados.geral = { cidade: dados.loja.cidade, data: new Date().toISOString().slice(0, 10), foro: dados.loja.foro };
+  dados.geral = { cidade: dados.loja.cidade, data: new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10), foro: dados.loja.foro };
   delete dados.loja.foro;
   for (const c of m.campos) if (c.padrao && getPath(dados, c.k) === undefined) setPath(dados, c.k, c.padrao);
   const marcar = new Set();
