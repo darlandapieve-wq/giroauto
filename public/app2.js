@@ -1852,6 +1852,33 @@
       catch (e) { toast(e.message, 6000); }
     };
     if ($('#wa-rm')) $('#wa-rm').onclick = async () => { await api('PUT', '/api/wa/config', { remover: true }); $('#cfgWa').remove(); waConfigPanel(); };
+    waBotPanel();
+  }
+
+  /* ---- Assistente respondendo no WhatsApp (v2.11) ---- */
+  async function waBotPanel() {
+    if ($('#cfgWaBot')) return;
+    const W = await api('GET', '/api/wa/bot').catch(() => null); if (!W || $('#cfgWaBot')) return;
+    const passo = (ok, t) => `<li>${ok ? '✅' : '⬜'} ${t}</li>`;
+    $('#cfgWa')?.insertAdjacentHTML('afterend', `<div class="panel" id="cfgWaBot"><h2>WhatsApp: assistente responde os clientes</h2>
+      <p class="lead">Com a API oficial ligada, as mensagens que chegam no número da loja são respondidas pelo mesmo assistente do site: tira dúvidas, manda fotos dos carros, agenda a visita e cria o lead no CRM. Quando o cliente pede um atendente, ou um vendedor responde pelo GiroAuto, o assistente pausa naquela conversa.</p>
+      ${W.ativo && W.inscrito ? `<div class="okbox">Ativo. ${W.ultima ? `Última mensagem recebida: ${dhu(W.ultima)}.` : 'Ainda não chegou nenhuma mensagem.'} ${W.conversas_7d} conversa(s) em 7 dias.</div>` : ''}
+      <ol class="steps-list" style="list-style:none;padding-left:0">
+        ${passo(W.pronto, 'Token e ID do número salvos no quadro "WhatsApp automático" acima.')}
+        ${W.verify_token ? passo(false, `<b>Uma vez só, no app da Meta</b> (developers.facebook.com &gt; seu app &gt; WhatsApp &gt; Configuração &gt; Webhook): <b>URL de retorno</b> <code>${esc(W.webhook_url)}</code> e <b>Token de verificação</b> <code>${esc(W.verify_token)}</code>. Clique em Verificar e salvar e, em <b>Campos do webhook</b>, assine <b>messages</b>.`) : passo(false, 'O administrador do sistema configura o webhook no app da Meta (uma vez só).')}
+        ${passo(W.inscrito, 'Informe o ID da conta do WhatsApp Business (WABA) — está em WhatsApp &gt; Configuração da API, abaixo do número — e clique em "Ativar recebimento".')}
+        ${passo(W.ativo, 'Marque "Assistente responde no WhatsApp" e salve.')}
+      </ol>
+      <div class="fields">
+        <div class="f w3"><label for="wb-waba">ID da conta do WhatsApp Business (WABA)</label><input id="wb-waba" value="${esc(W.waba_id)}" inputmode="numeric"></div>
+        <div class="f w3"><label for="wb-sec">Chave secreta do app (só se o número estiver em outro app da Meta)</label><input id="wb-sec" type="password" autocomplete="new-password" placeholder="${W.tem_app_secret ? '•••••• (guardada)' : 'opcional'}"></div>
+        <label class="f w6" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="wb-on" ${W.ativo ? 'checked' : ''} style="width:auto"> Assistente responde no WhatsApp</label>
+      </div>
+      <div class="form-foot"><button class="btn" type="button" id="wb-sub">Ativar recebimento</button><button class="btn primary" type="button" id="wb-save">Salvar</button></div></div>`);
+    const body = () => ({ waba_id: $('#wb-waba').value, ativo: $('#wb-on').checked, ...($('#wb-sec').value ? { app_secret: $('#wb-sec').value } : {}) });
+    const reload = () => { $('#cfgWaBot')?.remove(); waBotPanel(); };
+    $('#wb-save').onclick = async () => { try { await api('PUT', '/api/wa/bot', body()); toast('Assistente no WhatsApp salvo'); reload(); } catch (e) { toast(e.message, 7000); } };
+    $('#wb-sub').onclick = async () => { try { await api('PUT', '/api/wa/bot', { ...body(), inscrever: true }); toast('Recebimento ativado: a Meta vai mandar as mensagens para o GiroAuto.', 6000); reload(); } catch (e) { toast(e.message, 8000); } };
   }
 
   /* ======================= Sugestões e erros (todos) ======================= */
@@ -1967,6 +1994,7 @@
   const dhu = (s) => { if (!s) return ''; const d = new Date(String(s).replace(' ', 'T') + (/[zZ]|[+-]\d\d:?\d\d$/.test(String(s)) ? '' : 'Z')); return isNaN(d) ? String(s) : `${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`; };
   const primeiroNome = (n) => String(n || '').trim().split(/\s+/)[0] || '';
   const tempIco = { quente: '🔥', morno: '🌤️', frio: '❄️' };
+  const WA_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#25D366" d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2z"/><path fill="#fff" d="M8.6 7.2c.2-.4.4-.4.7-.4h.5c.2 0 .4 0 .6.5l.8 1.9c.1.2.1.4 0 .6l-.4.6c-.1.2-.2.3 0 .6.5.9 1.2 1.6 2 2.1.3.2.5.2.7 0l.6-.7c.2-.2.4-.2.6-.1l1.8.9c.3.1.4.2.4.4 0 .5-.1 1.1-.6 1.5-.5.4-1.2.7-2 .6-1.4-.2-2.9-.9-4.2-2.2C8.9 12.2 8 10.7 7.8 9.4c-.1-.9.3-1.7.8-2.2z"/></svg>';
   async function crMeta(force) {
     if (!CR.meta || force) CR.meta = await api('GET', '/api/crm/meta');
     return CR.meta;
@@ -2033,11 +2061,11 @@
       return `<div class="kcol" data-col="${k}"><div class="kcol-h"><b>${label}</b><span>${ls.length}</span></div><div class="kcol-b">${ls.map(card).join('') || '<p class="sub kvazio">—</p>'}</div></div>`;
     };
     const card = (l) => `<div class="kcard ${l.atrasado ? 'late' : ''}" draggable="true" data-lead="${l.id}" data-drag="${l.id}">
-        <div class="kc-top"><b>${esc(l.nome || l.telefone || l.email || 'Sem nome')}</b><span class="sub">${quandoCurto(l.ultimo_contato || l.created_at)}</span></div>
+        <div class="kc-top"><b><span>${esc(l.nome || l.telefone || l.email || 'Sem nome')}</span>${l.telefone ? `<a class="wa-ic" data-noopen data-wal="${l.id}" href="${esc(waLead(l, l.veiculo?.titulo))}" target="_blank" rel="noopener" title="Abrir conversa no WhatsApp">${WA_SVG}</a>` : ''}</b><span class="sub">${quandoCurto(l.ultimo_contato || l.created_at)}</span></div>
         ${l.veiculo ? `<div class="kc-v">${l.veiculo.foto ? `<img src="${esc(l.veiculo.foto)}" alt="">` : ''}<span>${esc(l.veiculo.titulo)}${l.veiculo.status === 'vendido' ? ' <span class="pill p-muted">vendido</span>' : ''}</span></div>` : l.interesse ? `<div class="sub">${esc(l.interesse)}</div>` : ''}
         <div class="kc-tags"><span class="pill p-info">${esc(l.origem_label)}</span>${l.temperatura ? `<span title="${esc(l.temperatura_label)}">${tempIco[l.temperatura] || ''}</span>` : ''}${l.precisa_humano ? '<span class="pill p-warn">pediu atendente</span>' : ''}${l.atrasado ? `<span class="pill p-bad">sem resposta ${quandoCurto(l.created_at)}</span>` : ''}
           ${l.proxima_visita ? `<span class="pill p-ok">📅 ${dh(l.proxima_visita)}</span>` : ''}${l.proxima_tarefa ? `<span class="pill p-muted">✓ ${dh(l.proxima_tarefa)}</span>` : ''}</div>
-        <div class="kc-foot"><span class="sub">${esc(l.vendedor_nome || 'sem vendedor')}</span>${l.telefone ? `<a class="linkbtn" data-noopen href="${esc(waLead(l, l.veiculo?.titulo))}" target="_blank" rel="noopener" data-wal="${l.id}">💬</a>` : ''}</div></div>`;
+        <div class="kc-foot"><span class="sub">${esc(l.vendedor_nome || 'sem vendedor')}</span></div></div>`;
     return `<div class="crbar">
         <input id="crQ" placeholder="Buscar nome, telefone, carro…" value="${esc(CR.q)}">
         <select id="crO"><option value="">Todas as origens</option>${Object.entries(M.origens).map(([k, l]) => `<option value="${k}" ${k === CR.origem ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
@@ -2146,13 +2174,25 @@
           <h4>Histórico</h4>
           <div class="ldnote"><select id="ln-t">${Object.entries(M.notas).map(([k, lb]) => `<option value="${k}">${lb}</option>`).join('')}</select><input id="ln-x" placeholder="Registrar contato, anotação, proposta…"><button class="btn sm" type="button" id="ln-ok">Adicionar</button></div>
           <div class="timeline ldtl">${D.eventos.map((e) => `<div>${ico[e.tipo] || '•'} ${esc(e.texto)} <span class="sub">${dhu(e.created_at)}${e.user_name ? ' · ' + esc(e.user_name) : ''}</span></div>`).join('')}</div>
-          ${D.conversa.length ? `<details style="margin-top:8px"><summary><b>🤖 Conversa com o assistente (${D.conversa.length})</b></summary><div class="chatlog">${D.conversa.map((m) => `<div class="cm ${m.papel === 'user' ? 'u' : 'b'}">${esc(m.texto)}<span>${dhu(m.created_at)}</span></div>`).join('')}</div></details>` : ''}
+          ${D.conversa.length || (D.wa_api && l.telefone) ? `<details style="margin-top:8px" ${D.whatsapp ? 'open' : ''}><summary><b>💬 Conversa ${D.whatsapp ? 'no WhatsApp' : 'com o assistente'} (${D.conversa.length})</b>${D.whatsapp ? ` <span class="pill ${D.whatsapp.pausado ? 'p-warn' : 'p-ok'}">${D.whatsapp.pausado ? 'assistente pausado' : 'assistente respondendo'}</span>` : ''}</summary>
+            <div class="chatlog" id="ld-chat">${D.conversa.map((m) => `<div class="cm ${m.papel === 'user' ? 'u' : m.papel === 'loja' ? 'l' : 'b'}">${m.papel === 'loja' ? '<b>Loja: </b>' : m.papel === 'bot' ? '🤖 ' : ''}${esc(m.texto)}<span>${dhu(m.created_at)}</span></div>`).join('') || '<p class="sub">Sem mensagens ainda.</p>'}</div>
+            ${D.wa_api && l.telefone ? `<div class="wabox"><textarea id="ld-wat" rows="1" placeholder="Responder pelo WhatsApp da loja (o assistente pausa nesta conversa)"></textarea><button class="btn sm primary" type="button" id="ld-was">Enviar</button></div>
+              ${D.whatsapp ? `<button class="linkbtn" type="button" id="ld-wap">${D.whatsapp.pausado ? '▶ Devolver para o assistente' : '⏸ Pausar o assistente nesta conversa'}</button>` : ''}` : ''}
+          </details>` : ''}
         </div>
       </div>
       <div class="modal-foot"><button class="btn" data-close type="button">Fechar</button></div>`, true);
     const refresh = () => { if (S.view === 'crm') X.render(); };
     if ($('#ld-wa')) $('#ld-wa').addEventListener('click', () => api('POST', `/api/leads/${id}/notes`, { tipo: 'whatsapp' }).then(refresh).catch(() => {}));
     if ($('#ld-tel')) $('#ld-tel').addEventListener('click', () => api('POST', `/api/leads/${id}/notes`, { tipo: 'ligacao' }).then(refresh).catch(() => {}));
+    if ($('#ld-chat')) $('#ld-chat').scrollTop = $('#ld-chat').scrollHeight;
+    if ($('#ld-was')) $('#ld-was').onclick = async () => {
+      const t = $('#ld-wat').value.trim(); if (!t) return;
+      $('#ld-was').disabled = true;
+      try { await api('POST', `/api/leads/${id}/wa`, { texto: t }); toast('Mensagem enviada pelo WhatsApp'); leadModal(id); refresh(); }
+      catch (e) { toast(e.message, 8000); $('#ld-was').disabled = false; }
+    };
+    if ($('#ld-wap')) $('#ld-wap').onclick = async () => { await api('PUT', `/api/leads/${id}/wa-bot`, { pausar: !D.whatsapp.pausado }); leadModal(id); };
     $('#ld-save').onclick = async () => {
       const etapa = $('#ld-et').value;
       if (etapa === 'perdido' && l.etapa !== 'perdido') return perdidoModal(id, () => leadModal(id));

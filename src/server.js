@@ -21,7 +21,7 @@ const team = require('./team');
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', true);
-app.use(express.json({ limit: '6mb' }));
+app.use(express.json({ limit: '6mb', verify: (req, _res, buf) => { if (req.url.startsWith('/api/wa/webhook')) req.rawBody = buf; } }));
 app.use(auth.loadUser);
 require('./routes2').register(app);
 require('./routes3').register(app);

@@ -32,7 +32,7 @@ function register(app) {
   app.put('/api/crm/config', team.can('config'), (req, res) => { CRM.updateConfig(req.user.storeId, req.body || {}); res.json(CRM.publicConfig(req.user.storeId)); });
   app.get('/api/leads', crm, (req, res) => res.json(CRM.list(req.user, req.query)));
   app.post('/api/leads', crm, (req, res) => res.status(201).json(CRM.createLead(req.user.storeId, { ...(req.body || {}), vendedor_id: req.body?.vendedor_id || req.user.id }, { userId: req.user.id })));
-  app.get('/api/leads/:lid', crm, (req, res) => res.json(CRM.detail(req.user, req.params.lid)));
+  app.get('/api/leads/:lid', crm, (req, res) => res.json({ ...CRM.detail(req.user, req.params.lid), whatsapp: require('./wabot').conversaDoLead(req.user, req.params.lid), wa_api: !!require('./contatos').cloudCfg(get('SELECT wa_cloud FROM stores WHERE id = ?', req.user.storeId)).token }));
   app.put('/api/leads/:lid', crm, (req, res) => { CRM.update(req.user, req.params.lid, req.body || {}); res.json(CRM.detail(req.user, req.params.lid)); });
   app.post('/api/leads/:lid/notes', crm, (req, res) => { CRM.note(req.user, req.params.lid, req.body || {}); res.status(201).json(CRM.detail(req.user, req.params.lid)); });
   app.get('/api/crm/visits', crm, (req, res) => res.json(CRM.visits(req.user, req.query)));
@@ -90,6 +90,22 @@ function register(app) {
     res.json(await IN.processar(s.id, m, { msgId: m.msgId }));
   }));
   IN.startPolling();
+
+  /* ---------------- Assistente no WhatsApp (v2.11) ---------------- */
+  const WA = require('./wabot');
+  app.get('/api/wa/webhook', (req, res) => {
+    if (req.query['hub.mode'] === 'subscribe' && req.query['hub.verify_token'] === WA.verifyToken()) return res.type('text').send(String(req.query['hub.challenge'] || ''));
+    res.sendStatus(403);
+  });
+  app.post('/api/wa/webhook', (req, res) => {
+    if (!WA.assinaturaOk(req.rawBody, req.get('x-hub-signature-256'))) return res.sendStatus(401);
+    res.sendStatus(200);
+    WA.processar(req.body).catch((e) => console.error('wa webhook', e.message));
+  });
+  app.get('/api/wa/bot', team.can('config'), (req, res) => res.json({ ...WA.status(req.user.storeId), ...(require('./db').get('SELECT is_admin FROM users WHERE id = ?', req.user.id)?.is_admin ? { verify_token: WA.verifyToken() } : {}) }));
+  app.put('/api/wa/bot', team.can('config'), wrap(async (req, res) => res.json(await WA.salvar(req.user.storeId, req.body || {}))));
+  app.post('/api/leads/:lid/wa', crm, wrap(async (req, res) => { await WA.responderComoLoja(req.user, req.params.lid, req.body?.texto); res.json(CRM.detail(req.user, req.params.lid)); }));
+  app.put('/api/leads/:lid/wa-bot', crm, (req, res) => res.json(WA.pausar(req.user, req.params.lid, req.body?.pausar !== false)));
 
   /* ---------------- Contratos (v2.8) ---------------- */
   const K = require('./contratos');

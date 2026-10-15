@@ -2,6 +2,31 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.11 — 15/10/2026
+
+**Assistente responde no WhatsApp**
+
+- As mensagens que chegam no número da loja (API oficial do WhatsApp) são respondidas pelo mesmo assistente de vendas do site:
+  - já sabe o número do cliente (não pede o WhatsApp) e usa o nome do perfil como ponto de partida;
+  - manda as **fotos dos carros** como imagens, com legenda (modelo, ano, km, preço e link);
+  - entende **áudios** (transcrição com a IA), e registra fotos e documentos que o cliente envia;
+  - cria/atualiza o lead no CRM (origem "WhatsApp"), agenda e remarca visitas;
+  - marca as mensagens como lidas.
+- **Vendedor assume**:
+  - na ficha do lead aparece a conversa do WhatsApp, com uma caixa para **responder pela API**;
+  - ao responder, o assistente pausa naquela conversa por 12 horas;
+  - também há botões para pausar o assistente ou devolver a conversa para ele;
+  - quando o cliente pede um atendente, o assistente pausa e o lead fica marcado como "pediu atendente".
+- Com o assistente desligado no WhatsApp, as mensagens continuam entrando no CRM (lead novo ou histórico do lead), sem resposta automática.
+- **Configurações > WhatsApp > "Assistente responde os clientes"**:
+  - passo a passo com a URL do webhook e o token de verificação para o app da Meta;
+  - ID da conta do WhatsApp Business (WABA) e botão **Ativar recebimento** (inscreve a conta no app);
+  - chave do app opcional, para números em outro app da Meta;
+  - opção ligar/desligar.
+- Segurança: o webhook confere a assinatura da Meta (X-Hub-Signature-256) e ignora mensagens repetidas.
+- **CRM**: ícone do WhatsApp ao lado do nome em cada card, que abre a conversa direto com a mensagem pronta.
+- **Painel**: os quadros se encaixam em colunas, sem espaços vazios entre eles.
+
 ## v2.10.3 — 15/10/2026
 
 - **Painel**: novo quadro **Visitas** com as de hoje e as dos próximos 7 dias (horário, cliente, tipo, carro e vendedor, com a situação: confirmada, veio, faltou). Visitas do dia também entram em "Onde atuar agora". Clicar no cliente abre o lead; "abrir" leva para CRM > Agenda.

@@ -712,3 +712,16 @@ main{gap:12px;padding-block:16px 40px;padding-inline:clamp(12px,2.2vw,28px)}
 #main:has(#cfgTabs) .grid2{display:grid;grid-template-columns:repeat(auto-fill,minmax(440px,1fr));gap:16px;align-items:start}
 #main:has(#cfgTabs) .grid2 .stack{display:contents}
 @media (max-width:760px){#main:has(#cfgTabs) .grid2{grid-template-columns:minmax(0,1fr)}}
+
+/* ---------- v2.11: painel sem buracos (quadros em colunas) e WhatsApp no CRM ---------- */
+.pgrid:has(> .pbox){display:block;columns:4 270px;column-gap:8px}
+.pgrid > .pbox{break-inside:avoid;margin:0 0 8px;width:100%;display:flex}
+.pgrid > .pbox.span2{grid-column:auto}
+.wa-ic{display:inline-flex;align-items:center;vertical-align:-2px;margin-left:4px;flex:none}
+.wa-ic svg{width:15px;height:15px}
+.wa-ic:hover{transform:scale(1.12)}
+.kc-top b{display:flex;align-items:center;gap:2px;min-width:0}
+.kc-top b > span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cm.l{align-self:flex-end;background:#dcf8c6;color:#1b2b14}
+.wabox{display:flex;gap:6px;margin-top:6px}
+.wabox textarea{flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;padding:6px 8px;background:var(--bg);font:inherit;font-size:13px;min-height:38px;resize:vertical}

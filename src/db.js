@@ -445,6 +445,11 @@ db.exec(`CREATE TABLE IF NOT EXISTS inbound_emails (
   msg_id TEXT DEFAULT '',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 )`);
+// v2.11: assistente no WhatsApp (canal da conversa, contato, pausa quando um vendedor assume) e mensagens já recebidas.
+addColumn('chat_sessions', 'canal', "TEXT NOT NULL DEFAULT 'site'");
+addColumn('chat_sessions', 'contato', "TEXT DEFAULT ''");
+addColumn('chat_sessions', 'pausado_ate', 'TEXT');
+db.exec(`CREATE TABLE IF NOT EXISTS wa_inbound (id TEXT PRIMARY KEY, store_id INTEGER, created_at TEXT NOT NULL DEFAULT (datetime('now')))`);
 // v2.5: contato de quem vendeu o carro para a loja, troca ligada a outro veículo e composição do pagamento.
 for (const [col, def] of [
   ['compra_de_tel', "TEXT DEFAULT ''"], ['venda_troca_id', 'INTEGER'], ['troca_de_id', 'INTEGER'],

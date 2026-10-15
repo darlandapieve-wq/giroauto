@@ -16,7 +16,7 @@ const json = (s, d) => { try { return JSON.parse(s || ''); } catch { return d; }
 
 const BOT_PADRAO = {
   ativo: true, nome: 'Assistente', boas_vindas: '',
-  instrucoes: '', mostrar_preco: true,
+  instrucoes: '', mostrar_preco: true, whatsapp: false,
 };
 function botConfig(storeId) {
   const c = CRM.config(storeId);
@@ -30,6 +30,7 @@ function saveBotConfig(storeId, b) {
     boas_vindas: str(b.boas_vindas ?? atual.boas_vindas, 400),
     instrucoes: str(b.instrucoes ?? atual.instrucoes, 4000),
     mostrar_preco: b.mostrar_preco !== undefined ? !!b.mostrar_preco : atual.mostrar_preco,
+    whatsapp: b.whatsapp !== undefined ? !!b.whatsapp : atual.whatsapp,
   };
   CRM.saveConfig(storeId, { bot: novo });
   return novo;
@@ -63,11 +64,11 @@ function agoraSP() {
   return { texto: f.format(new Date()), iso };
 }
 
-function prompt(store, cfg, bot, sess, vAtual) {
+function prompt(store, cfg, bot, sess, vAtual, canal = 'site') {
   const hoje = agoraSP();
   const d = sess.dados || {};
   const vs = estoque(store.id);
-  return `Você é ${bot.nome}, assistente virtual de vendas da loja de veículos ${store.name}${store.city ? ` (${store.city}${store.state ? '/' + store.state : ''})` : ''}, conversando com um cliente pelo chat do site da loja.
+  return `Você é ${bot.nome}, assistente virtual de vendas da loja de veículos ${store.name}${store.city ? ` (${store.city}${store.state ? '/' + store.state : ''})` : ''}, conversando com um cliente ${canal === 'whatsapp' ? 'pelo WhatsApp da loja' : 'pelo chat do site da loja'}.
 
 OBJETIVO: atender bem, tirar dúvidas sobre os carros do estoque, despertar interesse e conduzir para AGENDAR UMA VISITA ou test-drive na loja. Em paralelo, conseguir o NOME e o WHATSAPP do cliente (de forma natural, sem interrogatório: peça o nome logo no começo e o WhatsApp quando oferecer enviar fotos/condições, ou ao agendar).
 
@@ -96,7 +97,7 @@ ESTOQUE DISPONÍVEL (id | carro | ano | km | preço | câmbio | combustível | c
 ${vs.map((v) => linhaVeiculo(v, bot.mostrar_preco)).join('\n') || '(nenhum carro cadastrado no momento)'}
 ${vAtual ? `\nO cliente está na página deste carro: #${vAtual.id} ${vAtual.marca} ${vAtual.modelo} ${vAtual.versao || ''}.` : ''}
 
-O QUE JÁ SABEMOS DO CLIENTE: ${JSON.stringify({ nome: d.nome || null, whatsapp: d.telefone || null, email: d.email || null, orcamento: d.orcamento || null, troca: d.troca || null, pagamento: d.pagamento || null, visita_agendada: d.visita || null })}
+${canal === 'whatsapp' ? `CANAL: WhatsApp. Você JÁ TEM o WhatsApp do cliente (é este número): NÃO peça o WhatsApp. ${d.nome_perfil ? `O nome do perfil é "${d.nome}" (pode ser apelido; confirme o nome de forma natural se fizer sentido).` : ''} As fotos dos carros que você indicar em "mostrar_veiculos"/"fotos_de" são enviadas como imagens logo depois da sua mensagem; não escreva links.\n` : ''}O QUE JÁ SABEMOS DO CLIENTE: ${JSON.stringify({ nome: d.nome || null, whatsapp: d.telefone || null, email: d.email || null, orcamento: d.orcamento || null, troca: d.troca || null, pagamento: d.pagamento || null, visita_agendada: d.visita || null })}
 
 FORMATO DA RESPOSTA: responda SOMENTE um JSON válido, sem texto fora dele, com as chaves:
 {"resposta": "texto para o cliente", "mostrar_veiculos": [ids], "fotos_de": id ou null,
@@ -183,11 +184,11 @@ function roteiro(store, cfg, sess, texto, vAtual, historico) {
 }
 
 /* ---------------- Conversa ---------------- */
-function sessao(storeId, sid, { ip, teste, vehicle_id } = {}) {
+function sessao(storeId, sid, { ip, teste, vehicle_id, fixo, canal = 'site', contato = '' } = {}) {
   let s = sid && /^[a-f0-9]{24}$/.test(sid) ? get('SELECT * FROM chat_sessions WHERE id = ? AND store_id = ?', sid, storeId) : null;
   if (!s) {
-    const id = crypto.randomBytes(12).toString('hex');
-    run('INSERT INTO chat_sessions (id, store_id, vehicle_id, ip, teste) VALUES (?, ?, ?, ?, ?)', id, storeId, Number(vehicle_id) || null, str(ip, 60), teste ? 1 : 0);
+    const id = fixo && /^[a-f0-9]{24}$/.test(fixo) ? fixo : crypto.randomBytes(12).toString('hex');
+    run('INSERT INTO chat_sessions (id, store_id, vehicle_id, ip, teste, canal, contato) VALUES (?, ?, ?, ?, ?, ?, ?)', id, storeId, Number(vehicle_id) || null, str(ip, 60), teste ? 1 : 0, canal, str(contato, 40));
     s = get('SELECT * FROM chat_sessions WHERE id = ?', id);
   }
   return { ...s, dados: json(s.dados, {}) };
@@ -204,11 +205,18 @@ function boasVindas(store, bot, vAtual) {
  * Processa uma mensagem do cliente.
  * @returns {Promise<{sid: string, mensagens: Array, whatsapp?: string, acoes: string[]}>}
  */
-async function conversar(store, b, { ip = '', teste = false } = {}) {
+async function conversar(store, b, { ip = '', teste = false, canal = 'site', telefone = '', perfil = '' } = {}) {
   const bot = botConfig(store.id);
-  if (!bot.ativo && !teste) throw httpError(403, 'Assistente desativado.');
+  const wa = canal === 'whatsapp';
+  if (!bot.ativo && !teste && !wa) throw httpError(403, 'Assistente desativado.');
   const cfg = CRM.config(store.id);
-  const sess = sessao(store.id, b.sid, { ip, teste, vehicle_id: b.vehicle_id });
+  const sess = sessao(store.id, b.sid, { ip, teste, vehicle_id: b.vehicle_id, fixo: b.sid, canal, contato: telefone });
+  if (wa) {
+    // No WhatsApp já sabemos o número; o nome do perfil serve de ponto de partida.
+    if (!sess.dados.telefone && telefone) sess.dados.telefone = C.fone(telefone);
+    if (!sess.dados.nome && perfil) { sess.dados.nome = str(perfil, 60); sess.dados.nome_perfil = true; }
+  }
+  const onde = wa ? 'assistente no WhatsApp' : 'assistente do site';
   const vid = Number(b.vehicle_id) || sess.vehicle_id;
   const vAtual = vid ? get(`SELECT * FROM vehicles WHERE id = ? AND store_id = ? AND status != 'rascunho'`, vid, store.id) : null;
   if (vAtual && !sess.vehicle_id) run('UPDATE chat_sessions SET vehicle_id = ? WHERE id = ?', vAtual.id, sess.id);
@@ -223,7 +231,9 @@ async function conversar(store, b, { ip = '', teste = false } = {}) {
     return { sid: sess.id, mensagens: [{ papel: 'bot', texto: t, veiculos: [] }], acoes: [] };
   }
 
-  if (!teste) {
+  if (!teste && wa) {
+    if (!CRM.limite(`chat-s:${sess.id}`, 80, 24 * 3600e3)) throw httpError(429, 'Limite de mensagens da conversa.');
+  } else if (!teste) {
     if (!CRM.limite(`chat:${ip}`, 60, 3600e3) || !CRM.limite(`chat-s:${sess.id}`, 40, 24 * 3600e3) || !CRM.limite(`chat-loja:${store.id}`, 800, 24 * 3600e3)) {
       throw httpError(429, 'Muitas mensagens agora. Fale com a loja pelo WhatsApp, por favor.');
     }
@@ -234,7 +244,7 @@ async function conversar(store, b, { ip = '', teste = false } = {}) {
   let r; let via = 'ia';
   const key = iaKey();
   if (key) {
-    try { r = await gerar(key, prompt(store, cfg, bot, sess, vAtual), historico); } catch (e) { console.error('bot ia', e.message); r = null; via = 'falha'; }
+    try { r = await gerar(key, prompt(store, cfg, bot, sess, vAtual, canal), historico); } catch (e) { console.error('bot ia', e.message); r = null; via = 'falha'; }
   }
   if (!r) {
     r = roteiro(store, cfg, sess, texto, vAtual, historico);
@@ -252,7 +262,7 @@ async function conversar(store, b, { ip = '', teste = false } = {}) {
   const tel = C.fone(L.telefone || '');
   if (tel.length >= 10 && tel.length <= 11) d.telefone = tel;
   else { const m = texto.match(RE_TEL); if (m) d.telefone = m[1] + m[2] + m[3] + m[4]; }
-  if (str(L.nome) && !/^(cliente|não informado)$/i.test(L.nome)) d.nome = str(L.nome, 80);
+  if (str(L.nome) && !/^(cliente|não informado)$/i.test(L.nome)) { d.nome = str(L.nome, 80); delete d.nome_perfil; }
   if (/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(str(L.email))) d.email = str(L.email, 120).toLowerCase();
   if (Number(L.orcamento) > 0) d.orcamento = Math.round(Number(L.orcamento));
   if (str(L.troca)) d.troca = str(L.troca, 200);
@@ -271,12 +281,12 @@ async function conversar(store, b, { ip = '', teste = false } = {}) {
   // O lead nasce assim que o cliente diz o nome (ou o telefone): a conversa e a visita já aparecem no CRM.
   if ((d.telefone || d.nome) && !teste) {
     if (!leadId) {
-      const res = CRM.createLead(store.id, { nome: d.nome, telefone: d.telefone, email: d.email, vehicle_id: vAtual?.id || ids[0], interesse: d.interesse, mensagem: 'Conversa pelo assistente do site' }, { origem: 'bot' });
+      const res = CRM.createLead(store.id, { nome: d.nome, telefone: d.telefone, email: d.email, vehicle_id: vAtual?.id || ids[0], interesse: d.interesse, mensagem: `Conversa pelo ${onde}` }, { origem: wa ? 'whatsapp' : 'bot' });
       leadId = res.id;
       run('UPDATE chat_sessions SET lead_id = ? WHERE id = ?', leadId, sess.id);
       const ex = get('SELECT nome FROM leads WHERE id = ?', leadId);
       const outroNome = !res.novo && d.nome && ex?.nome && ex.nome.toLowerCase() !== d.nome.toLowerCase();
-      CRM.addEvent(leadId, 'bot', `${outroNome ? `Cliente se apresentou como "${d.nome}" no assistente do site (mesmo telefone deste lead).\n` : ''}Conversa no assistente do site:\n${resumoConversa()}`);
+      CRM.addEvent(leadId, 'bot', `${outroNome ? `Cliente se apresentou como "${d.nome}" no ${onde} (mesmo telefone deste lead).\n` : ''}Conversa no ${onde}:\n${resumoConversa()}`);
       acoes.push('lead');
     }
     const l = get('SELECT * FROM leads WHERE id = ?', leadId);
@@ -305,9 +315,9 @@ async function conversar(store, b, { ip = '', teste = false } = {}) {
         const atual = get(`SELECT * FROM lead_visits WHERE lead_id = ? AND status IN ('agendada','confirmada') ORDER BY id DESC LIMIT 1`, leadId);
         if (atual && d.visita) {
           CRM.updateVisit(sys, atual.id, { data_hora: ag });
-          CRM.addEvent(leadId, 'visita', `Visita remarcada pelo assistente do site: ${atual.data_hora.slice(8, 10)}/${atual.data_hora.slice(5, 7)} ${atual.data_hora.slice(11, 16)} → ${ag.slice(8, 10)}/${ag.slice(5, 7)} ${ag.slice(11, 16)}`);
+          CRM.addEvent(leadId, 'visita', `Visita remarcada pelo ${onde}: ${atual.data_hora.slice(8, 10)}/${atual.data_hora.slice(5, 7)} ${atual.data_hora.slice(11, 16)} → ${ag.slice(8, 10)}/${ag.slice(5, 7)} ${ag.slice(11, 16)}`);
         } else {
-          CRM.addVisit(sys, { lead_id: leadId, data_hora: ag, tipo, vehicle_id: vAtual?.id || ids[0] }, { origem: `agendada pelo assistente do site${d.telefone ? '' : ' (sem WhatsApp ainda)'}` });
+          CRM.addVisit(sys, { lead_id: leadId, data_hora: ag, tipo, vehicle_id: vAtual?.id || ids[0] }, { origem: `agendada pelo ${onde}${d.telefone ? '' : ' (sem WhatsApp ainda)'}` });
         }
       } catch (e) { console.error('bot visita', e.message); }
     }
@@ -315,12 +325,15 @@ async function conversar(store, b, { ip = '', teste = false } = {}) {
     acoes.push('visita');
     if (!d.telefone && !/whats/i.test(resposta)) resposta += ' Para confirmar o horário, me passa seu WhatsApp com DDD?';
   }
+  if (r.chamar_humano && wa && !teste) {
+    run(`UPDATE chat_sessions SET pausado_ate = datetime('now', '+12 hours') WHERE id = ?`, sess.id);
+  }
   if (r.chamar_humano) {
-    const n = String(store.whatsapp || store.phone || '').replace(/\D/g, '');
+    const n = wa ? '' : String(store.whatsapp || store.phone || '').replace(/\D/g, '');
     if (n.length >= 10) whatsapp = `https://wa.me/${n.startsWith('55') ? n : '55' + n}?text=${encodeURIComponent(`Olá! Vim pelo site${d.nome ? `, sou ${d.nome}` : ''}${vAtual ? ` e tenho interesse no ${vAtual.marca} ${vAtual.modelo}` : ''}.`)}`;
     if (!teste && leadId) {
       run(`UPDATE leads SET precisa_humano = 1, temperatura = 'quente', updated_at = datetime('now') WHERE id = ?`, leadId);
-      CRM.addEvent(leadId, 'bot', `🙋 Pediu atendimento humano no assistente do site:\n${resumoConversa()}`);
+      CRM.addEvent(leadId, 'bot', `🙋 Pediu atendimento humano no ${onde}:\n${resumoConversa()}`);
     }
     acoes.push('humano');
   }
@@ -361,4 +374,4 @@ function widget(store, vehicleId) {
   return `<div id="gaChat"></div><script>window.GA_CHAT=${cfg};</script><script src="/chat-widget.js" defer></script>`;
 }
 
-module.exports = { gerar, botConfig, saveBotConfig, conversar, conversas, conversa, status, widget, prompt, roteiro, card };
+module.exports = { sessao, gerar, botConfig, saveBotConfig, conversar, conversas, conversa, status, widget, prompt, roteiro, card };

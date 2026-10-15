@@ -1402,6 +1402,77 @@ test('v2.10.1: excluir agendamento, IA do assistente com chave própria e datas 
   assert.equal(r.body.dados.geral.data, hoje);
 });
 
+test('v2.11: assistente no WhatsApp — webhook, resposta com IA, lead, vendedor assume e pausa', async () => {
+  const D = require('../src/db');
+  const crypto = require('node:crypto');
+  process.env.GEMINI_API_KEY = 'AIzaTESTKEY1234567890123456789012345';
+  process.env.GEMINI_URL = process.env.META_GRAPH_URL;
+  let r = await api('PUT', '/api/wa/config', { token: 'EAAGtoken', phone_id: '5550001', template: 'campanha_loja', lang: 'pt_BR', params: 2 });
+  assert.equal(r.status, 200);
+  r = await api('GET', '/api/wa/bot');
+  assert.equal(r.body.pronto, true); assert.ok(r.body.verify_token); assert.match(r.body.webhook_url, /\/api\/wa\/webhook$/);
+  const vt = r.body.verify_token;
+  r = await api('PUT', '/api/wa/bot', { waba_id: '9988', ativo: true, inscrever: true });
+  assert.equal(r.body.inscrito, true); assert.equal(r.body.ativo, true);
+  // Verificação do webhook pela Meta.
+  let q = await fetch(`${base}/api/wa/webhook?hub.mode=subscribe&hub.verify_token=${vt}&hub.challenge=abc123`);
+  assert.equal(await q.text(), 'abc123');
+  assert.equal((await fetch(`${base}/api/wa/webhook?hub.mode=subscribe&hub.verify_token=errado&hub.challenge=x`)).status, 403);
+  const post = (payload, secret = require('../src/config').meta.appSecret) => {
+    const raw = JSON.stringify(payload);
+    const sig = 'sha256=' + crypto.createHmac('sha256', secret).update(raw).digest('hex');
+    return fetch(`${base}/api/wa/webhook`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-hub-signature-256': sig }, body: raw });
+  };
+  const msg = (id, text) => ({ object: 'whatsapp_business_account', entry: [{ id: '9988', changes: [{ field: 'messages', value: { messaging_product: 'whatsapp', metadata: { phone_number_id: '5550001' }, contacts: [{ wa_id: '5544988776655', profile: { name: 'Paulo' } }], messages: [{ id, from: '5544988776655', timestamp: '1', type: 'text', text: { body: text } }] } }] }] });
+  const esperar = async (fn) => { for (let i = 0; i < 60; i++) { if (fn()) return true; await new Promise((ok) => setTimeout(ok, 50)); } return false; };
+  assert.equal((await post(msg('wamid.X1', 'oi'), 'segredo-errado')).status, 401);
+  mock.state.chatReplies = [{ resposta: 'Olá, Paulo! Temos ótimas opções. Procura algum modelo?', lead: { interesse: 'SUV' } }];
+  const antes = mock.state.waCalls.length;
+  q = await post(msg('wamid.A1', 'Boa tarde, tem SUV?'));
+  assert.equal(q.status, 200);
+  assert.ok(await esperar(() => mock.state.waCalls.slice(antes).some((c) => c.body.type === 'text')), 'respondeu no WhatsApp');
+  const resp = mock.state.waCalls.slice(antes).find((c) => c.body.type === 'text');
+  assert.equal(resp.body.to, '5544988776655'); assert.match(resp.body.text.body, /Paulo/);
+  assert.ok(mock.state.waCalls.slice(antes).some((c) => c.body.status === 'read'), 'marca como lida');
+  const sysPrompt = mock.state.geminiCalls[mock.state.geminiCalls.length - 1].body.systemInstruction.parts[0].text;
+  assert.match(sysPrompt, /CANAL: WhatsApp/); assert.match(sysPrompt, /NÃO peça o WhatsApp/);
+  let lead = D.get("SELECT * FROM leads WHERE telefone = '44988776655'");
+  assert.equal(lead.origem, 'whatsapp'); assert.equal(lead.nome, 'Paulo'); assert.equal(lead.interesse, 'SUV');
+  // Reenvio do mesmo webhook não responde de novo.
+  const n1 = mock.state.waCalls.length;
+  await post(msg('wamid.A1', 'Boa tarde, tem SUV?'));
+  await new Promise((ok) => setTimeout(ok, 200));
+  assert.equal(mock.state.waCalls.length, n1, 'mensagem repetida é ignorada');
+  // Vendedor responde pelo GiroAuto: mensagem vai pela API e o assistente pausa.
+  r = await api('POST', `/api/leads/${lead.id}/wa`, { texto: 'Oi Paulo, aqui é o Darlan! Te mando as fotos agora.' });
+  assert.equal(r.status, 200);
+  assert.ok(r.body.conversa.some((m) => m.papel === 'loja'));
+  assert.equal(mock.state.waCalls[mock.state.waCalls.length - 1].body.to, '5544988776655');
+  r = await api('GET', `/api/leads/${lead.id}`);
+  assert.equal(r.body.whatsapp.pausado, true); assert.equal(r.body.wa_api, true);
+  const n2 = mock.state.waCalls.length;
+  await post(msg('wamid.A2', 'Obrigado! Aguardo'));
+  await new Promise((ok) => setTimeout(ok, 300));
+  assert.equal(mock.state.waCalls.slice(n2).filter((c) => c.body.type === 'text').length, 0, 'pausado: o assistente não responde');
+  r = await api('GET', `/api/leads/${lead.id}`);
+  assert.ok(r.body.conversa.some((m) => m.texto === 'Obrigado! Aguardo'));
+  // Devolve para o assistente.
+  r = await api('PUT', `/api/leads/${lead.id}/wa-bot`, { pausar: false });
+  assert.equal(r.body.pausado, false);
+  mock.state.chatReplies = [{ resposta: 'Claro! Qualquer dúvida estou aqui.' }];
+  const n3 = mock.state.waCalls.length;
+  await post(msg('wamid.A3', 'Valeu'));
+  assert.ok(await esperar(() => mock.state.waCalls.slice(n3).some((c) => c.body.type === 'text')));
+  // Assistente desligado no WhatsApp: só registra e cria lead para um número novo.
+  await api('PUT', '/api/wa/bot', { ativo: false });
+  const n4 = mock.state.waCalls.length;
+  const m2 = msg('wamid.B1', 'Quero vender meu carro'); m2.entry[0].changes[0].value.messages[0].from = '5544977665544'; m2.entry[0].changes[0].value.contacts[0].wa_id = '5544977665544';
+  await post(m2);
+  assert.ok(await esperar(() => D.get("SELECT 1 FROM leads WHERE telefone = '44977665544'")));
+  assert.equal(mock.state.waCalls.slice(n4).filter((c) => c.body.type === 'text').length, 0);
+  delete process.env.GEMINI_API_KEY; delete process.env.GEMINI_URL;
+});
+
 test('v2.0: agenda de republicação, QR, folha A4, painel TV e fotos prontas', async () => {
   const sched = require('../src/schedule');
   const db = require('../src/db');

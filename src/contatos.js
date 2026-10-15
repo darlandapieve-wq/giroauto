@@ -246,4 +246,4 @@ function markSend(storeId, campaignId, sendId, status, userId) {
   run('UPDATE wa_campaigns SET enviados = ?, status = ? WHERE id = ?', n.e || 0, n.p ? 'aberta' : 'concluida', w.id);
 }
 
-module.exports = { upsert, PAPEIS, NOTA_TIPOS, fone, sync, list, find, save, addNote, historico, serialize, vinculos, cloudPublic, saveCloud, createCampaign, runCampaign, campaigns, campaign, markSend, render };
+module.exports = { cloudCfg, upsert, PAPEIS, NOTA_TIPOS, fone, sync, list, find, save, addNote, historico, serialize, vinculos, cloudPublic, saveCloud, createCampaign, runCampaign, campaigns, campaign, markSend, render };
