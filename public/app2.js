@@ -1229,6 +1229,20 @@
   };
 
   /* ======================= Configurações: equipe, fotos, agenda, gestão, app ======================= */
+  async function ctConfigPanel() {
+    const box = $('#cfgCt'); if (!box) return;
+    const L = await api('GET', '/api/store/contrato').catch(() => null);
+    if (!L) { box.remove(); return; }
+    const ok = can('config');
+    const f = (k, l, w, ph = '') => `<div class="f ${w}"><label for="ctl-${k}">${l}</label><input id="ctl-${k}" data-ctl="${k}" value="${esc(L[k] || '')}" placeholder="${esc(ph)}" ${ok ? '' : 'disabled'}></div>`;
+    box.querySelector('.loading').outerHTML = `<div class="fields">${f('razao_social', 'Razão social', 'w6', 'Ex.: Topcar Comércio de Veículos Ltda')}${f('cnpj', 'CNPJ', '', '00.000.000/0000-00')}${f('representante', 'Representante legal', '', 'quem assina pela loja')}${f('representante_cpf', 'CPF do representante', '')}${f('endereco', 'Endereço completo (para o contrato)', 'w3')}${f('foro', 'Foro (comarca)', 'w3')}</div>
+      ${ok ? '<div class="form-foot"><button class="btn primary" type="button" id="ctl-save">Salvar dados para contratos</button></div>' : ''}`;
+    if ($('#ctl-save')) $('#ctl-save').onclick = async () => {
+      const body = Object.fromEntries($$('[data-ctl]').map((i) => [i.dataset.ctl, i.value]));
+      try { await api('PUT', '/api/store/contrato', body); toast('Dados para contratos salvos'); } catch (e) { toast(e.message); }
+    };
+  }
+
   async function enhanceConfig() {
     const col = $('#main .grid2 > .stack');
     if (!col || $('#cfgV2')) return;
@@ -1236,11 +1250,13 @@
     const [sch, fot, team] = await Promise.all([
       api('GET', '/api/store/schedule').catch(() => null), api('GET', '/api/store/photos').catch(() => null), owner() ? api('GET', '/api/team').catch(() => null) : null,
     ]);
+    setTimeout(ctConfigPanel, 0);
     const st = S.me.store;
     const dias = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
     const cfgOk = can('config');
     $('#cfgV2').innerHTML = `
       ${team ? `<div class="panel" id="cfgTeam"><h2>Equipe</h2><p class="lead">${team.users.length - 1} vendedor(es) cadastrado(s). Cadastro, acessos e permissões ficam no menu <b>Equipe</b>.</p><div class="btnrow"><a class="btn" href="#equipe">Abrir Equipe</a></div></div>` : ''}
+      <div class="panel" id="cfgCt"><h2>Dados da loja para contratos</h2><p class="lead">Usados no cabeçalho e nas assinaturas dos contratos. Nome, cidade e telefone vêm do cadastro da loja; aqui ficam os dados jurídicos. Também dá para ajustar em cada contrato.</p><div class="loading">Carregando…</div></div>
       <div class="panel"><h2>Minha senha</h2>
         <div class="fields"><div class="f"><label for="pw-a">Senha atual</label><input id="pw-a" type="password" autocomplete="current-password"></div><div class="f"><label for="pw-n">Nova senha</label><input id="pw-n" type="password" autocomplete="new-password" placeholder="mínimo 8 caracteres"></div><div class="f" style="align-self:end"><button class="btn" type="button" id="pw-ok">Trocar senha</button></div></div></div>
       <div class="panel"><h2>Republicação agendada</h2>
@@ -1936,7 +1952,7 @@
     let P;
     try { P = await api('POST', '/api/contracts/prefill', { modelo: chave, vehicle_id, contact_id }); } catch (e) { return toast(e.message); }
     const sel = Object.fromEntries(m.clausulas.map((c) => [c.key, !!c.padrao || P.marcar.includes(c.key)]));
-    KT.ed = { id: null, m, dados: P.dados, sel, textos: {}, extras: [], vehicle_id: vehicle_id || null, contact_id: contact_id || null, titulo: m.titulo };
+    KT.ed = { id: null, m, dados: P.dados, sel, textos: {}, extras: [], vehicle_id: vehicle_id || null, contact_id: contact_id || null, titulo: m.titulo, aviso: P.aviso || '' };
     KT.modo = 'gerar';
     await ktContatos();
     await X.render(); window.scrollTo(0, 0);
@@ -1991,7 +2007,8 @@
       const loja = s.nome === 'Dados da loja';
       const inner = `<div class="fields">${s.campos.map((c) => ktCampo(c, E.dados)).join('')}</div>`;
       return loja
-        ? `<details class="ktsec"><summary><h4 style="display:inline">Dados da loja</h4> <span class="sub">já preenchidos — clique para conferir ou completar (razão social, CNPJ, representante). Ficam salvos para os próximos contratos.</span></summary>${inner}</details>`
+        ? (() => { const L = E.dados.loja || {}; const falta = !L.razao_social || !L.cnpj || !L.representante;
+          return `<details class="ktsec ktloja" ${falta ? 'open' : ''}><summary><h4 style="display:inline">🏢 Dados da loja</h4> ${falta ? '<span class="pill p-warn">complete razão social, CNPJ e representante</span>' : `<span class="sub">${esc(L.razao_social)} · CNPJ ${esc(L.cnpj)} — clique para conferir ou editar</span>`}</summary><p class="sub" style="margin:6px 0 8px">O que você mudar aqui fica salvo para os próximos contratos. Também dá para preencher em Configurações &gt; Dados da loja para contratos.</p>${inner}</details>`; })()
         : `<div class="ktsec"><h4>${esc(s.nome)}</h4>${inner}</div>`;
     };
     const cls = m.clausulas;
@@ -1999,6 +2016,7 @@
         <div class="btnrow"><button class="btn" type="button" id="kt-back">Voltar</button><button class="btn" type="button" id="kt-save">Salvar</button><button class="btn primary" type="button" id="kt-print">Salvar e imprimir</button></div></div>
       <div class="ktwrap">
         <div class="ktform">
+          ${E.aviso ? `<div class="warnbox">${esc(E.aviso)} <button class="btn sm" type="button" id="kt-topf">Usar esse modelo</button></div>` : ''}
           <div class="ktsec"><div class="fields">
             <div class="f w3"><label for="kt-v">Veículo (puxa os dados)</label><select id="kt-v"><option value="">— nenhum / digitar —</option>${veics.map((v) => `<option value="${v.id}" ${v.id === E.vehicle_id ? 'selected' : ''}>${esc(vNome(v))}</option>`).join('')}</select></div>
             <div class="f w3"><label for="kt-c">Cliente dos contatos (opcional)</label><select id="kt-c"><option value="">— nenhum / digitar —</option>${(KT.contatos || []).map((c) => `<option value="${c.id}" ${c.id === E.contact_id ? 'selected' : ''}>${esc(c.nome || c.telefone)}${c.nome ? ' · ' + esc(c.telefone) : ''}</option>`).join('')}</select></div>
@@ -2066,9 +2084,11 @@
           for (const [k, v] of Object.entries(P.dados[g] || {})) if (v !== '' && v !== undefined) kSet(E.dados, `${g}.${k}`, v);
         }
         for (const k of P.marcar) E.sel[k] = true;
+        E.aviso = P.aviso || '';
         X.render();
       } catch (e) { toast(e.message); }
     };
+    if ($('#kt-topf')) $('#kt-topf').onclick = () => ktNovo('venda_pf', { vehicle_id: E.vehicle_id, contact_id: E.contact_id });
     $('#kt-v').onchange = () => { E.vehicle_id = Number($('#kt-v').value) || null; if (E.vehicle_id) repuxar(); };
     $('#kt-c').onchange = () => { E.contact_id = Number($('#kt-c').value) || null; if (E.contact_id) repuxar(); };
     $$('[data-ck]').forEach((cb) => {

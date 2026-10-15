@@ -98,7 +98,7 @@ function merge(base, ov, chave) {
   return {
     key: chave, base: base.key, icone: d.icone || base.icone,
     nome: d.nome || base.nome, titulo: d.titulo || base.titulo, descricao: d.descricao ?? base.descricao,
-    partes: base.partes, simples: !!base.simples, assinaturas: base.assinaturas || ['loja', 'cliente'],
+    partes: base.partes, pessoas: base.pessoas || null, loja_se: base.loja_se || '', simples: !!base.simples, assinaturas: base.assinaturas || (base.pessoas ? [...base.pessoas.map((x) => x.p), 'loja'] : ['loja', 'cliente']),
     testemunhas: d.testemunhas !== undefined ? !!d.testemunhas : !base.simples,
     campos: base.campos, clausulas,
     personalizado: !!ov && chave === base.key, proprio: chave !== base.key,
@@ -209,7 +209,7 @@ function prefill(storeId, b) {
     const vendido = v.status === 'vendido';
     const valorVenda = vendido && v.venda_valor ? v.venda_valor : (v.preco || 0);
     const base = m.base;
-    if (['venda', 'venda_repasse', 'sinal', 'entrega', 'recibo', 'garantia', 'distrato', 'aditivo', 'test_drive'].includes(base)) {
+    if (['venda', 'venda_pf', 'venda_repasse', 'sinal', 'entrega', 'recibo', 'garantia', 'distrato', 'aditivo', 'test_drive'].includes(base)) {
       if (vendido) Object.assign(dados.cliente, { nome: v.venda_comprador || '', cpf: v.comprador_doc || '', telefone: v.comprador_tel || '' });
       setPath(dados, 'negocio.valor', reais(base === 'venda_repasse' && !vendido && v.preco_repasse ? v.preco_repasse : valorVenda));
       if (vendido) {
@@ -232,6 +232,12 @@ function prefill(storeId, b) {
       if (v.km) { setPath(dados, 'td.km_saida', dados.veiculo.km); setPath(dados, 'dis.km', ''); }
       if (base === 'recibo' && vendido && v.venda_entrada) setPath(dados, 'recibo.valor', reais(v.venda_entrada));
       if (base === 'sinal') setPath(dados, 'sinal.prazo', '');
+    }
+    if (base === 'venda_pf') {
+      Object.assign(dados.vendedor = dados.vendedor || {}, { nome: v.proprietario_nome || '', cpf: v.proprietario_doc || '', telefone: v.proprietario_tel || '' });
+      if (v.margem_tipo === 'valor' && v.margem_fixa) setPath(dados, 'pf.comissao', `R$ ${reais(v.margem_fixa)}`);
+      else if (v.consig_comissao_pct) setPath(dados, 'pf.comissao', `${String(v.consig_comissao_pct).replace('.', ',')}% do valor da venda`);
+      else if (v.consig_repasse && valorVenda > v.consig_repasse) setPath(dados, 'pf.comissao', `R$ ${reais(valorVenda - v.consig_repasse)}`);
     }
     if (base === 'consignacao') {
       Object.assign(dados.cliente, { nome: v.proprietario_nome || '', cpf: v.proprietario_doc || '', telefone: v.proprietario_tel || '' });
@@ -269,7 +275,9 @@ function prefill(storeId, b) {
     if (ant) for (const [k, val] of Object.entries(ant)) if (val && !dados.cliente[k]) dados.cliente[k] = val;
   }
   for (const c2 of m.campos) if (c2.padrao && !getPath(dados, c2.k)) setPath(dados, c2.k, c2.padrao);
-  return { dados, marcar: [...marcar] };
+  const aviso = v && ['venda', 'venda_repasse'].includes(m.base) && v.proprietario_tipo && v.proprietario_tipo !== 'proprio' && v.proprietario_nome
+    ? `Este carro está em nome de ${v.proprietario_nome} (${v.proprietario_tipo}). Se o documento não estiver em nome da loja, use o modelo "Compra e venda entre particulares", com a loja como intermediadora.` : '';
+  return { dados, marcar: [...marcar], aviso };
 }
 
 /* ---------------- Renderização ---------------- */
@@ -322,24 +330,38 @@ function renderBody(m, dados, clausulas, opts = {}) {
   const ctx = contexto(m, dados);
   const P = m.partes;
   const lojaQual = `<b>{{loja.razao_social}}</b> ({{loja.nome}}), pessoa jurídica de direito privado inscrita no CNPJ sob o nº {{loja.cnpj}}, com sede em {{loja.endereco}}, {{loja.cidade}}/{{loja.uf}}, neste ato representada por {{loja.representante}}, CPF nº {{loja.representante_cpf}}, doravante denominada <b>${P.loja}</b>`;
-  const cliQual = `<b>{{cliente.nome}}</b>, {{cliente.nacionalidade}}, {{cliente.estado_civil}}, {{cliente.profissao}}, inscrito(a) no CPF/CNPJ sob o nº {{cliente.cpf}}, RG nº {{cliente.rg}}, residente e domiciliado(a) em {{cliente.endereco}}, {{cliente.cidade}}/{{cliente.uf}}, CEP {{cliente.cep}}, telefone {{cliente.telefone}}, e-mail {{cliente.email}}, doravante denominado(a) <b>${P.cliente}</b>`;
+  const pQual = (p, papel) => `<b>{{${p}.nome}}</b>, {{${p}.nacionalidade}}, {{${p}.estado_civil}}, {{${p}.profissao}}, inscrito(a) no CPF/CNPJ sob o nº {{${p}.cpf}}, RG nº {{${p}.rg}}, residente e domiciliado(a) em {{${p}.endereco}}, {{${p}.cidade}}/{{${p}.uf}}, CEP {{${p}.cep}}, telefone {{${p}.telefone}}, e-mail {{${p}.email}}, doravante denominado(a) <b>${papel}</b>`;
   // A qualificação tem negrito próprio: escapa o texto e depois devolve as tags <b>.
   const qual = (t) => preencher(t, ctx).replace(/&lt;(\/?)b&gt;/g, '<$1b>');
+  // Partes: loja x cliente (padrão) ou pessoas físicas, com a loja como interveniente quando a cláusula dela estiver marcada.
+  const comLoja = !m.pessoas || !m.loja_se || clausulas.some((c) => c.key === m.loja_se);
+  const pessoas = m.pessoas || [{ p: 'cliente', papel: P.cliente }];
   const titulo = esc(opts.titulo || m.titulo);
   let h = `<h1>${titulo}</h1>`;
   if (!m.simples) {
-    h += `<p class="partes">Pelo presente instrumento particular, de um lado, ${qual(lojaQual)}; e, de outro lado, ${qual(cliQual)}; têm entre si, justo e acordado, o presente instrumento, que se regerá pelas cláusulas e condições seguintes:</p>`;
+    if (m.pessoas) {
+      const [a, b] = pessoas;
+      h += `<p class="partes">Pelo presente instrumento particular, de um lado, ${qual(pQual(a.p, a.papel))}; e, de outro lado, ${qual(pQual(b.p, b.papel))}${comLoja ? `; e, ainda, como interveniente, ${qual(lojaQual)}` : ''}; têm entre si, justo e acordado, o presente instrumento, que se regerá pelas cláusulas e condições seguintes:</p>`;
+    } else {
+      h += `<p class="partes">Pelo presente instrumento particular, de um lado, ${qual(lojaQual)}; e, de outro lado, ${qual(pQual('cliente', P.cliente))}; têm entre si, justo e acordado, o presente instrumento, que se regerá pelas cláusulas e condições seguintes:</p>`;
+    }
     clausulas.forEach((c, i) => {
       h += `<div class="kcl"><h2>CLÁUSULA ${ordinal(i + 1)} – ${esc(String(c.titulo).toUpperCase())}</h2><p>${preencher(c.texto, ctx)}</p></div>`;
     });
-    h += '<p class="fecho">E, por estarem assim justas e contratadas, as partes assinam o presente instrumento em 2 (duas) vias de igual teor e forma, na presença das testemunhas abaixo.</p>';
+    const vias = m.pessoas && comLoja ? 3 : 2;
+    h += `<p class="fecho">E, por estarem assim justas e contratadas, as partes assinam o presente instrumento em ${vias} (${vias === 3 ? 'três' : 'duas'}) vias de igual teor e forma, na presença das testemunhas abaixo.</p>`;
   } else {
     clausulas.forEach((c) => { h += `<p>${preencher(c.texto, ctx)}</p>`; });
   }
   h += `<p class="local">${preencher('{{geral.cidade}}', ctx)}, ${ctx['geral.data_extenso'] ? esc(ctx['geral.data_extenso']) : BRANCO}.</p>`;
   const ass = [];
-  if (m.assinaturas.includes('loja')) ass.push(`<div class="ass"><div class="linha"></div><b>${preencher('{{loja.razao_social}}', ctx).replace(/<span class="blank">.*?<\/span>/, preencher('{{loja.nome}}', ctx))}</b><span>${P.loja} · CNPJ ${preencher('{{loja.cnpj}}', ctx)}</span><span>Representante: ${preencher('{{loja.representante}}', ctx)}</span></div>`);
-  if (m.assinaturas.includes('cliente')) ass.push(`<div class="ass"><div class="linha"></div><b>${preencher('{{cliente.nome}}', ctx)}</b><span>${P.cliente} · CPF/CNPJ ${preencher('{{cliente.cpf}}', ctx)}</span></div>`);
+  const assLoja = `<div class="ass"><div class="linha"></div><b>${preencher('{{loja.razao_social}}', ctx).replace(/<span class="blank">.*?<\/span>/, preencher('{{loja.nome}}', ctx))}</b><span>${P.loja} · CNPJ ${preencher('{{loja.cnpj}}', ctx)}</span><span>Representante: ${preencher('{{loja.representante}}', ctx)}</span></div>`;
+  const assPessoa = (p, papel) => `<div class="ass"><div class="linha"></div><b>${preencher(`{{${p}.nome}}`, ctx)}</b><span>${papel} · CPF/CNPJ ${preencher(`{{${p}.cpf}}`, ctx)}</span></div>`;
+  for (const a of m.assinaturas) {
+    if (a === 'loja') { if (comLoja) ass.push(assLoja); continue; }
+    const pp = pessoas.find((x) => x.p === a);
+    if (pp) ass.push(assPessoa(pp.p, pp.papel));
+  }
   h += `<div class="assinaturas">${ass.join('')}</div>`;
   if (m.testemunhas && opts.testemunhas !== false) {
     h += `<div class="assinaturas test">${[1, 2].map((n) => `<div class="ass"><div class="linha"></div><b>Testemunha ${n}</b><span>Nome:</span><span>CPF:</span></div>`).join('')}</div>`;
@@ -457,4 +479,4 @@ function list(storeId, q = {}) {
 
 function remove(storeId, id) { const c = find(storeId, id); run('DELETE FROM contracts WHERE id = ?', c.id); }
 
-module.exports = { MODELOS, models, model, saveModel, duplicateModel, resetModel, prefill, preview, save, find, serialize, list, remove, printPage, lojaDados, extenso, parseMoney, renderBody };
+module.exports = { saveLoja, MODELOS, models, model, saveModel, duplicateModel, resetModel, prefill, preview, save, find, serialize, list, remove, printPage, lojaDados, extenso, parseMoney, renderBody };

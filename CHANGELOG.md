@@ -2,6 +2,17 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.8.1 — 15/10/2026
+
+- **Configurações > Dados da loja para contratos**: razão social, CNPJ, representante legal e CPF, endereço para o contrato e foro. Esses dados entram em todos os contratos e continuam editáveis em cada um; o que for alterado no contrato também fica salvo.
+- No contrato, o bloco **🏢 Dados da loja** aparece aberto e com aviso enquanto faltar razão social, CNPJ ou representante.
+- Novo modelo **Compra e venda entre particulares**, para carro em nome de pessoa física (consignado, de parceiro ou ainda não transferido):
+  - o contrato é entre o proprietário (vendedor) e o comprador, regido pelo Código Civil;
+  - a loja entra como interveniente intermediadora (cláusula marcada por padrão; desmarcando, a loja sai do contrato e das assinaturas);
+  - cláusulas opcionais: garantia dada pela loja, quitação do financiamento do vendedor, financiamento do comprador, laudo, leilão, sinistro e multa;
+  - puxa do carro o proprietário, o comprador, o valor e a remuneração da loja (margem ou diferença para o repasse).
+- Ao gerar a compra e venda da loja para um carro que está em nome de terceiro, aparece o aviso com o botão para trocar para o modelo entre particulares.
+
 ## v2.8 — 15/10/2026
 
 **Contratos e termos**

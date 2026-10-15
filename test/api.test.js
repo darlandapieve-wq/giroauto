@@ -1116,6 +1116,29 @@ test('v2.8: contratos — modelos, pré-preenchimento, cláusulas, personalizaç
   assert.equal(r.body.dados.negocio.valor, '30.000,00');
   r = await api('DELETE', `/api/contracts/${cid}`);
   assert.equal(r.status, 200);
+  // Dados jurídicos da loja nas Configurações.
+  r = await api('PUT', '/api/store/contrato', { razao_social: 'Autos PR Ltda', cnpj: '99.999.999/0001-99', representante: 'Darlan', representante_cpf: '000.000.000-00', foro: 'Toledo' });
+  assert.equal(r.body.razao_social, 'Autos PR Ltda'); assert.equal(r.body.foro, 'Toledo');
+  // Carro em nome de pessoa física (consignado): aviso no modelo da loja e contrato entre particulares com a loja interveniente.
+  r = await api('POST', '/api/vehicles', { marca: 'Honda', modelo: 'Civic', ano_modelo: 2018, preco: 95000, placa: 'CIV1A18' });
+  const civ = r.body.id;
+  require('../src/db').run("UPDATE vehicles SET proprietario_tipo = 'consignado', proprietario_nome = 'Pedro Dono', proprietario_doc = '222.333.444-55', consig_repasse = 88000 WHERE id = ?", civ);
+  r = await api('POST', '/api/contracts/prefill', { modelo: 'venda', vehicle_id: civ });
+  assert.match(r.body.aviso, /Pedro Dono/);
+  r = await api('POST', '/api/contracts/prefill', { modelo: 'venda_pf', vehicle_id: civ });
+  assert.equal(r.body.dados.vendedor.nome, 'Pedro Dono'); assert.equal(r.body.dados.pf.comissao, 'R$ 7.000,00');
+  assert.equal(r.body.dados.geral.foro, 'Toledo');
+  const pf = r.body.dados; pf.cliente = { nome: 'Maria Compra', cpf: '333.444.555-66' };
+  const pfm = (await api('GET', '/api/contracts/models')).body.modelos.find((m) => m.key === 'venda_pf');
+  const pcl = pfm.clausulas.filter((c) => c.padrao).map((c) => c.key);
+  r = await api('POST', '/api/contracts/preview', { modelo: 'venda_pf', dados: pf, clausulas: pcl });
+  assert.match(r.body.html, /Pedro Dono<\/span><\/b>.*doravante denominado\(a\) <b>VENDEDOR\(A\)/s);
+  assert.match(r.body.html, /como interveniente, <b><span class="fill">Autos PR Ltda/);
+  assert.match(r.body.html, /3 \(três\) vias/);
+  assert.equal((r.body.html.match(/class="ass"/g) || []).length, 5, 'vendedor, comprador, loja e 2 testemunhas');
+  r = await api('POST', '/api/contracts/preview', { modelo: 'venda_pf', dados: pf, clausulas: pcl.filter((k) => k !== 'intermediacao') });
+  assert.ok(!/interveniente/.test(r.body.html), 'sem a loja quando a intermediação é desmarcada');
+  assert.equal((r.body.html.match(/class="ass"/g) || []).length, 4);
 });
 
 test('v2.0: agenda de republicação, QR, folha A4, painel TV e fotos prontas', async () => {

@@ -21,6 +21,8 @@ function register(app) {
   /* ---------------- Contratos (v2.8) ---------------- */
   const K = require('./contratos');
   const emite = team.canAny('vender', 'cadastrar', 'gestao');
+  app.get('/api/store/contrato', emite, (req, res) => res.json(K.lojaDados(req.user.storeId)));
+  app.put('/api/store/contrato', team.can('config'), (req, res) => { K.saveLoja(req.user.storeId, req.body || {}, req.body?.foro); res.json(K.lojaDados(req.user.storeId)); });
   app.get('/api/contracts/models', emite, (req, res) => res.json({ modelos: K.models(req.user.storeId), loja: K.lojaDados(req.user.storeId) }));
   app.put('/api/contracts/models/:key', team.can('config'), (req, res) => res.json(K.saveModel(req.user.storeId, req.params.key, req.body || {})));
   app.post('/api/contracts/models/:key/duplicate', team.can('config'), (req, res) => res.status(201).json(K.duplicateModel(req.user.storeId, req.params.key, req.body?.nome)));
