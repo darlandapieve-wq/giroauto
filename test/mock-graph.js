@@ -38,6 +38,8 @@ function createMock() {
     const temImagem = (req.body.contents || []).some((c) => (c.parts || []).some((p) => p.inline_data || p.inlineData));
     if (!temImagem) {
       if (state.chatFail) return res.status(500).json({ error: { message: 'falha simulada' } });
+      if (state.chat503 > 0) { state.chat503--; state.chatModels = [...(state.chatModels || []), req.params[1]]; return res.status(503).json({ error: { message: 'This model is currently experiencing high demand.' } }); }
+      state.chatModels = [...(state.chatModels || []), req.params[1]];
       const next = (state.chatReplies || []).shift() || { resposta: 'Olá! Como posso ajudar?' };
       return res.json({ candidates: [{ content: { parts: [{ text: JSON.stringify(next) }] } }] });
     }

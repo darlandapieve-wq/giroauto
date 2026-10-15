@@ -1274,6 +1274,12 @@ test('v2.10: assistente com IA no site (roteiro e IA), conversa vira lead/visita
   c = await chat({ sid: sid2, texto: 'quero falar com alguém' });
   assert.match(c.body.whatsapp, /^https:\/\/wa\.me\/55/);
   assert.equal(D.get('SELECT precisa_humano FROM leads WHERE id = ?', lead.id).precisa_humano, 1);
+  // Modelo sobrecarregado (503): tenta o próximo modelo e responde com IA.
+  mock.state.chat503 = 1; mock.state.chatModels = [];
+  mock.state.chatReplies = [{ resposta: 'Resposta do segundo modelo' }];
+  c = await chat({ sid: sid2, texto: 'e a garantia?' });
+  assert.equal(c.body.mensagens[0].texto, 'Resposta do segundo modelo');
+  assert.equal(mock.state.chatModels.length, 2); assert.notEqual(mock.state.chatModels[0], mock.state.chatModels[1]);
   // IA fora do ar: cai no roteiro sem quebrar.
   mock.state.chatFail = true;
   c = await chat({ texto: 'Olá' });

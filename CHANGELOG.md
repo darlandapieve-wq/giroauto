@@ -2,6 +2,14 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.10.2 — 15/10/2026
+
+- **Assistente do site mais estável.** O modelo de IA do Google estava sobrecarregado ("high demand") e, nesse caso, o assistente caía no roteiro e repetia "me passa seu WhatsApp". Agora:
+  - se um modelo estiver sobrecarregado, lento ou indisponível, tenta outros modelos do Google (2.5 Flash, Flash mais recente, Flash-Lite) e faz uma segunda rodada antes de desistir;
+  - cada tentativa espera no máximo 15 s, com resposta mais rápida (sem "raciocínio" longo no 2.5 Flash);
+  - se mesmo assim a IA não responder, avisa a instabilidade e oferece o WhatsApp de um consultor, sem repetir o roteiro.
+- No modo roteiro, depois de pedir o WhatsApp duas vezes, o assistente oferece o contato direto com um consultor em vez de insistir.
+
 ## v2.10.1 — 15/10/2026
 
 - **Horário**: datas e horas gravadas pelo sistema (histórico do lead, conversas, e-mails processados) agora aparecem no horário de Brasília (antes, 3 horas à frente). O "hoje" do sistema (contratos, painel, despesas, resultados, CRM) também segue Brasília, inclusive depois das 21h.

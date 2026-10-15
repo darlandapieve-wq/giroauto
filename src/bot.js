@@ -9,7 +9,7 @@ const C = require('./contatos');
 const CRM = require('./crm');
 
 const BASE = () => (process.env.GEMINI_URL || 'https://generativelanguage.googleapis.com').replace(/\/+$/, '');
-const MODELOS = () => [...new Set([require('./settings').chatAi().model, 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'].filter(Boolean))];
+const MODELOS = () => [...new Set([require('./settings').chatAi().model, 'gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest'].filter(Boolean))];
 const str = (x, max = 500) => String(x ?? '').trim().slice(0, max);
 const httpError = (status, message) => Object.assign(new Error(message), { status });
 const json = (s, d) => { try { return JSON.parse(s || ''); } catch { return d; } };
@@ -105,25 +105,47 @@ FORMATO DA RESPOSTA: responda SOMENTE um JSON válido, sem texto fora dele, com 
 Em "lead", preencha só o que o cliente informou nesta conversa (deixe "" quando não souber).`;
 }
 
-async function gerar(key, system, historico) {
-  const contents = historico.map((m) => ({ role: m.papel === 'user' ? 'user' : 'model', parts: [{ text: m.papel === 'user' ? m.texto : JSON.stringify({ resposta: m.texto }) }] }));
+// Chama o Gemini. Se o modelo estiver sobrecarregado (503/429), lento ou não existir, tenta o próximo da lista
+// e, no fim, mais uma rodada rápida; só cai no roteiro se nenhum responder.
+async function gerar(key, system, historico, { prazoMs = 40000 } = {}) {
+  const contents = [];
+  for (const m of historico) {
+    const role = m.papel === 'user' ? 'user' : 'model';
+    const text = m.papel === 'user' ? m.texto : JSON.stringify({ resposta: m.texto });
+    if (!contents.length && role === 'model') contents.push({ role: 'user', parts: [{ text: '(o cliente abriu o chat)' }] });
+    const last = contents[contents.length - 1];
+    if (last && last.role === role) last.parts[0].text += `\n${text}`; else contents.push({ role, parts: [{ text }] });
+  }
+  const inicio = Date.now();
   let ultimo;
-  for (const model of MODELOS()) {
+  const tentar = async (model) => {
+    const restante = prazoMs - (Date.now() - inicio);
+    if (restante < 3000) return null;
+    const gc = { responseMimeType: 'application/json', temperature: 0.6, maxOutputTokens: 2048 };
+    if (/^gemini-2\.5/.test(model)) gc.thinkingConfig = { thinkingBudget: 0 };
     const r = await fetch(`${BASE()}/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-      body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, generationConfig: { responseMimeType: 'application/json', temperature: 0.6, maxOutputTokens: 1024 } }),
-      signal: AbortSignal.timeout(25000),
+      body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, generationConfig: gc }),
+      signal: AbortSignal.timeout(Math.min(15000, restante)),
     }).catch((e) => ({ ok: false, status: 0, json: async () => ({ error: { message: e.message } }) }));
     const data = await r.json().catch(() => ({}));
     if (r.ok) {
       const txt = (data?.candidates?.[0]?.content?.parts || []).filter((p) => !p.thought && p.text).map((p) => p.text).join('');
       const o = json(txt.replace(/^```(json)?|```$/g, '').trim(), null);
       if (o && typeof o.resposta === 'string' && o.resposta.trim()) return o;
-      ultimo = new Error('A IA respondeu fora do formato.');
-      continue;
+      ultimo = new Error(`${model}: resposta fora do formato`);
+      return null;
     }
-    ultimo = new Error(data?.error?.message || `Erro ${r.status} na IA`);
-    if (![404, 400].includes(r.status)) break; // modelo inexistente: tenta o próximo; outros erros: para
+    ultimo = new Error(`${model}: ${data?.error?.message || `erro ${r.status}`}`);
+    if ([401, 403].includes(r.status)) throw ultimo; // chave recusada: não adianta insistir
+    return null;
+  };
+  for (let rodada = 0; rodada < 2; rodada++) {
+    for (const model of MODELOS()) {
+      const o = await tentar(model);
+      if (o) return o;
+    }
+    if (rodada === 0) await new Promise((ok) => setTimeout(ok, 1200));
   }
   throw ultimo || new Error('IA indisponível');
 }
@@ -143,6 +165,12 @@ function roteiro(store, cfg, sess, texto, vAtual, historico) {
   const nome = d.nome || out.lead.nome; const tel = d.telefone || out.lead.telefone;
   if (/atendente|humano|pessoa|vendedor|falar com/i.test(texto)) out.chamar_humano = true;
   const jaPerguntouNome = historico.some((x) => x.papel === 'bot' && /seu nome/i.test(x.texto));
+  const pediuZap = historico.filter((x) => x.papel === 'bot' && /WhatsApp com DDD/i.test(x.texto)).length;
+  if (nome && !tel && pediuZap >= 2) {
+    out.resposta = `Sem problema, ${nome.split(' ')[0]}! Se preferir, fale direto com um consultor pelo WhatsApp da loja. Ele te passa fotos, valores e combina a visita.`;
+    out.chamar_humano = true;
+    return out;
+  }
   if (!nome) out.resposta = jaPerguntouNome ? 'Desculpe, não entendi. Qual é o seu nome?' : `Claro, te ajudo com isso! ${vAtual ? `O ${vAtual.marca} ${vAtual.modelo} está disponível. ` : ''}Para eu te atender melhor, qual é o seu nome?`;
   else if (!tel) out.resposta = `Prazer, ${nome.split(' ')[0]}! Me passa seu WhatsApp com DDD? Um consultor te envia fotos, condições de pagamento e já combina sua visita${vAtual ? ' para ver o carro' : ''}.`;
   else {
@@ -205,9 +233,17 @@ async function conversar(store, b, { ip = '', teste = false } = {}) {
   let r; let via = 'ia';
   const key = iaKey();
   if (key) {
-    try { r = await gerar(key, prompt(store, cfg, bot, sess, vAtual), historico); } catch (e) { console.error('bot ia', e.message); r = null; }
+    try { r = await gerar(key, prompt(store, cfg, bot, sess, vAtual), historico); } catch (e) { console.error('bot ia', e.message); r = null; via = 'falha'; }
   }
-  if (!r) { r = roteiro(store, cfg, sess, texto, vAtual, historico); via = 'roteiro'; }
+  if (!r) {
+    r = roteiro(store, cfg, sess, texto, vAtual, historico);
+    // A IA está configurada mas não respondeu agora: não fica repetindo o roteiro; oferece o WhatsApp.
+    if (via === 'falha' && (sess.dados.nome || r.lead.nome) && (sess.dados.telefone || r.lead.telefone || historico.filter((x) => x.papel === 'user').length > 2)) {
+      r.resposta = 'Desculpe, tive uma instabilidade para responder agora 😕. Tente de novo em instantes ou, se preferir, fale direto com um consultor pelo WhatsApp.';
+      r.chamar_humano = true;
+    }
+    via = via === 'falha' ? 'falha' : 'roteiro';
+  }
 
   // Dados do cliente.
   const L = r.lead && typeof r.lead === 'object' ? r.lead : {};
