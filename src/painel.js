@@ -63,6 +63,15 @@ function painel(storeId, q = {}, fin = true) {
   const semFoto = estoque.filter((v) => !v.photos?.length).length;
   const semCompra = fin ? estoque.filter((v) => v.financeiro?.falta_base).length : 0;
 
+  // Visitas agendadas (CRM): hoje e próximos 7 dias.
+  const ate = new Date(Date.now() - 3 * 3600e3 + 6 * 864e5).toISOString().slice(0, 10);
+  const visitas = all(`SELECT x.id, x.lead_id, x.data_hora, x.tipo, x.status, l.nome AS lead_nome, l.telefone AS lead_tel, u.name AS vendedor_nome, v.marca, v.modelo, v.ano_modelo
+    FROM lead_visits x LEFT JOIN leads l ON l.id = x.lead_id LEFT JOIN users u ON u.id = x.vendedor_id LEFT JOIN vehicles v ON v.id = x.vehicle_id
+    WHERE x.store_id = ? AND substr(x.data_hora,1,10) BETWEEN ? AND ? AND x.status IN ('agendada','confirmada','realizada','faltou') ORDER BY x.data_hora`, storeId, hoje, ate)
+    .map((x) => ({ ...x, veiculo: x.marca ? `${x.marca} ${x.modelo}${x.ano_modelo ? ' ' + x.ano_modelo : ''}` : '', hoje: x.data_hora.slice(0, 10) === hoje,
+      tipo_label: { visita: 'Visita', test_drive: 'Test-drive', avaliacao: 'Avaliação', entrega: 'Entrega' }[x.tipo] || 'Visita' }));
+  const visitasHoje = visitas.filter((x) => x.hoje && ['agendada', 'confirmada'].includes(x.status));
+
   // Onde atuar (prioridade).
   const alertas = [];
   const add = (nivel, texto, acao, alvo) => alertas.push({ nivel, texto, acao, alvo });
@@ -76,12 +85,14 @@ function painel(storeId, q = {}, fin = true) {
   if (contas.some((c) => !c.vencida)) add('baixo', `${contas.filter((c) => !c.vencida).length} conta(s) vencendo em até 15 dias`, 'Ver contas', 'contas');
   if (semFoto) add('baixo', `${semFoto} carro(s) sem foto`, 'Completar', 'estoque');
   if (semCompra) add('baixo', `${semCompra} carro(s) sem valor de compra (lucro não calculado)`, 'Gestão', 'gestao');
+  if (visitasHoje.length) add('medio', `${visitasHoje.length} visita(s) agendada(s) para hoje`, 'Agenda', 'agenda');
   if (posVenda.length) add('baixo', `${posVenda.length} pós-venda para fazer hoje (7, 30 ou 90 dias)`, 'Enviar', 'posvenda');
 
   const k = R.kpis;
   return {
     agora: new Date().toISOString(), periodo: per, loja: { nome: store.name, slug: store.slug, parado_dias: store.parado_dias || 25 },
     alertas,
+    visitas: { hoje: visitas.filter((x) => x.hoje), semana: visitas.filter((x) => !x.hoje), qtd_hoje: visitasHoje.length, qtd_semana: visitas.filter((x) => ['agendada', 'confirmada'].includes(x.status)).length },
     vendas: {
       qtd: k.vendidos, faturamento: fin ? k.faturamento : null, lucro: fin ? k.lucro_liquido : null, resultado: fin ? k.resultado : null, margem: fin ? k.margem_media_pct : null,
       ticket: fin ? k.ticket_medio : null, dias: k.dias_medios_venda, desconto: fin ? k.desconto_medio_pct : null,

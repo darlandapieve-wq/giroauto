@@ -2,6 +2,16 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.10.3 — 15/10/2026
+
+- **Painel**: novo quadro **Visitas** com as de hoje e as dos próximos 7 dias (horário, cliente, tipo, carro e vendedor, com a situação: confirmada, veio, faltou). Visitas do dia também entram em "Onde atuar agora". Clicar no cliente abre o lead; "abrir" leva para CRM > Agenda.
+- **Assistente do site e CRM**:
+  - o lead é criado assim que o cliente diz o nome, mesmo antes do WhatsApp, e a conversa já aparece no CRM;
+  - agendamento feito sem WhatsApp entra na agenda e o assistente pede o WhatsApp para confirmar; nunca diz "confirmado" sem ele;
+  - **remarcar** ("pode ser às 10h?") muda a mesma visita, em vez de ignorar ou criar outra;
+  - quando o cliente usa um telefone que já tem lead em aberto, a conversa entra nesse lead com o aviso "cliente se apresentou como …";
+  - o WhatsApp informado depois é gravado no lead.
+
 ## v2.10.2 — 15/10/2026
 
 - **Assistente do site mais estável.** O modelo de IA do Google estava sobrecarregado ("high demand") e, nesse caso, o assistente caía no roteiro e repetia "me passa seu WhatsApp". Agora:

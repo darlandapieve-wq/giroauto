@@ -1274,6 +1274,28 @@ test('v2.10: assistente com IA no site (roteiro e IA), conversa vira lead/visita
   c = await chat({ sid: sid2, texto: 'quero falar com alguém' });
   assert.match(c.body.whatsapp, /^https:\/\/wa\.me\/55/);
   assert.equal(D.get('SELECT precisa_humano FROM leads WHERE id = ?', lead.id).precisa_humano, 1);
+  // Agenda só com o nome (sem WhatsApp): lead e visita aparecem no CRM; remarcação atualiza a mesma visita.
+  mock.state.chatReplies = [
+    { resposta: 'Prazer, Tonho! Amanhã às 9h está ótimo.', lead: { nome: 'Tonho' }, agendar: { data: '2026-10-16', hora: '09:00', tipo: 'visita' } },
+    { resposta: 'Remarquei para as 10h!', agendar: { data: '2026-10-16', hora: '10:00', tipo: 'visita' } },
+  ];
+  c = await chat({ vehicle_id: vid }); const sid3 = c.body.sid;
+  c = await chat({ sid: sid3, texto: 'sou o Tonho, posso ir amanhã às 9?' });
+  assert.match(c.body.mensagens[0].texto, /WhatsApp/, 'pede o WhatsApp para confirmar');
+  let tonho = D.get("SELECT * FROM leads WHERE nome = 'Tonho'");
+  assert.ok(tonho, 'lead criado só com o nome'); assert.equal(tonho.origem, 'bot');
+  assert.equal(D.get('SELECT data_hora FROM lead_visits WHERE lead_id = ?', tonho.id).data_hora, '2026-10-16 09:00:00');
+  c = await chat({ sid: sid3, texto: 'pode ser às 10h?' });
+  const vt = D.all('SELECT * FROM lead_visits WHERE lead_id = ?', tonho.id);
+  assert.equal(vt.length, 1); assert.equal(vt[0].data_hora, '2026-10-16 10:00:00');
+  mock.state.chatReplies = [{ resposta: 'Anotado!', lead: { telefone: '44 99777-6655' } }];
+  c = await chat({ sid: sid3, texto: '44 99777-6655' });
+  assert.equal(D.get('SELECT telefone FROM leads WHERE id = ?', tonho.id).telefone, '44997776655');
+  { const hojeBR = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+    D.run('UPDATE lead_visits SET data_hora = ? WHERE lead_id = ?', `${hojeBR} 15:00:00`, tonho.id);
+    const pn = await api('GET', '/api/painel');
+    assert.ok(pn.body.visitas.hoje.some((x) => x.lead_nome === 'Tonho')); assert.ok(pn.body.visitas.qtd_hoje >= 1);
+    assert.ok(pn.body.alertas.some((x) => x.alvo === 'agenda')); }
   // Modelo sobrecarregado (503): tenta o próximo modelo e responde com IA.
   mock.state.chat503 = 1; mock.state.chatModels = [];
   mock.state.chatReplies = [{ resposta: 'Resposta do segundo modelo' }];

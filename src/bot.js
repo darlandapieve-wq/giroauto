@@ -81,7 +81,8 @@ COMO RESPONDER:
 - Troca: diga que a loja avalia o carro na troca e que a avaliação final é presencial; pode pedir modelo, ano e km.
 - NUNCA invente carros, preços, opcionais, garantias ou condições que não estejam nos dados abaixo ou nas instruções da loja. Se não souber, diga que um consultor confirma.
 - Fale só sobre a loja, os carros e a compra/venda de veículos. Para outros assuntos, volte educadamente ao atendimento.
-- Para agendar, confirme dia e horário dentro do horário de atendimento e só preencha "agendar" quando o cliente CONFIRMAR um dia e horário específicos E você já tiver nome e WhatsApp.
+- Para agendar, confirme dia e horário dentro do horário de atendimento. Preencha "agendar" quando o cliente CONFIRMAR um dia e horário específicos (também para remarcar). Se ainda não tiver o WhatsApp, peça o WhatsApp na mesma mensagem para confirmar o agendamento ("pré-agendei, me passa seu WhatsApp para confirmar") — nunca diga que está confirmado sem o WhatsApp.
+- Se o cliente informar um telefone, preencha "lead.telefone" com os dígitos (DDD + número).
 - Se o cliente pedir para falar com uma pessoa, reclamar, negociar valor final ou o assunto fugir do que você sabe, marque "chamar_humano": true e diga que um consultor vai chamá-lo no WhatsApp.
 
 DADOS DA LOJA:
@@ -267,12 +268,15 @@ async function conversar(store, b, { ip = '', teste = false } = {}) {
   let whatsapp = '';
   let leadId = sess.lead_id;
   const resumoConversa = () => historico.slice(-6).map((m) => `${m.papel === 'user' ? 'Cliente' : 'Assistente'}: ${m.texto}`).join('\n');
-  if (d.telefone && !teste) {
+  // O lead nasce assim que o cliente diz o nome (ou o telefone): a conversa e a visita já aparecem no CRM.
+  if ((d.telefone || d.nome) && !teste) {
     if (!leadId) {
       const res = CRM.createLead(store.id, { nome: d.nome, telefone: d.telefone, email: d.email, vehicle_id: vAtual?.id || ids[0], interesse: d.interesse, mensagem: 'Conversa pelo assistente do site' }, { origem: 'bot' });
       leadId = res.id;
       run('UPDATE chat_sessions SET lead_id = ? WHERE id = ?', leadId, sess.id);
-      CRM.addEvent(leadId, 'bot', `Conversa no assistente do site:\n${resumoConversa()}`);
+      const ex = get('SELECT nome FROM leads WHERE id = ?', leadId);
+      const outroNome = !res.novo && d.nome && ex?.nome && ex.nome.toLowerCase() !== d.nome.toLowerCase();
+      CRM.addEvent(leadId, 'bot', `${outroNome ? `Cliente se apresentou como "${d.nome}" no assistente do site (mesmo telefone deste lead).\n` : ''}Conversa no assistente do site:\n${resumoConversa()}`);
       acoes.push('lead');
     }
     const l = get('SELECT * FROM leads WHERE id = ?', leadId);
@@ -280,24 +284,36 @@ async function conversar(store, b, { ip = '', teste = false } = {}) {
       const sets = []; const vals = [];
       const up = (col, val) => { if (val && !l[col]) { sets.push(`${col} = ?`); vals.push(val); } };
       up('nome', d.nome); up('email', d.email); up('orcamento', d.orcamento); up('troca', d.troca); up('pagamento', d.pagamento); up('interesse', d.interesse);
+      if (d.telefone && !l.telefone) {
+        sets.push('telefone = ?', 'contact_id = ?'); vals.push(d.telefone, C.upsert(store.id, { nome: d.nome || l.nome, telefone: d.telefone, papel: 'lead', origem: 'Assistente do site' }));
+        CRM.addEvent(l.id, 'bot', `WhatsApp informado no assistente: ${d.telefone}`);
+      }
       if (temp && temp !== l.temperatura) { sets.push('temperatura = ?'); vals.push(temp); }
       sets.push('ultimo_contato = ?'); vals.push(new Date().toISOString().replace('T', ' ').slice(0, 19));
       run(`UPDATE leads SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = ?`, ...vals, l.id);
     }
-  } else if (d.telefone && teste && !sess.dados.telefone) acoes.push('lead');
+  } else if ((d.telefone || d.nome) && teste && !sess.dados.telefone && !sess.dados.nome) acoes.push('lead');
 
-  if (r.agendar && r.agendar.data && r.agendar.hora && d.telefone && !d.visita) {
-    const dh = `${str(r.agendar.data, 10)}T${str(r.agendar.hora, 5)}`;
-    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(dh)) {
-      if (!teste && leadId) {
-        try {
-          const sys = { storeId: store.id, id: null, perms: new Set(['gestao']) };
-          CRM.addVisit(sys, { lead_id: leadId, data_hora: dh, tipo: r.agendar.tipo === 'test_drive' ? 'test_drive' : 'visita', vehicle_id: vAtual?.id || ids[0] }, { origem: 'agendada pelo assistente do site' });
-        } catch (e) { console.error('bot visita', e.message); }
-      }
-      d.visita = dh.replace('T', ' ');
-      acoes.push('visita');
+  // Agendamento (ou remarcação) pedido pela IA.
+  let resposta = str(r.resposta, 1500);
+  const ag = r.agendar && r.agendar.data && r.agendar.hora ? `${str(r.agendar.data, 10)}T${str(r.agendar.hora, 5)}` : '';
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(ag) && ag.replace('T', ' ') !== d.visita) {
+    const tipo = r.agendar.tipo === 'test_drive' ? 'test_drive' : 'visita';
+    if (!teste && leadId) {
+      try {
+        const sys = { storeId: store.id, id: null, perms: new Set(['gestao']) };
+        const atual = get(`SELECT * FROM lead_visits WHERE lead_id = ? AND status IN ('agendada','confirmada') ORDER BY id DESC LIMIT 1`, leadId);
+        if (atual && d.visita) {
+          CRM.updateVisit(sys, atual.id, { data_hora: ag });
+          CRM.addEvent(leadId, 'visita', `Visita remarcada pelo assistente do site: ${atual.data_hora.slice(8, 10)}/${atual.data_hora.slice(5, 7)} ${atual.data_hora.slice(11, 16)} → ${ag.slice(8, 10)}/${ag.slice(5, 7)} ${ag.slice(11, 16)}`);
+        } else {
+          CRM.addVisit(sys, { lead_id: leadId, data_hora: ag, tipo, vehicle_id: vAtual?.id || ids[0] }, { origem: `agendada pelo assistente do site${d.telefone ? '' : ' (sem WhatsApp ainda)'}` });
+        }
+      } catch (e) { console.error('bot visita', e.message); }
     }
+    d.visita = ag.replace('T', ' ');
+    acoes.push('visita');
+    if (!d.telefone && !/whats/i.test(resposta)) resposta += ' Para confirmar o horário, me passa seu WhatsApp com DDD?';
   }
   if (r.chamar_humano) {
     const n = String(store.whatsapp || store.phone || '').replace(/\D/g, '');
@@ -309,7 +325,6 @@ async function conversar(store, b, { ip = '', teste = false } = {}) {
     acoes.push('humano');
   }
   run(`UPDATE chat_sessions SET dados = ?, updated_at = datetime('now') WHERE id = ?`, JSON.stringify(d), sess.id);
-  const resposta = str(r.resposta, 1500);
   run('INSERT INTO chat_messages (session_id, papel, texto, meta) VALUES (?, ?, ?, ?)', sess.id, 'bot', resposta, JSON.stringify({ veiculos: ids, fotos_de: Number(r.fotos_de) || null, via, acoes }));
   return { sid: sess.id, mensagens: [{ papel: 'bot', texto: resposta, veiculos }], whatsapp, acoes, via, dados: teste ? d : undefined };
 }

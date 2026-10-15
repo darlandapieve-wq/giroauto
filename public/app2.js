@@ -1785,6 +1785,11 @@
         </div>
         <div class="pgrid">
           ${box('Onde atuar agora', '', d.alertas.length ? d.alertas.map((a) => `<button class="palert ${a.nivel}" type="button" data-go2="${a.alvo}"><span>${esc(a.texto)}</span><b>${esc(a.acao)} ›</b></button>`).join('') : '<p class="sub">Tudo em dia. 👍</p>', 'span2')}
+          ${d.visitas ? box(`Visitas · hoje ${d.visitas.qtd_hoje} · 7d ${d.visitas.qtd_semana}`, 'agenda', (() => {
+            const linha = (x) => `<div class="pr"><span><b class="mono">${x.hoje ? '' : `${x.data_hora.slice(8, 10)}/${x.data_hora.slice(5, 7)} `}${x.data_hora.slice(11, 16)}</b> ${x.lead_id ? `<button class="vlink" type="button" data-lead="${x.lead_id}">${esc(x.lead_nome || x.lead_tel || 'Lead')}</button>` : esc(x.lead_nome || 'Visita')} <span class="sub">${esc(x.tipo_label)}${x.veiculo ? ' · ' + esc(x.veiculo) : ''}${x.vendedor_nome ? ' · ' + esc(x.vendedor_nome) : ''}</span></span><span class="prr">${x.status === 'confirmada' ? '<span class="pill p-info">confirmada</span>' : x.status === 'realizada' ? '<span class="pill p-ok">veio</span>' : x.status === 'faltou' ? '<span class="pill p-bad">faltou</span>' : ''}</span></div>`;
+            return `<div class="sub" style="margin:2px 0 4px"><b>Hoje</b></div>${d.visitas.hoje.map(linha).join('') || '<p class="sub">Nenhuma visita hoje.</p>'}
+              ${d.visitas.semana.length ? `<div class="sub" style="margin:8px 0 4px"><b>Próximos dias</b></div>${d.visitas.semana.map(linha).join('')}` : ''}`;
+          })()) : ''}
           ${box('Onde estão os carros', 'gestao:local', `<div class="pchips">${E.locais.map((l) => `<span><b>${l.qtd}</b> ${esc(l.label)}</span>`).join('')}</div>
             <div class="pchips"><span><b>${E.status.publicado || 0}</b> no Marketplace</span><span><b>${E.status.pronto || 0}</b> prontos</span><span><b>${E.status.rascunho || 0}</b> rascunhos</span></div>
             ${E.fora.map((v) => vrow(v, `<span class="${v.atrasado ? 'neg' : ''}">${v.local_dias}d</span>${v.followup_url ? ` <a class="linkbtn" href="${esc(v.followup_url)}" target="_blank" rel="noopener" title="Pedir andamento">💬</a>` : ''}`, ` <span class="sub">${esc(v.parceiro || v.local)}</span>`)).join('') || '<p class="sub">Todos no pátio.</p>'}`)}
@@ -1807,17 +1812,19 @@
       $('#pn-full') && ($('#pn-full').onclick = () => { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen?.(); });
       $$('[data-go2]').forEach((b) => {
         b.onclick = (e) => {
-          if (e.target.closest('a,[data-of2],[data-pay2],[data-vp]') && e.target.closest('a,[data-of2],[data-pay2],[data-vp]') !== b) return;
+          if (e.target.closest('a,[data-of2],[data-pay2],[data-vp],[data-lead]') && e.target.closest('a,[data-of2],[data-pay2],[data-vp],[data-lead]') !== b) return;
           const [view, tab] = b.dataset.go2.split(':');
           if (view === 'parados') return stalledModal(S.vehicles.filter((v) => v.parado));
           if (view === 'contas') { gTab = 'desp'; return X.go('gestao'); }
           if (view === 'docs') { gTab = 'docs'; return X.go('gestao'); }
           if (view === 'fora') { gTab = 'local'; return X.go('gestao'); }
           if (view === 'posvenda') { gTab = 'contatos'; CT.filtro = 'posvenda'; return X.go('gestao'); }
+          if (view === 'agenda') { CR.tab = 'agenda'; return X.go('crm'); }
           if (tab) gTab = tab;
           X.go(view);
         };
       });
+      $$('#main [data-lead]').forEach((b) => { b.onclick = (e) => { e.stopPropagation(); leadModal(Number(b.dataset.lead)); }; });
       $$('[data-of2]').forEach((b) => { b.onclick = (e) => { e.stopPropagation(); offerModal(S.vehicles.find((v) => v.id === Number(b.dataset.of2))); }; });
       $$('[data-pay2]').forEach((b) => { b.onclick = async (e) => { e.stopPropagation(); await api('PUT', `/api/expenses/${b.dataset.pay2}/pago`, {}); toast('Conta paga'); X.render(); }; });
     },
