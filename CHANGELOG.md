@@ -2,6 +2,10 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.11.2 — 15/10/2026
+
+- Ativação automática (uma vez) do assistente no WhatsApp para as lojas que já têm a API oficial configurada: ao iniciar, o servidor faz o mesmo que o botão "Ativar recebimento" e registra o resultado.
+
 ## v2.11.1 — 15/10/2026
 
 - **WhatsApp: ativação em um clique.** O botão **Ativar recebimento** agora faz tudo sozinho pela API da Meta:

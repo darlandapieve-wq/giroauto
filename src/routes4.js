@@ -90,6 +90,7 @@ function register(app) {
     res.json(await IN.processar(s.id, m, { msgId: m.msgId }));
   }));
   IN.startPolling();
+  setTimeout(() => require('./wabot').ativacaoInicial().catch((e) => console.error('wa auto', e.message)), 15000).unref?.();
 
   /* ---------------- Assistente no WhatsApp (v2.11) ---------------- */
   const WA = require('./wabot');

@@ -28,7 +28,7 @@ before(async () => {
   mock = createMock();
   await new Promise((r) => { mockServer = mock.app.listen(0, r); });
   Object.assign(process.env, {
-    GIROAUTO_SKIP_ENV: '1',
+    GIROAUTO_SKIP_ENV: '1', GIROAUTO_SKIP_WA_AUTO: '1',
     DATA_DIR: tmp,
     GIROAUTO_DB: path.join(tmp, 'test.db'),
     META_APP_ID: '123',

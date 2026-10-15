@@ -255,4 +255,21 @@ function conversaDoLead(user, leadId) {
   return { pausado: !!(s.pausado_ate && Date.parse(s.pausado_ate.replace(' ', 'T') + 'Z') > Date.now()) };
 }
 
-module.exports = { verifyToken, webhookUrl, status, salvar, assinaturaOk, processar, responderComoLoja, pausar, conversaDoLead, sendText, sidDe };
+// Ativação feita uma vez pelo sistema (pedido do administrador): lojas com o WhatsApp oficial configurado
+// e ainda não inscritas recebem a ativação do assistente no WhatsApp ao iniciar o servidor.
+async function ativacaoInicial() {
+  if (process.env.GIROAUTO_SKIP_WA_AUTO || readSetting('wa_auto_v2112')) return;
+  run("INSERT INTO settings (key, value) VALUES ('wa_auto_v2112', 'rodando') ON CONFLICT(key) DO UPDATE SET value = excluded.value");
+  const res = [];
+  for (const s of all("SELECT id, name, wa_cloud FROM stores WHERE wa_cloud LIKE '%token_enc%'")) {
+    const c = cfgOf(s);
+    if (!c.token || !c.phone_id || c.inscrito) continue;
+    try { const st = await salvar(s.id, { inscrever: true, ativo: true }); res.push(`${s.name}: ok (WABA ${st.waba_id}, webhook ${st.webhook})`); }
+    catch (e) { res.push(`${s.name}: ${e.message}`); }
+  }
+  const txt = res.join(' | ') || 'nenhuma loja pendente';
+  console.log('Ativação do assistente no WhatsApp:', txt);
+  run("UPDATE settings SET value = ? WHERE key = 'wa_auto_v2112'", txt.slice(0, 1000));
+}
+
+module.exports = { ativacaoInicial, verifyToken, webhookUrl, status, salvar, assinaturaOk, processar, responderComoLoja, pausar, conversaDoLead, sendText, sidDe };
