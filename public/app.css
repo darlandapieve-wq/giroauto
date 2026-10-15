@@ -694,3 +694,11 @@ main{gap:12px;padding-block:16px 40px;padding-inline:clamp(12px,2.2vw,28px)}
 .agrow{display:grid;grid-template-columns:52px minmax(0,1fr) auto auto;gap:10px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:7px 10px;margin-bottom:5px}
 .agrow select{border:1px solid var(--line);border-radius:6px;padding:4px;background:var(--bg);font-size:12.5px}
 @media (max-width:900px){.ldgrid{grid-template-columns:1fr}.crk{grid-template-columns:repeat(2,minmax(0,1fr))}.agrow{grid-template-columns:44px minmax(0,1fr)}.agrow > .pill,.agrow > .btnrow{grid-column:2}}
+
+/* ---------- v2.10: assistente e portais ---------- */
+.botwrap{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:16px;align-items:start}
+.botteste{position:sticky;top:10px}
+.botteste select{width:100%;border:1px solid var(--line);border-radius:7px;padding:7px;background:var(--bg);margin:6px 0}
+.botteste .chatlog{height:380px;max-height:none}
+@media (max-width:1000px){.botwrap{grid-template-columns:1fr}.botteste{position:static}}
+.copyrow{display:flex;gap:6px}.copyrow input{flex:1;min-width:0;border:1px solid var(--line);border-radius:7px;padding:7px 9px;background:var(--bg);font-family:var(--f-mono);font-size:12.5px}

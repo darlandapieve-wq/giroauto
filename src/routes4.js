@@ -49,6 +49,47 @@ function register(app) {
     res.json(CRM.publicLead(store, req.body || {}, req.ip));
   });
 
+  /* ---------------- Assistente com IA no site e leads por e-mail (v2.10) ---------------- */
+  const BOT = require('./bot');
+  const IN = require('./inbound');
+  const config = require('./config');
+  app.post('/api/public/:slug/chat', wrap(async (req, res) => {
+    const store = get('SELECT * FROM stores WHERE slug = ?', req.params.slug);
+    if (!store) return res.status(404).json({ error: 'Loja não encontrada.' });
+    const r = await BOT.conversar(store, req.body || {}, { ip: req.ip });
+    res.json({ sid: r.sid, mensagens: r.mensagens, whatsapp: r.whatsapp || '' });
+  }));
+  app.get('/api/crm/bot', crm, (req, res) => res.json({ ...BOT.status(req.user.storeId), conversas: BOT.conversas(req.user.storeId) }));
+  app.put('/api/crm/bot', team.can('config'), (req, res) => res.json(BOT.saveBotConfig(req.user.storeId, req.body || {})));
+  app.post('/api/crm/bot/test', crm, wrap(async (req, res) => {
+    const store = get('SELECT * FROM stores WHERE id = ?', req.user.storeId);
+    res.json(await BOT.conversar(store, req.body || {}, { teste: true }));
+  }));
+  app.get('/api/crm/bot/conversas/:sid', crm, (req, res) => res.json(BOT.conversa(req.user.storeId, req.params.sid)));
+  app.get('/api/crm/email', team.can('config'), (req, res) => res.json(IN.publicCfg(req.user.storeId, config.publicUrl)));
+  app.put('/api/crm/email', team.can('config'), (req, res) => { IN.saveImap(req.user.storeId, req.body || {}); res.json(IN.publicCfg(req.user.storeId, config.publicUrl)); });
+  app.post('/api/crm/email/check', team.can('config'), wrap(async (req, res) => res.json(await IN.imapCheck(req.user.storeId, { teste: !!req.body?.teste }))));
+  // Colar o e-mail do portal: pré-visualiza (preview) ou cria o lead.
+  app.post('/api/crm/email/colar', crm, wrap(async (req, res) => {
+    const b = req.body || {};
+    const mail = { from: String(b.from || ''), subject: String(b.subject || ''), text: String(b.texto || '') };
+    if (b.preview) {
+      const store = get('SELECT * FROM stores WHERE id = ?', req.user.storeId);
+      const d = IN.parse(mail, store);
+      const v = IN.acharVeiculo(req.user.storeId, d, mail.text);
+      return res.json({ dados: d, veiculo: v ? { id: v.id, titulo: `${v.marca} ${v.modelo} ${v.ano_modelo || ''}`.trim() } : null });
+    }
+    res.json(await IN.processar(req.user.storeId, mail));
+  }));
+  const multipart = require('multer')().none();
+  app.post('/api/inbound/email/:token', require('express').urlencoded({ extended: false, limit: '6mb' }), multipart, wrap(async (req, res) => {
+    const s = IN.storeByToken(req.params.token);
+    if (!s) return res.status(404).json({ error: 'Endereço inválido.' });
+    const m = IN.fromWebhook(req.body || {});
+    res.json(await IN.processar(s.id, m, { msgId: m.msgId }));
+  }));
+  IN.startPolling();
+
   /* ---------------- Contratos (v2.8) ---------------- */
   const K = require('./contratos');
   const emite = team.canAny('vender', 'cadastrar', 'gestao');

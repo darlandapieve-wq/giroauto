@@ -90,13 +90,13 @@ app.get('/v/:slug', (req, res) => {
   const store = get('SELECT * FROM stores WHERE slug = ?', req.params.slug);
   if (!store) return res.status(404).send(pages.notFound());
   const vs = all(`SELECT * FROM vehicles WHERE store_id = ? AND status IN ('pronto','publicado') ORDER BY updated_at DESC`, store.id).map(V.serialize);
-  res.send(pages.storefront(store, vs));
+  res.send(pages.storefront(store, vs).replace('</body>', `${require('./bot').widget(store)}</body>`));
 });
 app.get('/v/:slug/:id', (req, res) => {
   const store = get('SELECT * FROM stores WHERE slug = ?', req.params.slug);
   const v = store && V.serialize(V.findVehicle(store.id, req.params.id));
   if (!v || v.status === 'rascunho') return res.status(404).send(pages.notFound());
-  res.send(pages.vehiclePage(store, v, { origem: req.query.o === 'qr' ? 'qr' : 'vitrine' }));
+  res.send(pages.vehiclePage(store, v, { origem: req.query.o === 'qr' ? 'qr' : 'vitrine' }).replace('</body>', `${v.status !== 'vendido' ? require('./bot').widget(store, v.id) : ''}</body>`));
 });
 
 /* ------------------------------------------------------------------ */

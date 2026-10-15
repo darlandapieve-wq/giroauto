@@ -2,6 +2,32 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.10 — 15/10/2026
+
+**Assistente de vendas com IA no site e leads dos portais por e-mail**
+
+- **Assistente no site da loja**: botão "Fale com a gente" na vitrine e "Dúvidas sobre este carro?" em cada carro.
+  - Responde na hora, 24h, com base no estoque e nas informações da loja.
+  - Mostra os carros com fotos (toque para ampliar) e manda todas as fotos quando o cliente pede.
+  - Abordagem de vendedor: qualifica (uso, faixa de preço, troca, pagamento), oferece alternativas quando o carro procurado não existe e conduz para **agendar a visita ou o test-drive**.
+  - Pega **nome e WhatsApp**: a conversa vira lead no CRM (origem "Assistente do site"), com orçamento, troca, forma de pagamento e temperatura. A conversa inteira fica na ficha do lead.
+  - **Agenda a visita** no CRM quando o cliente confirma dia e horário.
+  - **Passa para um vendedor**: quando o cliente pede, mostra o botão do WhatsApp da loja e marca o lead com "pediu atendente".
+  - Regras de segurança: não inventa carros, preços ou condições; não promete aprovação de financiamento; fala só da loja e dos carros.
+  - Sem chave de IA, ou se a IA falhar, segue um roteiro que ainda captura nome e WhatsApp.
+- **CRM > 🤖 Assistente do site**:
+  - ligar ou desligar o assistente, com nome e boas-vindas;
+  - campo **"Informações e regras da loja"** (troca, financiamento, garantia, laudo, entrega…) que o assistente segue;
+  - opção de informar ou não os preços;
+  - **testar o assistente** como cliente, sem salvar nada no CRM;
+  - lista das conversas recentes.
+- **Leads dos portais por e-mail** (CRM > ✉️ Portais): Webmotors, OLX, iCarros, Mobiauto, Mercado Livre, NaPista e outros.
+  - **Leitura automática da caixa de e-mail** (IMAP, com passo a passo para senha de app do Gmail) a cada 3 minutos, com teste de conexão e "ler agora".
+  - **Endereço de webhook** para serviços de encaminhamento (Cloudflare, Mailgun, Postmark, SendGrid, Zapier/Make).
+  - **Colar o e-mail**: mostra o que foi encontrado e cria o lead.
+  - Extrai nome, telefone, e-mail, mensagem e o carro do anúncio (pela placa ou por marca/modelo/ano no estoque). Para formatos desconhecidos, a IA ajuda.
+  - Não duplica: o mesmo e-mail não entra duas vezes e o mesmo telefone vai para o lead em aberto. Lista dos e-mails processados.
+
 ## v2.9 — 15/10/2026
 
 **CRM de leads**

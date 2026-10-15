@@ -1218,6 +1218,126 @@ test('v2.9: CRM — captação pública, rodízio, funil, histórico, visitas, t
   assert.ok(r.body.historico.some((e) => e.tipo === 'lead'));
 });
 
+test('v2.10: assistente com IA no site (roteiro e IA), conversa vira lead/visita, e leads dos portais por e-mail', async () => {
+  const slug = (await api('GET', '/api/me')).body.store.slug;
+  const D = require('../src/db');
+  let r = await api('POST', '/api/vehicles', { marca: 'Toyota', modelo: 'Hilux', versao: 'SRV', ano_fab: 2019, ano_modelo: 2020, preco: 189000, placa: 'HLX2A20', km: 80000 });
+  const vid = r.body.id;
+  D.run("UPDATE vehicles SET status = 'publicado' WHERE id = ?", vid);
+  D.run("UPDATE stores SET whatsapp = '(44) 99915-8307' WHERE slug = ?", slug);
+  let page = await (await fetch(`${base}/v/${slug}/${vid}`)).text();
+  assert.match(page, /chat-widget\.js/); assert.match(page, /window\.GA_CHAT=/);
+  const chat = async (body) => { const q = await fetch(`${base}/api/public/${slug}/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); return { status: q.status, body: await q.json() }; };
+
+  // Sem chave de IA: roteiro que pede nome e WhatsApp e cria o lead.
+  delete process.env.GEMINI_API_KEY;
+  let c = await chat({ vehicle_id: vid });
+  assert.match(c.body.mensagens[0].texto, /Hilux/);
+  const sid1 = c.body.sid;
+  c = await chat({ sid: sid1, texto: 'Oi, ainda tem?', vehicle_id: vid });
+  assert.match(c.body.mensagens[0].texto, /seu nome/);
+  assert.equal(c.body.mensagens[0].veiculos[0].id, vid);
+  c = await chat({ sid: sid1, texto: 'Marcos Silva' });
+  assert.match(c.body.mensagens[0].texto, /Marcos/); assert.match(c.body.mensagens[0].texto, /WhatsApp/);
+  c = await chat({ sid: sid1, texto: 'meu zap é (44) 99123-4567' });
+  let lead = D.get("SELECT * FROM leads WHERE telefone = '44991234567'");
+  assert.equal(lead.origem, 'bot'); assert.equal(lead.nome, 'Marcos Silva'); assert.equal(lead.vehicle_id, vid);
+  r = await api('GET', `/api/leads/${lead.id}`);
+  assert.ok(r.body.conversa.length >= 6, 'conversa aparece no lead');
+  // Reabrir o chat devolve a conversa.
+  c = await chat({ sid: sid1 });
+  assert.ok(c.body.mensagens.length >= 7);
+
+  // Com IA (Gemini simulado): mostra carros, pega contato, agenda visita e chama humano.
+  process.env.GEMINI_API_KEY = 'AIzaTESTKEY1234567890123456789012345';
+  process.env.GEMINI_URL = process.env.META_GRAPH_URL;
+  mock.state.chatReplies = [
+    { resposta: 'Temos a Hilux SRV 2020! Quer ver mais fotos? Qual seu nome?', mostrar_veiculos: [vid, 999999], fotos_de: vid, lead: { nome: '' }, temperatura: 'morno' },
+    { resposta: 'Prazer, Rita! Sábado às 10h está ótimo. Qual seu WhatsApp?', lead: { nome: 'Rita Gomes', orcamento: 180000, pagamento: 'financiado', troca: 'Strada 2017' } },
+    { resposta: 'Agendado! Te esperamos sábado às 10h.', lead: { telefone: '44 98765-1111' }, agendar: { data: '2026-10-17', hora: '10:00', tipo: 'test_drive' }, temperatura: 'quente' },
+    { resposta: 'Claro, um consultor vai te chamar no WhatsApp.', chamar_humano: true },
+  ];
+  c = await chat({ vehicle_id: vid }); const sid2 = c.body.sid;
+  c = await chat({ sid: sid2, texto: 'Tem fotos do interior?' });
+  assert.equal(c.body.mensagens[0].veiculos.length, 1, 'só carros da loja');
+  assert.ok(c.body.mensagens[0].veiculos[0].fotos !== undefined);
+  const call = mock.state.geminiCalls[mock.state.geminiCalls.length - 1];
+  assert.match(call.body.systemInstruction.parts[0].text, /Hilux SRV/);
+  assert.equal(call.body.generationConfig.responseMimeType, 'application/json');
+  c = await chat({ sid: sid2, texto: 'Sou a Rita, posso ir sábado 10h' });
+  c = await chat({ sid: sid2, texto: '44 98765-1111' });
+  lead = D.get("SELECT * FROM leads WHERE telefone = '44987651111'");
+  assert.equal(lead.nome, 'Rita Gomes'); assert.equal(lead.orcamento, 180000); assert.equal(lead.pagamento, 'financiado'); assert.equal(lead.troca, 'Strada 2017');
+  assert.equal(lead.etapa, 'visita'); assert.equal(lead.temperatura, 'quente');
+  const vis = D.get('SELECT * FROM lead_visits WHERE lead_id = ?', lead.id);
+  assert.equal(vis.data_hora, '2026-10-17 10:00:00'); assert.equal(vis.tipo, 'test_drive');
+  c = await chat({ sid: sid2, texto: 'quero falar com alguém' });
+  assert.match(c.body.whatsapp, /^https:\/\/wa\.me\/55/);
+  assert.equal(D.get('SELECT precisa_humano FROM leads WHERE id = ?', lead.id).precisa_humano, 1);
+  // IA fora do ar: cai no roteiro sem quebrar.
+  mock.state.chatFail = true;
+  c = await chat({ texto: 'Olá' });
+  assert.equal(c.status, 200); assert.match(c.body.mensagens[0].texto, /nome/);
+  mock.state.chatFail = false;
+  // Teste pelo painel não cria lead.
+  mock.state.chatReplies = [{ resposta: 'Ok!', lead: { nome: 'Teste', telefone: '44911112222' } }];
+  r = await api('POST', '/api/crm/bot/test', { texto: 'meu numero 44911112222' });
+  assert.equal(r.status, 200); assert.ok(r.body.acoes.includes('lead'));
+  assert.equal(D.get("SELECT COUNT(*) n FROM leads WHERE telefone = '44911112222'").n, 0);
+  // Configuração e conversas.
+  r = await api('PUT', '/api/crm/bot', { nome: 'Lia', instrucoes: 'Aceitamos troca. Garantia de 3 meses no motor e câmbio.' });
+  assert.equal(r.body.nome, 'Lia');
+  mock.state.chatReplies = [{ resposta: 'Oi!' }];
+  await chat({ texto: 'oi' });
+  assert.match(mock.state.geminiCalls[mock.state.geminiCalls.length - 1].body.systemInstruction.parts[0].text, /Garantia de 3 meses/);
+  r = await api('GET', '/api/crm/bot');
+  assert.equal(r.body.ia, true); assert.ok(r.body.conversas.length >= 2);
+  r = await api('GET', `/api/crm/bot/conversas/${sid2}`);
+  assert.ok(r.body.mensagens.some((m) => /Rita/.test(m.texto)));
+  await api('PUT', '/api/crm/bot', { ativo: false });
+  c = await chat({ texto: 'oi' });
+  assert.equal(c.status, 403);
+  page = await (await fetch(`${base}/v/${slug}/${vid}`)).text();
+  assert.ok(!/chat-widget/.test(page));
+  await api('PUT', '/api/crm/bot', { ativo: true });
+  delete process.env.GEMINI_API_KEY; delete process.env.GEMINI_URL;
+
+  // E-mails dos portais.
+  const IN = require('../src/inbound');
+  const wm = IN.parse({ from: 'Webmotors <noreply@webmotors.com.br>', subject: 'Nova proposta para TOYOTA HILUX 2020', text: 'Olá, loja!\nVocê recebeu uma nova proposta.\nNome: Carlos Pereira\nE-mail: carlos.p@exemplo.com\nTelefone: (44) 99876-5432\nMensagem: Aceita troca em uma S10?\nVeículo: TOYOTA HILUX 2.8 SRV 4X4 2020\n' });
+  assert.equal(wm.portal, 'webmotors'); assert.equal(wm.nome, 'Carlos Pereira'); assert.equal(wm.telefone, '44998765432'); assert.equal(wm.email, 'carlos.p@exemplo.com');
+  assert.match(wm.mensagem, /S10/);
+  const olx = IN.parse({ from: 'OLX <noreply@olx.com.br>', subject: 'Você recebeu uma mensagem', html: '<p><b>Interessado:</b> Ana Paula</p><p>Celular: 44 9 8111-2222</p><p>"Ainda está disponível?"</p>' });
+  assert.equal(olx.portal, 'olx'); assert.equal(olx.nome, 'Ana Paula'); assert.equal(olx.telefone, '44981112222');
+  // Webhook (encaminhamento) cria o lead com o carro do anúncio.
+  r = await api('GET', '/api/crm/email');
+  const url = r.body.webhook_url.replace('http://localhost:9', base);
+  let q = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ From: 'Webmotors <noreply@webmotors.com.br>', Subject: 'Nova proposta', TextBody: 'Nome: Carlos Pereira\nTelefone: (44) 99876-5432\nVeículo: TOYOTA HILUX 2.8 SRV 2020', MessageID: 'abc-1' }) });
+  let j = await q.json();
+  assert.equal(j.ok, true);
+  lead = D.get('SELECT * FROM leads WHERE id = ?', j.lead_id);
+  assert.equal(lead.origem, 'webmotors'); assert.equal(lead.vehicle_id, vid); assert.equal(lead.nome, 'Carlos Pereira');
+  q = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ From: 'x@webmotors.com.br', Subject: 'Nova proposta', TextBody: 'Nome: Carlos', MessageID: 'abc-1' }) });
+  assert.equal((await q.json()).duplicado, true);
+  // Mailgun (multipart).
+  const fd = new FormData(); fd.append('sender', 'contato@icarros.com.br'); fd.append('subject', 'Lead iCarros'); fd.append('body-plain', 'Nome: Bruno Alves\nCelular: 44 99700-1234\nAnúncio: Hilux SRV');
+  q = await fetch(url, { method: 'POST', body: fd });
+  j = await q.json();
+  assert.equal(D.get('SELECT origem FROM leads WHERE id = ?', j.lead_id).origem, 'icarros');
+  assert.equal((await fetch(`${base}/api/inbound/email/${'0'.repeat(32)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 404);
+  // Colar o e-mail no painel: prévia e criação.
+  r = await api('POST', '/api/crm/email/colar', { preview: true, texto: 'Mobiauto - novo lead\nNome: Júlia Reis\nWhatsApp: 44 99555-0000\nVeículo de interesse: Hilux 2020' });
+  assert.equal(r.body.dados.portal, 'mobiauto'); assert.equal(r.body.veiculo.id, vid);
+  r = await api('POST', '/api/crm/email/colar', { texto: 'Mobiauto - novo lead\nNome: Júlia Reis\nWhatsApp: 44 99555-0000\nVeículo de interesse: Hilux 2020' });
+  assert.equal(r.body.ok, true);
+  r = await api('POST', '/api/crm/email/colar', { texto: 'Sem dados de contato aqui' });
+  assert.equal(r.body.ok, false);
+  r = await api('GET', '/api/crm/email');
+  assert.ok(r.body.recentes.length >= 3);
+  r = await api('PUT', '/api/crm/email', { ativo: true, user: 'loja@gmail.com' });
+  assert.equal(r.status, 400, 'IMAP exige senha');
+});
+
 test('v2.0: agenda de republicação, QR, folha A4, painel TV e fotos prontas', async () => {
   const sched = require('../src/schedule');
   const db = require('../src/db');

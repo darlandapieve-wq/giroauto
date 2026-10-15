@@ -1891,7 +1891,7 @@
       if (!podeCrm()) return '<div class="err">Seu acesso não inclui o CRM.</div>';
       const M = await crMeta(true);
       const R = M.resumo;
-      const tabs = [['funil', 'Funil'], ['agenda', 'Agenda'], ['tarefas', 'Tarefas'], can('gestao') && ['relatorio', 'Relatório'], can('config') && ['config', 'Configurar']].filter(Boolean);
+      const tabs = [['funil', 'Funil'], ['agenda', 'Agenda'], ['tarefas', 'Tarefas'], ['assistente', '🤖 Assistente do site'], ['portais', '✉️ Portais (e-mail)'], can('gestao') && ['relatorio', 'Relatório'], can('config') && ['config', 'Configurar']].filter(Boolean);
       if (!tabs.some((t) => t[0] === CR.tab)) CR.tab = 'funil';
       let body = '';
       if (CR.tab === 'funil') body = await crFunil(M);
@@ -1899,6 +1899,8 @@
       if (CR.tab === 'tarefas') body = await crTarefas(M);
       if (CR.tab === 'relatorio') body = await crRelatorio(M);
       if (CR.tab === 'config') body = crConfig(M);
+      if (CR.tab === 'assistente') body = await crAssistente();
+      if (CR.tab === 'portais') body = await crPortais();
       const t = (l, v, sub, cls, go) => `<div class="pt ${cls || ''}" ${go ? `data-crgo="${go}" role="button" tabindex="0"` : 'style="cursor:default"'}><span>${l}</span><b>${v}</b>${sub ? `<em>${sub}</em>` : ''}</div>`;
       return `<div class="head"><div><h1>CRM</h1><p>Todos os interessados num lugar só: do site, do QR code no carro, do assistente, dos portais e os que você cadastrar. Cada lead tem histórico, vendedor, visitas e tarefas.</p></div>
           <div class="btnrow"><button class="btn primary" type="button" id="crNovo">+ Novo lead</button></div></div>
@@ -1915,6 +1917,8 @@
       if (CR.tab === 'tarefas') crTarefasBind();
       if (CR.tab === 'relatorio') crRelBind();
       if (CR.tab === 'config') crConfigBind();
+      if (CR.tab === 'assistente') crAssistenteBind();
+      if (CR.tab === 'portais') crPortaisBind();
     },
   };
 
@@ -2187,6 +2191,8 @@
         <div class="rglist">
           <div class="rgrow"><span><b>Site da loja</b><br><span class="sub">Formulário "Tenho interesse" na vitrine e em cada carro.</span></span><a class="btn sm" href="${esc(vitrine)}" target="_blank" rel="noopener">Abrir vitrine</a><span></span></div>
           <div class="rgrow"><span><b>QR code no carro</b><br><span class="sub">A folha A4 do carro leva para a página dele; quem pede contato entra como "QR code no carro".</span></span><span></span><span></span></div>
+          <div class="rgrow"><span><b>Assistente do site (IA)</b><br><span class="sub">Conversa com o visitante, pega nome e WhatsApp e agenda visita.</span></span><button class="btn sm" type="button" data-crt="assistente">Configurar</button><span></span></div>
+          <div class="rgrow"><span><b>Portais (Webmotors, OLX, iCarros…)</b><br><span class="sub">Lê os e-mails de lead dos portais e cria o lead sozinho.</span></span><button class="btn sm" type="button" data-crt="portais">Configurar</button><span></span></div>
           <div class="rgrow"><span><b>Cadastro manual</b><br><span class="sub">WhatsApp, telefone, visita na loja, Marketplace, indicação: use "+ Novo lead".</span></span><span></span><span></span></div>
         </div></div>`;
   }
@@ -2196,6 +2202,135 @@
       try {
         await api('PUT', '/api/crm/config', { distribuicao: $('input[name="cf-d"]:checked').value, vendedores: $$('[data-cfv]').filter((x) => x.checked).map((x) => Number(x.dataset.cfv)), sla_min: $('#cf-sla').value, horarios: $('#cf-h').value });
         toast('Configuração do CRM salva'); CR.meta = null; X.render();
+      } catch (e) { toast(e.message); }
+    };
+  }
+
+  /* ---- Assistente com IA no site (v2.10) ---- */
+  async function crAssistente() {
+    const B = await api('GET', '/api/crm/bot');
+    CR.bot = B;
+    const ok = can('config');
+    const dis = ok ? '' : 'disabled';
+    const exemplo = 'Ex.:\n- Aceitamos carro na troca (avaliação presencial).\n- Financiamos com os principais bancos; entrada a partir de 20%.\n- Todos os carros têm laudo cautelar aprovado.\n- Garantia de 3 meses para motor e câmbio.\n- Não fazemos entrega em outras cidades.';
+    return `<div class="botwrap">
+      <div class="stack">
+        <div class="panel"><h2>Assistente de vendas no site</h2>
+          <p class="lead">Atende na hora, 24h, quem entra na vitrine ou na página de um carro: tira dúvidas sobre o estoque, manda fotos, pergunta sobre troca e pagamento, pega nome e WhatsApp, agenda a visita e passa para um vendedor. Cada conversa com telefone vira lead no CRM (origem "Assistente do site").</p>
+          ${B.ia ? '<div class="okbox">IA ativa (Google Gemini).</div>' : '<div class="warnbox">A IA não está configurada no sistema: o assistente funciona no modo roteiro (pede nome e WhatsApp e avisa a equipe). Para respostas completas, o administrador do sistema coloca a chave do Google em Configurações &gt; Imagens com IA.</div>'}
+          <div class="pchips" style="margin:10px 0"><span><b>${B.conversas_7d}</b> conversas em 7 dias</span><span><b>${B.leads_7d}</b> leads gerados</span></div>
+          <label class="check"><input type="checkbox" id="bt-on" ${B.ativo ? 'checked' : ''} ${dis}><div><b>Mostrar o assistente no site da loja</b><span>Botão "Fale com a gente" na vitrine e "Dúvidas sobre este carro?" em cada carro.</span></div></label>
+          <div class="fields" style="margin-top:10px">
+            <div class="f w2"><label for="bt-n">Nome do assistente</label><input id="bt-n" value="${esc(B.nome)}" maxlength="40" ${dis}></div>
+            <div class="f w4"><label for="bt-bv">Mensagem de boas-vindas (opcional)</label><input id="bt-bv" value="${esc(B.boas_vindas)}" maxlength="400" placeholder="Em branco = automática, citando o carro da página" ${dis}></div>
+            <div class="f w6"><label for="bt-i">Informações e regras da loja para o assistente</label><textarea id="bt-i" rows="7" placeholder="${esc(exemplo)}" ${dis}>${esc(B.instrucoes)}</textarea><span class="hint">O assistente só afirma o que estiver aqui ou no cadastro dos carros. Horário e endereço vêm de Configurações e do CRM.</span></div>
+            <label class="f w6" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="bt-p" ${B.mostrar_preco ? 'checked' : ''} style="width:auto" ${dis}> Informar os preços do anúncio na conversa</label>
+          </div>
+          ${ok ? '<div class="form-foot"><button class="btn primary" type="button" id="bt-save">Salvar</button></div>' : ''}
+        </div>
+        <div class="panel"><h2>Conversas recentes</h2>
+          ${B.conversas.length ? `<div class="rglist">${B.conversas.map((c) => `<div class="rgrow"><span><button class="vlink" type="button" data-cv="${esc(c.id)}">${esc(c.lead_nome || c.dados.nome || 'Visitante')}</button> <span class="sub">${c.msgs} msg · ${c.marca ? esc(c.marca + ' ' + c.modelo) + ' · ' : ''}${dh(c.updated_at)}</span></span>${c.lead_id ? `<button class="btn sm" type="button" data-lead="${c.lead_id}">Abrir lead</button>` : '<span class="sub">sem contato</span>'}<span></span></div>`).join('')}</div>` : '<p class="sub">Nenhuma conversa ainda.</p>'}
+        </div>
+      </div>
+      <div class="panel botteste"><h2>Testar o assistente</h2><p class="sub">Converse como se fosse um cliente. No teste nada é salvo no CRM.</p>
+        <select id="bt-v"><option value="">Cliente na vitrine (sem carro)</option>${S.vehicles.filter((v) => ['pronto', 'publicado'].includes(v.status)).map((v) => `<option value="${v.id}">Na página do ${esc(v.marca)} ${esc(v.modelo)} ${esc(v.ano_modelo || '')}</option>`).join('')}</select>
+        <div class="chatlog" id="bt-log"></div>
+        <div class="ldnote" style="margin-top:8px"><input id="bt-x" placeholder="Escreva como cliente…"><button class="btn sm primary" type="button" id="bt-send">Enviar</button><button class="btn sm" type="button" id="bt-reset" title="Começar outra conversa">↺</button></div>
+        <p class="sub" id="bt-acoes"></p>
+      </div></div>`;
+  }
+  function crAssistenteBind() {
+    if ($('#bt-save')) $('#bt-save').onclick = async () => {
+      try { await api('PUT', '/api/crm/bot', { ativo: $('#bt-on').checked, nome: $('#bt-n').value, boas_vindas: $('#bt-bv').value, instrucoes: $('#bt-i').value, mostrar_preco: $('#bt-p').checked }); toast('Assistente salvo'); X.render(); }
+      catch (e) { toast(e.message); }
+    };
+    $$('[data-cv]').forEach((b) => { b.onclick = () => conversaModal(b.dataset.cv); });
+    let sid = '';
+    const log = $('#bt-log');
+    const add = (m) => {
+      const d = document.createElement('div'); d.className = `cm ${m.papel === 'user' ? 'u' : 'b'}`; d.textContent = m.texto; log.appendChild(d);
+      for (const v of m.veiculos || []) { const c = document.createElement('div'); c.className = 'cm b'; c.innerHTML = `${v.fotos?.[0] ? `<img src="${esc(v.fotos[0])}" alt="" style="width:100%;border-radius:6px">` : ''}<b>${esc(v.titulo)}</b> ${esc(v.ano)} · ${brl(v.preco)}${v.fotos?.length > 1 ? ` · ${v.fotos.length} fotos` : ''}`; log.appendChild(c); }
+      log.scrollTop = log.scrollHeight;
+    };
+    const ACOES = { lead: '✅ viraria lead no CRM', visita: '📅 agendaria a visita', humano: '🙋 chamaria um vendedor' };
+    const enviar = async (texto) => {
+      if (texto) add({ papel: 'user', texto });
+      try {
+        const r = await api('POST', '/api/crm/bot/test', { sid, texto, vehicle_id: $('#bt-v').value });
+        sid = r.sid; r.mensagens.forEach(add);
+        if (r.acoes?.length) $('#bt-acoes').textContent = 'Nesta conversa o assistente ' + r.acoes.map((a) => ACOES[a]).join(', ') + '.';
+        if (r.via === 'roteiro' && texto) $('#bt-acoes').textContent += ' (modo roteiro, sem IA)';
+      } catch (e) { add({ papel: 'bot', texto: e.message }); }
+    };
+    const reset = () => { sid = ''; log.innerHTML = ''; $('#bt-acoes').textContent = ''; enviar(''); };
+    $('#bt-send').onclick = () => { const t = $('#bt-x').value.trim(); if (!t) return; $('#bt-x').value = ''; enviar(t); };
+    $('#bt-x').onkeydown = (e) => { if (e.key === 'Enter') $('#bt-send').click(); };
+    $('#bt-reset').onclick = reset; $('#bt-v').onchange = reset;
+    reset();
+  }
+  async function conversaModal(sid) {
+    let D; try { D = await api('GET', `/api/crm/bot/conversas/${sid}`); } catch (e) { return toast(e.message); }
+    modal(`<h3>Conversa no site</h3><div class="chatlog" style="max-height:60vh">${D.mensagens.map((m) => `<div class="cm ${m.papel === 'user' ? 'u' : 'b'}">${esc(m.texto)}<span>${dh(m.created_at)}</span></div>`).join('')}</div>
+      <div class="modal-foot">${D.sessao.lead_id ? `<button class="btn" type="button" id="cv-l">Abrir lead</button>` : ''}<button class="btn primary" data-close type="button">Fechar</button></div>`, true);
+    if ($('#cv-l')) $('#cv-l').onclick = () => leadModal(D.sessao.lead_id);
+  }
+
+  /* ---- Leads dos portais por e-mail (v2.10) ---- */
+  async function crPortais() {
+    const E = can('config') ? await api('GET', '/api/crm/email') : null;
+    const im = E?.imap || {};
+    return `<div class="botwrap">
+      <div class="stack">
+        ${E ? `<div class="panel"><h2>Ler os e-mails dos portais automaticamente</h2>
+          <p class="lead">Webmotors, OLX, iCarros, Mobiauto, Mercado Livre e NaPista mandam um e-mail para cada interessado. Conecte a caixa que recebe esses e-mails e o GiroAuto cria o lead no CRM sozinho, a cada 3 minutos, já com o carro do anúncio.</p>
+          <details class="ktsec"><summary><b>Como fazer com Gmail</b></summary><ol class="sub" style="margin:8px 0 0 18px">
+            <li>Ative a verificação em duas etapas na conta Google que recebe os leads.</li>
+            <li>Abra <a class="link" href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">Senhas de app</a>, crie uma chamada "GiroAuto" e copie a senha de 16 letras.</li>
+            <li>Cole aqui o e-mail e essa senha (não use a senha normal do Gmail).</li>
+            <li>Dica: nos portais, cadastre esse e-mail para receber os leads (ou crie um filtro que encaminhe para ele).</li></ol></details>
+          <div class="fields" style="margin-top:10px">
+            <div class="f w3"><label for="em-u">E-mail</label><input id="em-u" value="${esc(im.user)}" placeholder="leads.loja@gmail.com" autocomplete="off"></div>
+            <div class="f w3"><label for="em-p">Senha de app</label><input id="em-p" type="password" placeholder="${im.tem_senha ? '•••••••• (salva)' : 'xxxx xxxx xxxx xxxx'}" autocomplete="new-password"></div>
+            <div class="f w3"><label for="em-h">Servidor IMAP</label><input id="em-h" value="${esc(im.host)}" placeholder="imap.gmail.com (preenche sozinho no Gmail/Outlook)"></div>
+            <div class="f w1"><label for="em-port">Porta</label><input id="em-port" value="${esc(im.port || 993)}" inputmode="numeric"></div>
+            <label class="f w6" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="em-on" ${im.ativo ? 'checked' : ''} style="width:auto"> Ler automaticamente</label>
+            <label class="f w6" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="em-all" ${im.todos ? 'checked' : ''} style="width:auto"> Ler todos os e-mails da caixa (não só dos portais conhecidos)</label>
+          </div>
+          ${im.erro ? `<div class="err">${esc(im.erro)}</div>` : im.ultimo_check ? `<p class="sub">Última leitura: ${fmtDate(im.ultimo_check)} ${new Date(im.ultimo_check).toLocaleTimeString('pt-BR').slice(0, 5)}</p>` : ''}
+          <div class="form-foot"><button class="btn" type="button" id="em-test">Testar conexão</button><button class="btn" type="button" id="em-now">Ler agora</button>${im.tem_senha ? '<button class="btn ghost danger" type="button" id="em-rm">Desconectar</button>' : ''}<button class="btn primary" type="button" id="em-save">Salvar</button></div></div>
+        <div class="panel"><h2>Ou encaminhe para um endereço</h2><p class="lead">Se você usa um serviço de e-mail com webhook (Cloudflare Email Routing, Mailgun, Postmark, SendGrid, Zapier/Make), aponte as mensagens para este endereço:</p>
+          <div class="copyrow"><input readonly value="${esc(E.webhook_url)}" id="em-wh"><button class="btn sm" type="button" id="em-cp">Copiar</button></div></div>` : ''}
+      </div>
+      <div class="stack">
+        <div class="panel"><h2>Colar um e-mail de portal</h2><p class="sub">Copie o e-mail do lead (o texto todo) e cole aqui: o GiroAuto acha nome, telefone, e-mail, mensagem e o carro.</p>
+          <textarea id="cl-t" rows="8" style="width:100%" placeholder="Cole aqui o conteúdo do e-mail do Webmotors, OLX, iCarros…"></textarea>
+          <div id="cl-prev"></div>
+          <div class="btnrow" style="margin-top:8px"><button class="btn" type="button" id="cl-ver">Ver o que foi encontrado</button><button class="btn primary" type="button" id="cl-ok">Criar lead</button></div></div>
+        ${E?.recentes?.length ? `<div class="panel"><h2>E-mails processados</h2><div class="rglist">${E.recentes.map((r) => `<div class="rgrow"><span><b>${esc(r.portal || 'e-mail')}</b> <span class="sub">${esc(r.assunto || '')} · ${dh(r.created_at)}</span>${r.erro ? `<br><span class="sub">${esc(r.erro)}</span>` : ''}</span>${r.lead_id ? `<button class="btn sm" type="button" data-lead="${r.lead_id}">Lead</button>` : `<span class="pill ${r.status === 'ok' ? 'p-ok' : 'p-muted'}">${esc(r.status)}</span>`}<span></span></div>`).join('')}</div></div>` : ''}
+      </div></div>`;
+  }
+  function crPortaisBind() {
+    const body = () => ({ user: $('#em-u').value, senha: $('#em-p').value, host: $('#em-h').value, port: $('#em-port').value, ativo: $('#em-on').checked, todos: $('#em-all').checked });
+    if ($('#em-save')) $('#em-save').onclick = async () => { try { await api('PUT', '/api/crm/email', body()); toast('Configuração salva'); X.render(); } catch (e) { toast(e.message, 6000); } };
+    if ($('#em-test')) $('#em-test').onclick = async () => {
+      try { if ($('#em-p').value || $('#em-u').value) await api('PUT', '/api/crm/email', { ...body(), ativo: false }); await api('POST', '/api/crm/email/check', { teste: true }); toast('Conexão OK! Marque "Ler automaticamente" e salve.', 5000); }
+      catch (e) { toast(e.message, 7000); }
+    };
+    if ($('#em-now')) $('#em-now').onclick = async () => { try { const r = await api('POST', '/api/crm/email/check', {}); toast(`${r.lidos} e-mail(s) de portal lido(s), ${r.leads} lead(s).`, 5000); X.render(); } catch (e) { toast(e.message, 7000); } };
+    if ($('#em-rm')) $('#em-rm').onclick = async () => { await api('PUT', '/api/crm/email', { remover: true }); toast('Caixa desconectada'); X.render(); };
+    if ($('#em-cp')) $('#em-cp').onclick = () => { (X.copyText || ((t) => navigator.clipboard.writeText(t)))($('#em-wh').value); toast('Endereço copiado'); };
+    $('#cl-ver').onclick = async () => {
+      try {
+        const r = await api('POST', '/api/crm/email/colar', { preview: true, texto: $('#cl-t').value });
+        const d = r.dados;
+        $('#cl-prev').innerHTML = `<div class="${d.telefone || d.email ? 'okbox' : 'warnbox'}" style="margin-top:8px">Portal: <b>${esc(d.portal_nome || d.portal || 'não identificado')}</b> · Nome: <b>${esc(d.nome || '—')}</b> · Telefone: <b>${esc(d.telefone || '—')}</b> · E-mail: <b>${esc(d.email || '—')}</b>${d.mensagem ? `<br>Mensagem: ${esc(d.mensagem)}` : ''}<br>Carro: <b>${esc(r.veiculo?.titulo || d.veiculo || 'não identificado')}</b></div>`;
+      } catch (e) { toast(e.message); }
+    };
+    $('#cl-ok').onclick = async () => {
+      try {
+        const r = await api('POST', '/api/crm/email/colar', { texto: $('#cl-t').value });
+        if (!r.ok) return toast(r.erro || 'Não consegui ler esse e-mail.', 6000);
+        toast(r.novo ? 'Lead criado' : 'Contato registrado no lead em aberto'); $('#cl-t').value = ''; $('#cl-prev').innerHTML = ''; leadModal(r.lead_id);
       } catch (e) { toast(e.message); }
     };
   }

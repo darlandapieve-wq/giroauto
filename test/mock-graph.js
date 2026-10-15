@@ -34,6 +34,13 @@ function createMock() {
   app.post(/^\/(v1|v1beta)\/models\/([^/:]+):generateContent$/, async (req, res) => {
     state.geminiCalls.push({ version: req.params[0], model: req.params[1], body: req.body });
     if (state.geminiFail) return res.status(429).json({ error: { message: 'Resource has been exhausted (e.g. check quota).' } });
+    // Chat/extração de texto (v2.10): sem imagem na requisição, devolve a próxima resposta JSON combinada no teste.
+    const temImagem = (req.body.contents || []).some((c) => (c.parts || []).some((p) => p.inline_data || p.inlineData));
+    if (!temImagem) {
+      if (state.chatFail) return res.status(500).json({ error: { message: 'falha simulada' } });
+      const next = (state.chatReplies || []).shift() || { resposta: 'Olá! Como posso ajudar?' };
+      return res.json({ candidates: [{ content: { parts: [{ text: JSON.stringify(next) }] } }] });
+    }
     const { createCanvas, loadImage } = require('@napi-rs/canvas');
     const c = createCanvas(864, 1080); const ctx = c.getContext('2d'); ctx.fillStyle = '#556677'; ctx.fillRect(0, 0, 864, 1080);
     // Devolve a própria foto enviada (recortada em 4:5) com um tom azulado, para parecer uma edição.
