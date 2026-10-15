@@ -2,6 +2,18 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.7 — 15/10/2026
+
+**Acesso do desenvolvedor e canal de sugestões e erros**
+
+- **Sugestões e erros** (link no rodapé do menu, para todos os usuários): informar erro/problema, melhoria, nova funcionalidade, dúvida ou outro, com resumo, detalhes e a tela. A versão e o navegador vão junto. Cada loja vê o que já enviou, a situação e a resposta do desenvolvedor.
+- **Desenvolvedor** (item do menu visível só para o administrador do sistema):
+  - Indicadores gerais: lojas (novas e ativas em 7/30 dias), usuários e acessos, veículos, vendas e faturamento em 30 dias, publicações e falhas da extensão, extensões ativas, lojas com Meta, contatos, mensagens e apontamentos abertos.
+  - **Lojas**: tabela com dono, cadastro, último acesso, usuários, estoque, publicados, vendas e faturamento em 30 dias, extensão, Meta, contatos e apontamentos; cada loja abre um detalhe com usuários (último acesso), extensão, apontamentos e atividade.
+  - **Sugestões e erros**: caixa de entrada com filtros por situação e tipo; definir situação (novo, em análise, planejado, em desenvolvimento, feito, não será feito), prioridade e responder para a loja.
+  - **Atividade**: novas lojas, veículos e vendas por mês e a atividade recente de todas as lojas.
+- O último acesso de cada usuário passa a ser registrado.
+
 ## v2.6.2 — 14/10/2026
 
 - **Lucro das vendas com troca**: passa a entrar nos Resultados, DRE e Painel **na data da venda** (decisão da loja). Não há lucro em dobro: o carro da troca entra no estoque com custo igual ao valor dado na troca, e na venda dele só a diferença vira lucro. Resultados mostram "Trocas no estoque" (carros recebidos na troca ainda à venda) como informação.

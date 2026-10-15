@@ -304,6 +304,24 @@ addColumn('store_expenses', 'vehicle_id', 'INTEGER');
 addColumn('store_expenses', 'pago', 'INTEGER NOT NULL DEFAULT 1');
 addColumn('store_expenses', 'pago_em', 'TEXT');
 addColumn('stores', 'wa_cloud', "TEXT NOT NULL DEFAULT '{}'");
+// v2.7: último acesso dos usuários e canal de sugestões/erros (visto pelo desenvolvedor).
+addColumn('users', 'last_seen', 'TEXT');
+db.exec(`CREATE TABLE IF NOT EXISTS feedback (
+  id INTEGER PRIMARY KEY,
+  store_id INTEGER REFERENCES stores(id) ON DELETE SET NULL,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  tipo TEXT NOT NULL DEFAULT 'melhoria',
+  titulo TEXT NOT NULL,
+  descricao TEXT DEFAULT '',
+  tela TEXT DEFAULT '',
+  versao TEXT DEFAULT '',
+  navegador TEXT DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'novo',
+  prioridade TEXT DEFAULT '',
+  resposta TEXT DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`);
 // v2.5: contato de quem vendeu o carro para a loja, troca ligada a outro veículo e composição do pagamento.
 for (const [col, def] of [
   ['compra_de_tel', "TEXT DEFAULT ''"], ['venda_troca_id', 'INTEGER'], ['troca_de_id', 'INTEGER'],

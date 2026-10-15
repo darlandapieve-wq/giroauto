@@ -32,12 +32,14 @@ function loadUser(req, _res, next) {
   const token = parseCookies(req.headers.cookie)[COOKIE];
   if (token) {
     const row = get(
-      `SELECT u.id, u.name, u.email, u.role, u.store_id, u.permissions, u.active, s.expires_at
+      `SELECT u.id, u.name, u.email, u.role, u.store_id, u.permissions, u.active, u.last_seen, s.expires_at
        FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?`,
       sha256(token),
     );
     if (row && row.expires_at > Date.now() && row.active) {
       req.user = { id: row.id, name: row.name, email: row.email, role: row.role, storeId: row.store_id, perms: require('./team').permsOf(row) };
+      // Último acesso (para o painel do desenvolvedor), gravado no máximo a cada 5 minutos.
+      if (!row.last_seen || Date.parse(row.last_seen.replace(' ', 'T') + 'Z') < Date.now() - 300e3) run("UPDATE users SET last_seen = datetime('now') WHERE id = ?", row.id);
     }
   }
   next();

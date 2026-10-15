@@ -1743,6 +1743,106 @@
     if ($('#wa-rm')) $('#wa-rm').onclick = async () => { await api('PUT', '/api/wa/config', { remover: true }); $('#cfgWa').remove(); waConfigPanel(); };
   }
 
+  /* ======================= Sugestões e erros (todos) ======================= */
+  async function feedbackModal() {
+    const F = await api('GET', '/api/feedback').catch(() => ({ itens: [], tipos: {} }));
+    const tipos = Object.entries(F.tipos || { erro: 'Erro / problema', melhoria: 'Melhoria', funcionalidade: 'Nova funcionalidade', duvida: 'Dúvida', outro: 'Outro' });
+    const telaAtual = ({ painel: 'Painel', estoque: 'Estoque', novo: 'Cadastro do veículo', republicacao: 'Republicação', campanhas: 'Campanhas', gestao: 'Gestão', resultados: 'Resultados', equipe: 'Equipe', config: 'Configurações' })[S.view] || S.view || '';
+    modal(`<h3>Sugestões e erros</h3>
+      <p class="lead">Conte o que deu errado ou o que poderia ser melhor. Toda mensagem é lida pelo desenvolvedor e a resposta aparece aqui embaixo.</p>
+      <div class="chips" role="radiogroup">${tipos.map(([k, l], i) => `<label class="chip"><input type="radio" name="fb-t" value="${k}" ${i === 0 ? 'checked' : ''}> ${esc(l)}</label>`).join('')}</div>
+      <div class="fields">
+        <div class="f w6"><label for="fb-ti">Resumo</label><input id="fb-ti" maxlength="140" placeholder="Ex.: a busca pela placa não preencheu o modelo"></div>
+        <div class="f w6"><label for="fb-de">Detalhes</label><textarea id="fb-de" rows="4" placeholder="O que você fez, o que esperava e o que aconteceu. Para ideias: como imagina que funcione."></textarea></div>
+        <div class="f w3"><label for="fb-te">Onde (tela)</label><input id="fb-te" value="${esc(telaAtual)}"></div>
+      </div>
+      <div class="err" id="fb-err" hidden></div>
+      <div class="modal-foot"><button class="btn" data-close type="button">Fechar</button><button class="btn primary" id="fb-ok" type="button">Enviar</button></div>
+      ${F.itens.length ? `<h4>Enviados pela loja</h4><div class="timeline">${F.itens.map((f) => `<div><b>${esc(f.titulo)}</b> <span class="pill ${f.status === 'feito' ? 'p-ok' : f.status === 'descartado' ? 'p-muted' : f.status === 'novo' ? 'p-warn' : 'p-info'}">${esc(f.status_label)}</span> <span class="sub">${esc(f.tipo_label)} · ${fmtDate(f.created_at)}</span>${f.resposta ? `<br><span class="sub">💬 Resposta: ${esc(f.resposta)}</span>` : ''}</div>`).join('')}</div>` : ''}`, true);
+    $('#fb-ok').onclick = async () => {
+      try {
+        await api('POST', '/api/feedback', { tipo: $('input[name="fb-t"]:checked').value, titulo: $('#fb-ti').value, descricao: $('#fb-de').value, tela: $('#fb-te').value, versao: S.me.version, navegador: navigator.userAgent });
+        toast('Obrigado! Recebemos seu apontamento.'); feedbackModal();
+      } catch (e) { $('#fb-err').textContent = e.message; $('#fb-err').hidden = false; }
+    };
+  }
+
+  /* ======================= Desenvolvedor (v2.7) ======================= */
+  const DV = { tab: 'lojas', st: 'abertos', tp: '' };
+  const quando = (d) => { if (!d) return '—'; const dias = Math.floor((Date.now() - Date.parse(String(d).replace(' ', 'T') + (String(d).includes('Z') ? '' : 'Z'))) / 864e5); return dias <= 0 ? 'hoje' : dias === 1 ? 'ontem' : `há ${dias} dias`; };
+  X.views.dev = {
+    async html() {
+      if (!S.me.user.is_admin) return '<div class="err">Acesso só para o desenvolvedor do sistema.</div>';
+      const [O, F] = await Promise.all([api('GET', '/api/dev/overview'), api('GET', '/api/dev/feedback')]);
+      X._dev = { O, F };
+      const k = O.kpis;
+      const t = (l, v, sub = '', cls = '') => `<div class="pt ${cls}" style="cursor:default"><span>${l}</span><b>${v}</b>${sub ? `<em>${sub}</em>` : ''}</div>`;
+      const abertos = ['novo', 'analise', 'planejado', 'andamento'];
+      const fb = F.itens.filter((f) => (DV.st === 'abertos' ? abertos.includes(f.status) : DV.st ? f.status === DV.st : true) && (!DV.tp || f.tipo === DV.tp));
+      let body = '';
+      if (DV.tab === 'lojas') {
+        body = `<div class="table-wrap"><table class="tbl compact devt"><thead><tr><th>Loja</th><th>Dono</th><th>Cadastro</th><th>Último acesso</th><th class="r">Usuários</th><th class="r">Estoque</th><th class="r">Publicados</th><th class="r">Vendas 30d</th><th class="r">Fatur. 30d</th><th>Extensão</th><th>Meta</th><th class="r">Contatos</th><th class="r">Apont.</th></tr></thead><tbody>
+          ${O.lojas.map((l) => `<tr><td><button class="vlink" type="button" data-dl="${l.id}">${esc(l.name)}</button><br><span class="sub">${esc([l.city, l.state].filter(Boolean).join('/'))}${l.whatsapp ? ` · <a class="link" href="${esc(waLink(l.whatsapp))}" target="_blank" rel="noopener">WhatsApp</a>` : ''}</span></td>
+            <td>${esc(l.nome_dono || '')}<br><span class="sub">${esc(l.email_dono || '')}</span></td><td>${fmtDate(l.created_at)}</td>
+            <td><span class="${l.ultimo_acesso && Date.now() - Date.parse(l.ultimo_acesso.replace(' ', 'T') + 'Z') > 14 * 864e5 ? 'neg' : ''}">${quando(l.ultimo_acesso)}</span></td>
+            <td class="r">${l.usuarios}</td><td class="r">${l.estoque}</td><td class="r">${l.publicados}</td><td class="r">${l.vendidos_30}</td><td class="r">${brl(l.faturamento_30)}</td>
+            <td>${l.extensao_vista ? quando(l.extensao_vista) : '<span class="sub">não pareada</span>'}</td><td>${l.meta_ok ? '<span class="pill p-ok">ok</span>' : '<span class="sub">—</span>'}</td>
+            <td class="r">${l.contatos}</td><td class="r">${l.feedbacks}</td></tr>`).join('') || '<tr><td colspan="13" class="sub">Nenhuma loja.</td></tr>'}</tbody></table></div>`;
+      }
+      if (DV.tab === 'feedback') {
+        body = `<div class="toolbar" style="gap:8px;flex-wrap:wrap;margin-bottom:8px">
+            <div class="chips">${[['abertos', 'Abertos'], ['novo', 'Novos'], ['feito', 'Feitos'], ['descartado', 'Descartados'], ['', 'Todos']].map(([s2, l]) => `<button class="chip" type="button" data-dst="${s2}" aria-pressed="${DV.st === s2}">${l}</button>`).join('')}</div>
+            <select id="dv-tp" style="width:auto"><option value="">Todos os tipos</option>${Object.entries(F.tipos).map(([k2, l]) => `<option value="${k2}" ${DV.tp === k2 ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
+          <div class="fblist">${fb.map((f) => `<div class="fbitem ${f.tipo === 'erro' ? 'erro' : ''}">
+              <div class="fbh"><b>${esc(f.titulo)}</b><span class="pill ${f.tipo === 'erro' ? 'p-bad' : f.tipo === 'funcionalidade' ? 'p-info' : 'p-muted'}">${esc(f.tipo_label)}</span><span class="sub">${esc(f.loja || '—')} · ${esc(f.usuario || '')} ${f.email ? `(${esc(f.email)})` : ''} · ${fmtDate(f.created_at)}${f.tela ? ` · tela: ${esc(f.tela)}` : ''}${f.versao ? ` · v${esc(f.versao)}` : ''}</span></div>
+              ${f.descricao ? `<p class="fbd">${esc(f.descricao)}</p>` : ''}
+              <div class="fields fbf"><div class="f"><label>Situação</label><select data-fs="${f.id}">${opt(Object.entries(F.status), f.status)}</select></div><div class="f"><label>Prioridade</label><select data-fp="${f.id}">${opt(Object.entries(F.prioridades), f.prioridade || '')}</select></div>
+                <div class="f w3"><label>Resposta para a loja</label><input data-fr="${f.id}" value="${esc(f.resposta || '')}" placeholder="Aparece para a loja em Sugestões e erros"></div>
+                <div class="f" style="align-self:end"><button class="btn sm primary" type="button" data-fsave="${f.id}">Salvar</button></div></div></div>`).join('') || '<p class="sub">Nenhum apontamento com esses filtros.</p>'}</div>`;
+      }
+      if (DV.tab === 'atividade') {
+        const max = Math.max(1, ...O.meses.map((m) => Math.max(m.lojas, m.vendas)));
+        const nm = (x) => new Date(x + '-15').toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
+        body = `<div class="grid2 eq"><div class="panel"><h2>Últimos 6 meses</h2><div class="table-wrap"><table class="tbl compact"><thead><tr><th>Mês</th><th class="r">Novas lojas</th><th class="r">Veículos cadastrados</th><th class="r">Vendas</th></tr></thead><tbody>${O.meses.map((m) => `<tr><td>${nm(m.mes)}</td><td class="r">${m.lojas}</td><td class="r">${m.veiculos}</td><td class="r">${m.vendas}</td></tr>`).join('')}</tbody></table></div><span class="sub" hidden>${max}</span></div>
+          <div class="panel"><h2>Atividade recente (todas as lojas)</h2><div class="timeline" style="max-height:420px">${O.eventos.map((e) => `<div><b>${esc(e.loja)}</b>: ${esc(e.message)} <span class="sub">${fmtDate(e.created_at)} · ${quando(e.created_at)}</span></div>`).join('') || '<p class="sub">Sem eventos.</p>'}</div></div></div>`;
+      }
+      return `<div class="head"><div><h1>Desenvolvedor</h1><p>Visão geral do GiroAuto v${esc(O.versao)}: lojas, uso e apontamentos dos usuários. Só você vê esta tela.</p></div></div>
+        <div class="ptiles">
+          ${t('Lojas', k.lojas, `${k.novas_30} novas em 30 dias`)}${t('Ativas 7 dias', k.ativas_7, `${k.ativas_30} em 30 dias`, k.ativas_7 ? 'ok' : '')}${t('Usuários', k.usuarios, `${k.usuarios_7} acessaram em 7 dias`)}
+          ${t('Veículos', k.veiculos, `${k.estoque} em estoque · ${k.publicados} publicados`)}${t('Vendas 30 dias', k.vendidos_30, brl(k.faturamento_30))}
+          ${t('Publicações 30d', k.publicacoes_30, `${k.falhas_30} falhas`, k.falhas_30 > k.publicacoes_30 ? 'warn' : '')}${t('Extensões ativas', k.extensoes_ativas, `${k.meta_conectadas} com Meta`)}
+          ${t('Contatos', k.contatos, `${k.mensagens} mensagens enviadas`)}${t('Apontamentos', k.feedback_abertos, `${k.feedback_novos} novos`, k.feedback_novos ? 'warn' : '')}
+        </div>
+        <div class="chips tabs" style="margin:10px 0">${[['lojas', `Lojas (${k.lojas})`], ['feedback', `Sugestões e erros (${k.feedback_abertos})`], ['atividade', 'Atividade']].map(([k2, l]) => `<button class="chip" type="button" data-dt="${k2}" aria-pressed="${DV.tab === k2}">${l}</button>`).join('')}</div>
+        ${body}`;
+    },
+    bind() {
+      $$('[data-dt]').forEach((b) => { b.onclick = () => { DV.tab = b.dataset.dt; X.render(); }; });
+      $$('[data-dst]').forEach((b) => { b.onclick = () => { DV.st = b.dataset.dst; X.render(); }; });
+      $('#dv-tp') && ($('#dv-tp').onchange = () => { DV.tp = $('#dv-tp').value; X.render(); });
+      $$('[data-fsave]').forEach((b) => {
+        b.onclick = async () => {
+          const id = b.dataset.fsave;
+          try { await api('PUT', `/api/dev/feedback/${id}`, { status: $(`[data-fs="${id}"]`).value, prioridade: $(`[data-fp="${id}"]`).value, resposta: $(`[data-fr="${id}"]`).value }); toast('Apontamento atualizado'); X.render(); }
+          catch (e) { toast(e.message); }
+        };
+      });
+      $$('[data-dl]').forEach((b) => { b.onclick = () => devStoreModal(Number(b.dataset.dl)); });
+    },
+  };
+  async function devStoreModal(id) {
+    let D; try { D = await api('GET', `/api/dev/stores/${id}`); } catch (e) { return toast(e.message); }
+    const st = Object.fromEntries(D.status.map((x) => [x.status, x.n]));
+    modal(`<h3>${esc(D.loja.name)} <span class="sub">${esc([D.loja.city, D.loja.state].filter(Boolean).join('/'))}</span></h3>
+      <p class="sub">Cadastrada em ${fmtDate(D.loja.created_at)} · publicação: ${esc(D.loja.pub_mode || '—')} · <a class="link" href="/v/${esc(D.loja.slug)}" target="_blank" rel="noopener">vitrine</a></p>
+      <div class="pchips"><span><b>${st.rascunho || 0}</b> rascunhos</span><span><b>${st.pronto || 0}</b> prontos</span><span><b>${st.publicado || 0}</b> publicados</span><span><b>${st.vendido || 0}</b> vendidos</span></div>
+      <h4>Usuários</h4><div class="rglist">${D.usuarios.map((u) => `<div class="rgrow"><span><b>${esc(u.name)}</b> <span class="sub">${esc(u.email)} · ${u.role === 'admin' ? 'administrador' : 'vendedor'}${u.active ? '' : ' · desativado'}</span></span><span class="sub">último acesso: ${quando(u.last_seen)}</span><span></span></div>`).join('')}</div>
+      <h4>Extensão</h4><p class="sub">${D.extensao.length ? D.extensao.map((x) => `${esc(x.label)} · vista ${quando(x.last_seen)}`).join(' · ') : 'Não pareada.'}</p>
+      ${D.feedback.length ? `<h4>Apontamentos</h4><div class="timeline">${D.feedback.map((f) => `<div><b>${esc(f.titulo)}</b> <span class="sub">${esc(f.tipo_label)} · ${esc(f.status_label)} · ${fmtDate(f.created_at)}</span></div>`).join('')}</div>` : ''}
+      <h4>Atividade recente</h4><div class="timeline">${D.eventos.map((e) => `<div>${esc(e.message)} <span class="sub">${fmtDate(e.created_at)}</span></div>`).join('') || '<p class="sub">Sem eventos.</p>'}</div>
+      <div class="modal-foot"><button class="btn primary" data-close type="button">Fechar</button></div>`, true);
+  }
+
   /* ======================= Navegação e app instalável ======================= */
   function navSetup() {
     const nav = $('.nav'); if (!nav || $('[data-view="gestao"]')) return;
@@ -1753,7 +1853,10 @@
       <button data-view="gestao"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v16"/></svg>Gestão</button>
       ${can('gestao') ? '<button data-view="resultados"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Resultados</button>' : ''}
       ${owner() ? '<button data-view="equipe"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.2"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2A5 5 0 0 1 21 19"/></svg>Equipe</button>' : ''}`);
-    $$('.nav [data-view="gestao"], .nav [data-view="resultados"], .nav [data-view="equipe"], .nav [data-view="painel"]').forEach((b) => b.addEventListener('click', () => { if (location.hash === '#' + b.dataset.view) X.route(); else location.hash = b.dataset.view; }));
+    if (S.me.user.is_admin) cfg.insertAdjacentHTML('afterend', '<button data-view="dev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></svg>Desenvolvedor</button>');
+    if (!$('#fbLink')) $('.side-foot .store')?.insertAdjacentHTML('beforebegin', '<button class="btn ghost sm" id="fbLink" type="button" title="Informar erros e sugerir melhorias">💬 Sugestões e erros</button>');
+    if ($('#fbLink')) $('#fbLink').onclick = () => feedbackModal();
+    $$('.nav [data-view="gestao"], .nav [data-view="resultados"], .nav [data-view="equipe"], .nav [data-view="painel"], .nav [data-view="dev"]').forEach((b) => b.addEventListener('click', () => { if (location.hash === '#' + b.dataset.view) X.route(); else location.hash = b.dataset.view; }));
     // Esconde o que o vendedor não pode usar
     if (!can('campanhas')) nav.querySelector('[data-view="campanhas"]')?.setAttribute('hidden', '');
     if (!can('cadastrar')) nav.querySelector('[data-view="novo"]')?.setAttribute('hidden', '');

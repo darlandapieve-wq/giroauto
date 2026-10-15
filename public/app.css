@@ -588,3 +588,16 @@ main{gap:12px;padding-block:16px 40px;padding-inline:clamp(12px,2.2vw,28px)}
   .pt b{font-size:18px}
   .pt em{font-size:10.5px}
 }
+/* v2.7: desenvolvedor e sugestões */
+.devt td{white-space:nowrap}
+.devt td:first-child,.devt td:nth-child(2){white-space:normal}
+.fblist{display:flex;flex-direction:column;gap:8px}
+.fbitem{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--info);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:4px}
+.fbitem.erro{border-left-color:var(--bad)}
+.fbh{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.fbd{margin:0;white-space:pre-line;font-size:13px}
+.fbf{margin-top:2px}
+#fbLink{justify-content:flex-start;font-size:12px}
+.fbf{grid-template-columns:170px 140px minmax(0,1fr) auto!important;align-items:end}
+.fbf .f{grid-column:auto!important}
+@media (max-width:760px){.fbf{grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important}.fbf .f.w3{grid-column:span 2!important}}

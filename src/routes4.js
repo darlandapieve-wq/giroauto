@@ -9,6 +9,15 @@ const { get } = require('./db');
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
 function register(app) {
+  /* ---------------- Sugestões e erros (todos os usuários) e acesso do desenvolvedor (v2.7) ---------------- */
+  const DEV = require('./dev');
+  app.post('/api/feedback', auth.requireUser, (req, res) => res.status(201).json({ id: Number(DEV.createFeedback(req.user, req.body || {})) }));
+  app.get('/api/feedback', auth.requireUser, (req, res) => res.json({ itens: DEV.myFeedback(req.user), tipos: DEV.TIPOS }));
+  app.get('/api/dev/overview', DEV.requireDev, (req, res) => res.json(DEV.overview()));
+  app.get('/api/dev/stores/:sid', DEV.requireDev, (req, res) => res.json(DEV.storeDetail(req.params.sid)));
+  app.get('/api/dev/feedback', DEV.requireDev, (req, res) => res.json({ itens: DEV.feedbackList(), tipos: DEV.TIPOS, status: DEV.STATUS, prioridades: DEV.PRIORIDADES }));
+  app.put('/api/dev/feedback/:fid', DEV.requireDev, (req, res) => { DEV.updateFeedback(req.params.fid, req.body || {}); res.json({ ok: true }); });
+
   /* ---------------- Painel ---------------- */
   app.get('/api/painel', team.can('gestao'), (req, res) => res.json(painel(req.user.storeId, req.query, req.user.perms.has('financeiro'))));
 

@@ -994,6 +994,40 @@ test('v2.5: venda com troca (lucro realizado em cadeia), financiamento, boleto e
   assert.ok(r.body.contatos.find((c) => c.telefone === '44933332222').papeis.includes('vendeu'));
 });
 
+test('v2.7: sugestões e erros dos usuários e acesso do desenvolvedor', async () => {
+  const adminCookie = cookie;
+  // Vendedor envia um erro e uma ideia; não acessa a área do desenvolvedor.
+  cookie = '';
+  await api('POST', '/api/auth/login', { email: 'carlos@x.com', senha: 'vende1234' });
+  let r = await api('POST', '/api/feedback', { tipo: 'erro', titulo: 'Placa não preencheu', descricao: 'Tentei ART9H77', tela: 'Cadastro do veículo', versao: '2.7.0' });
+  assert.equal(r.status, 201);
+  const fid = r.body.id;
+  r = await api('POST', '/api/feedback', { tipo: 'funcionalidade', titulo: '' });
+  assert.equal(r.status, 400);
+  r = await api('GET', '/api/dev/overview'); assert.equal(r.status, 403);
+  r = await api('GET', '/api/dev/feedback'); assert.equal(r.status, 403);
+  const me = (await api('GET', '/api/me')).body.user;
+  assert.equal(me.is_admin, false);
+  // Desenvolvedor (primeiro usuário do sistema) vê lojas, métricas e apontamentos e responde.
+  cookie = adminCookie;
+  r = await api('GET', '/api/dev/overview');
+  assert.equal(r.status, 200);
+  assert.ok(r.body.kpis.lojas >= 1 && r.body.kpis.usuarios >= 2 && r.body.kpis.feedback_novos >= 1);
+  const loja = r.body.lojas.find((l) => l.feedbacks >= 1);
+  assert.ok(loja && loja.usuarios >= 2 && loja.ultimo_acesso, 'último acesso registrado');
+  r = await api('GET', `/api/dev/stores/${loja.id}`);
+  assert.ok(r.body.usuarios.some((u) => u.email === 'carlos@x.com'));
+  r = await api('GET', '/api/dev/feedback');
+  const item = r.body.itens.find((x) => x.id === fid);
+  assert.equal(item.usuario, 'Carlos Vendedor'); assert.equal(item.tipo_label, 'Erro / problema'); assert.equal(item.status, 'novo');
+  r = await api('PUT', `/api/dev/feedback/${fid}`, { status: 'feito', prioridade: 'alta', resposta: 'Corrigido na v2.7' });
+  assert.equal(r.status, 200);
+  // A loja vê a resposta.
+  r = await api('GET', '/api/feedback');
+  const meu = r.body.itens.find((x) => x.id === fid);
+  assert.equal(meu.status_label, 'Feito'); assert.equal(meu.resposta, 'Corrigido na v2.7');
+});
+
 test('v2.0: agenda de republicação, QR, folha A4, painel TV e fotos prontas', async () => {
   const sched = require('../src/schedule');
   const db = require('../src/db');
