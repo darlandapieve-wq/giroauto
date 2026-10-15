@@ -1764,7 +1764,7 @@
   async function feedbackModal() {
     const F = await api('GET', '/api/feedback').catch(() => ({ itens: [], tipos: {} }));
     const tipos = Object.entries(F.tipos || { erro: 'Erro / problema', melhoria: 'Melhoria', funcionalidade: 'Nova funcionalidade', duvida: 'Dúvida', outro: 'Outro' });
-    const telaAtual = ({ painel: 'Painel', estoque: 'Estoque', novo: 'Cadastro do veículo', republicacao: 'Republicação', campanhas: 'Campanhas', gestao: 'Gestão', contratos: 'Contratos', resultados: 'Resultados', equipe: 'Equipe', config: 'Configurações' })[S.view] || S.view || '';
+    const telaAtual = ({ painel: 'Painel', estoque: 'Estoque', novo: 'Cadastro do veículo', republicacao: 'Republicação', campanhas: 'Campanhas', gestao: 'Gestão', crm: 'CRM', contratos: 'Contratos', resultados: 'Resultados', equipe: 'Equipe', config: 'Configurações' })[S.view] || S.view || '';
     modal(`<h3>Sugestões e erros</h3>
       <p class="lead">Conte o que deu errado ou o que poderia ser melhor. Toda mensagem é lida pelo desenvolvedor e a resposta aparece aqui embaixo.</p>
       <div class="chips" role="radiogroup">${tipos.map(([k, l], i) => `<label class="chip"><input type="radio" name="fb-t" value="${k}" ${i === 0 ? 'checked' : ''}> ${esc(l)}</label>`).join('')}</div>
@@ -1858,6 +1858,357 @@
       ${D.feedback.length ? `<h4>Apontamentos</h4><div class="timeline">${D.feedback.map((f) => `<div><b>${esc(f.titulo)}</b> <span class="sub">${esc(f.tipo_label)} · ${esc(f.status_label)} · ${fmtDate(f.created_at)}</span></div>`).join('')}</div>` : ''}
       <h4>Atividade recente</h4><div class="timeline">${D.eventos.map((e) => `<div>${esc(e.message)} <span class="sub">${fmtDate(e.created_at)}</span></div>`).join('') || '<p class="sub">Sem eventos.</p>'}</div>
       <div class="modal-foot"><button class="btn primary" data-close type="button">Fechar</button></div>`, true);
+  }
+
+  /* ======================= CRM (v2.9) ======================= */
+  const CR = { tab: 'funil', q: '', origem: '', vend: '', meus: false, meta: null, resumoEm: 0 };
+  const podeCrm = () => can('vender') || can('gestao');
+  const quandoCurto = (d) => {
+    if (!d) return '';
+    const min = Math.floor((Date.now() - Date.parse(String(d).replace(' ', 'T') + (String(d).includes('Z') ? '' : 'Z'))) / 60000);
+    if (min < 1) return 'agora'; if (min < 60) return `${min} min`; if (min < 1440) return `${Math.floor(min / 60)} h`; return `${Math.floor(min / 1440)} d`;
+  };
+  const dh = (s) => { const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/); return m ? `${m[3]}/${m[2]} ${m[4]}:${m[5]}` : fmtDate(s); };
+  const primeiroNome = (n) => String(n || '').trim().split(/\s+/)[0] || '';
+  const tempIco = { quente: '🔥', morno: '🌤️', frio: '❄️' };
+  async function crMeta(force) {
+    if (!CR.meta || force) CR.meta = await api('GET', '/api/crm/meta');
+    return CR.meta;
+  }
+  function waLead(l, veic) {
+    const msg = `Olá${l.nome ? ' ' + primeiroNome(l.nome) : ''}! Aqui é ${primeiroNome(S.me.user.name)}, da ${S.me.store.name}.${veic ? ` Vi seu interesse no ${veic}.` : ''} Como posso te ajudar?`;
+    return waLink(l.telefone, msg);
+  }
+  function waVisita(x) {
+    const [d, h] = String(x.data_hora).split(' ');
+    const dia = d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : '';
+    const msg = `Olá${x.lead_nome ? ' ' + primeiroNome(x.lead_nome) : ''}! Aqui é da ${S.me.store.name}. Confirmando sua ${(x.tipo_label || 'visita').toLowerCase()} em ${dia} às ${String(h || '').slice(0, 5)}${x.veiculo ? ` para ver o ${x.veiculo}` : ''}.${S.me.store.address ? ` Endereço: ${S.me.store.address}${S.me.store.city ? ', ' + S.me.store.city : ''}.` : ''} Podemos confirmar?`;
+    return waLink(x.lead_tel, msg);
+  }
+
+  X.views.crm = {
+    async html() {
+      if (!podeCrm()) return '<div class="err">Seu acesso não inclui o CRM.</div>';
+      const M = await crMeta(true);
+      const R = M.resumo;
+      const tabs = [['funil', 'Funil'], ['agenda', 'Agenda'], ['tarefas', 'Tarefas'], can('gestao') && ['relatorio', 'Relatório'], can('config') && ['config', 'Configurar']].filter(Boolean);
+      if (!tabs.some((t) => t[0] === CR.tab)) CR.tab = 'funil';
+      let body = '';
+      if (CR.tab === 'funil') body = await crFunil(M);
+      if (CR.tab === 'agenda') body = await crAgenda(M);
+      if (CR.tab === 'tarefas') body = await crTarefas(M);
+      if (CR.tab === 'relatorio') body = await crRelatorio(M);
+      if (CR.tab === 'config') body = crConfig(M);
+      const t = (l, v, sub, cls, go) => `<div class="pt ${cls || ''}" ${go ? `data-crgo="${go}" role="button" tabindex="0"` : 'style="cursor:default"'}><span>${l}</span><b>${v}</b>${sub ? `<em>${sub}</em>` : ''}</div>`;
+      return `<div class="head"><div><h1>CRM</h1><p>Todos os interessados num lugar só: do site, do QR code no carro, do assistente, dos portais e os que você cadastrar. Cada lead tem histórico, vendedor, visitas e tarefas.</p></div>
+          <div class="btnrow"><button class="btn primary" type="button" id="crNovo">+ Novo lead</button></div></div>
+        <div class="pgrid crk">${t('Novos', R.novos, 'esperando atendimento', R.novos ? 'warn' : '', 'funil')}${t('Sem resposta', R.atrasados, `há mais de ${M.config.sla_min} min`, R.atrasados ? 'bad' : '', 'funil')}${t('Visitas hoje', R.visitas_hoje, '', '', 'agenda')}${t('Tarefas vencidas', R.tarefas_vencidas, '', R.tarefas_vencidas ? 'warn' : '', 'tarefas')}</div>
+        <div class="chips tabs" style="margin:12px 0">${tabs.map(([k, l]) => `<button class="chip" type="button" data-crt="${k}" aria-pressed="${k === CR.tab}">${l}</button>`).join('')}</div>${body}`;
+    },
+    bind() {
+      $$('[data-crt]').forEach((b) => { b.onclick = () => { CR.tab = b.dataset.crt; X.render(); }; });
+      $$('[data-crgo]').forEach((b) => { b.onclick = () => { CR.tab = b.dataset.crgo; X.render(); }; });
+      if ($('#crNovo')) $('#crNovo').onclick = () => novoLeadModal();
+      $$('[data-lead]').forEach((b) => { b.addEventListener('click', (e) => { if (e.target.closest('a,[data-noopen]')) return; leadModal(Number(b.dataset.lead)); }); });
+      if (CR.tab === 'funil') crFunilBind();
+      if (CR.tab === 'agenda') crAgendaBind();
+      if (CR.tab === 'tarefas') crTarefasBind();
+      if (CR.tab === 'relatorio') crRelBind();
+      if (CR.tab === 'config') crConfigBind();
+    },
+  };
+
+  /* ---- Funil (kanban) ---- */
+  async function crFunil(M) {
+    const p = new URLSearchParams();
+    if (CR.origem) p.set('origem', CR.origem);
+    if (CR.vend) p.set('vendedor_id', CR.vend);
+    if (CR.meus) p.set('meus', '1');
+    const L = await api('GET', '/api/leads?' + p);
+    CR.leads = L;
+    const q = CR.q.toLowerCase();
+    const vis = L.filter((l) => !q || [l.nome, l.telefone, l.email, l.veiculo?.titulo, l.veiculo?.placa, l.interesse].join(' ').toLowerCase().includes(q));
+    const col = ([k, label]) => {
+      const ls = vis.filter((l) => l.etapa === k);
+      return `<div class="kcol" data-col="${k}"><div class="kcol-h"><b>${label}</b><span>${ls.length}</span></div><div class="kcol-b">${ls.map(card).join('') || '<p class="sub kvazio">—</p>'}</div></div>`;
+    };
+    const card = (l) => `<div class="kcard ${l.atrasado ? 'late' : ''}" draggable="true" data-lead="${l.id}" data-drag="${l.id}">
+        <div class="kc-top"><b>${esc(l.nome || l.telefone || l.email || 'Sem nome')}</b><span class="sub">${quandoCurto(l.ultimo_contato || l.created_at)}</span></div>
+        ${l.veiculo ? `<div class="kc-v">${l.veiculo.foto ? `<img src="${esc(l.veiculo.foto)}" alt="">` : ''}<span>${esc(l.veiculo.titulo)}${l.veiculo.status === 'vendido' ? ' <span class="pill p-muted">vendido</span>' : ''}</span></div>` : l.interesse ? `<div class="sub">${esc(l.interesse)}</div>` : ''}
+        <div class="kc-tags"><span class="pill p-info">${esc(l.origem_label)}</span>${l.temperatura ? `<span title="${esc(l.temperatura_label)}">${tempIco[l.temperatura] || ''}</span>` : ''}${l.precisa_humano ? '<span class="pill p-warn">pediu atendente</span>' : ''}${l.atrasado ? `<span class="pill p-bad">sem resposta ${quandoCurto(l.created_at)}</span>` : ''}
+          ${l.proxima_visita ? `<span class="pill p-ok">📅 ${dh(l.proxima_visita)}</span>` : ''}${l.proxima_tarefa ? `<span class="pill p-muted">✓ ${dh(l.proxima_tarefa)}</span>` : ''}</div>
+        <div class="kc-foot"><span class="sub">${esc(l.vendedor_nome || 'sem vendedor')}</span>${l.telefone ? `<a class="linkbtn" data-noopen href="${esc(waLead(l, l.veiculo?.titulo))}" target="_blank" rel="noopener" data-wal="${l.id}">💬</a>` : ''}</div></div>`;
+    return `<div class="crbar">
+        <input id="crQ" placeholder="Buscar nome, telefone, carro…" value="${esc(CR.q)}">
+        <select id="crO"><option value="">Todas as origens</option>${Object.entries(M.origens).map(([k, l]) => `<option value="${k}" ${k === CR.origem ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
+        ${can('gestao') ? `<select id="crV"><option value="">Todos os vendedores</option>${M.usuarios.map((u) => `<option value="${u.id}" ${String(u.id) === String(CR.vend) ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select>
+        <label class="chip"><input type="checkbox" id="crM" ${CR.meus ? 'checked' : ''}> Só os meus</label>` : ''}
+      </div>
+      <p class="note" style="margin:6px 0">Arraste o card para mudar de etapa. Clique para abrir o lead. Vendidos e perdidos aparecem por 60 dias.</p>
+      <div class="kanban">${M.etapas.map(col).join('')}</div>`;
+  }
+  function crFunilBind() {
+    const q = $('#crQ');
+    if (q) q.oninput = () => { CR.q = q.value; clearTimeout(CR.tq); CR.tq = setTimeout(async () => { await X.render(); const i = $('#crQ'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }, 350); };
+    if ($('#crO')) $('#crO').onchange = () => { CR.origem = $('#crO').value; X.render(); };
+    if ($('#crV')) $('#crV').onchange = () => { CR.vend = $('#crV').value; X.render(); };
+    if ($('#crM')) $('#crM').onchange = () => { CR.meus = $('#crM').checked; X.render(); };
+    $$('[data-wal]').forEach((a) => { a.addEventListener('click', () => { api('POST', `/api/leads/${a.dataset.wal}/notes`, { tipo: 'whatsapp' }).catch(() => {}); }); });
+    $$('[data-drag]').forEach((c) => { c.ondragstart = (e) => { e.dataTransfer.setData('text/plain', c.dataset.drag); c.classList.add('dragging'); }; c.ondragend = () => c.classList.remove('dragging'); });
+    $$('[data-col]').forEach((col) => {
+      col.ondragover = (e) => { e.preventDefault(); col.classList.add('over'); };
+      col.ondragleave = () => col.classList.remove('over');
+      col.ondrop = async (e) => {
+        e.preventDefault(); col.classList.remove('over');
+        const id = Number(e.dataTransfer.getData('text/plain')); const etapa = col.dataset.col;
+        const l = CR.leads.find((x) => x.id === id); if (!l || l.etapa === etapa) return;
+        if (etapa === 'perdido') return perdidoModal(id);
+        if (etapa === 'visita') return visitaModal({ lead_id: id, vehicle_id: l.vehicle_id });
+        try { await api('PUT', `/api/leads/${id}`, { etapa }); X.render(); } catch (err) { toast(err.message); }
+      };
+    });
+  }
+
+  function perdidoModal(id, after) {
+    const M = CR.meta;
+    modal(`<h3>Marcar como perdido</h3><p>Qual o motivo? Isso alimenta o relatório de perdas.</p>
+      <div class="chips">${M.motivos.map((m, i) => `<label class="chip"><input type="radio" name="mp" value="${esc(m)}" ${i === 0 ? 'checked' : ''}> ${esc(m)}</label>`).join('')}</div>
+      <div class="f" style="margin-top:8px"><label for="mp-o">Detalhe (opcional)</label><input id="mp-o" maxlength="150"></div>
+      <div class="modal-foot"><button class="btn" data-close type="button">Cancelar</button><button class="btn danger" id="mp-ok" type="button">Marcar perdido</button></div>`);
+    $('#mp-ok').onclick = async () => {
+      const m = $('input[name="mp"]:checked').value + ($('#mp-o').value.trim() ? ` — ${$('#mp-o').value.trim()}` : '');
+      try { await api('PUT', `/api/leads/${id}`, { etapa: 'perdido', motivo_perda: m }); closeModal(); toast('Lead marcado como perdido'); if (after) after(); else X.render(); } catch (e) { toast(e.message); }
+    };
+  }
+
+  /* ---- Novo lead ---- */
+  async function novoLeadModal(pre = {}) {
+    const M = await crMeta();
+    const veics = S.vehicles.filter((v) => v.status !== 'vendido');
+    modal(`<h3>Novo lead</h3>
+      <div class="fields">
+        <div class="f w3"><label for="nl-n">Nome</label><input id="nl-n" value="${esc(pre.nome || '')}"></div>
+        <div class="f w3"><label for="nl-t">WhatsApp / telefone</label><input id="nl-t" inputmode="tel" value="${esc(pre.telefone || '')}" placeholder="(44) 99999-0000"></div>
+        <div class="f w3"><label for="nl-o">Origem</label><select id="nl-o">${Object.entries(M.origens).filter(([k]) => !['bot', 'qr', 'vitrine'].includes(k)).map(([k, l]) => `<option value="${k}" ${k === (pre.origem || 'whatsapp') ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
+        <div class="f w3"><label for="nl-v">Carro de interesse</label><select id="nl-v"><option value="">— nenhum específico —</option>${veics.map((v) => `<option value="${v.id}" ${v.id === pre.vehicle_id ? 'selected' : ''}>${esc(v.marca)} ${esc(v.modelo)} ${esc(v.ano_modelo || '')}${v.placa ? ' · ' + esc(v.placa) : ''}</option>`).join('')}</select></div>
+        <div class="f w6"><label for="nl-i">O que procura / observações</label><input id="nl-i" placeholder="Ex.: SUV automático até R$ 90 mil, tem um Onix 2018 na troca"></div>
+        <div class="f w2"><label for="nl-tp">Temperatura</label><select id="nl-tp">${Object.entries(M.temperaturas).map(([k, l]) => `<option value="${k}" ${k === 'morno' ? 'selected' : ''}>${tempIco[k]} ${l}</option>`).join('')}</select></div>
+        ${can('gestao') ? `<div class="f w2"><label for="nl-vd">Vendedor</label><select id="nl-vd">${M.usuarios.map((u) => `<option value="${u.id}" ${u.id === S.me.user.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></div>` : ''}
+      </div>
+      <div class="err" id="nl-err" hidden></div>
+      <div class="modal-foot"><button class="btn" data-close type="button">Cancelar</button><button class="btn primary" id="nl-ok" type="button">Criar lead</button></div>`, true);
+    $('#nl-ok').onclick = async () => {
+      try {
+        const r = await api('POST', '/api/leads', { nome: $('#nl-n').value, telefone: $('#nl-t').value, origem: $('#nl-o').value, vehicle_id: $('#nl-v').value, interesse: $('#nl-i').value, temperatura: $('#nl-tp').value, vendedor_id: $('#nl-vd')?.value });
+        toast(r.novo ? 'Lead criado' : 'Já havia um lead em aberto com esse telefone: o contato foi registrado nele');
+        CR.tab = 'funil'; if (S.view !== 'crm') location.hash = 'crm'; else await X.render();
+        leadModal(r.id);
+      } catch (e) { $('#nl-err').textContent = e.message; $('#nl-err').hidden = false; }
+    };
+  }
+
+  /* ---- Lead (detalhe) ---- */
+  async function leadModal(id) {
+    let D;
+    try { D = await api('GET', `/api/leads/${id}`); } catch (e) { return toast(e.message); }
+    const M = await crMeta();
+    const l = D.lead; const v = D.veiculo;
+    const veics = S.vehicles.filter((x) => x.status !== 'vendido' || x.id === l.vehicle_id);
+    const ico = { criado: '✨', contato: '📩', nota: '📝', whatsapp: '💬', ligacao: '📞', email: '✉️', etapa: '➡️', vendedor: '👤', visita: '📅', tarefa: '✅', bot: '🤖', proposta: '💰' };
+    modal(`<div class="ldh"><div><h3>${esc(l.nome || l.telefone || 'Lead')} ${tempIco[l.temperatura] || ''}</h3>
+        <p class="sub">${esc(l.origem_label)}${l.origem_detalhe ? ' · ' + esc(l.origem_detalhe) : ''} · criado ${fmtDate(l.created_at)} · <b>${esc(l.etapa_label)}</b>${l.motivo_perda ? ` (${esc(l.motivo_perda)})` : ''}</p></div>
+        <div class="btnrow">${l.telefone ? `<a class="btn sm primary" id="ld-wa" href="${esc(waLead(l, v?.titulo))}" target="_blank" rel="noopener">💬 WhatsApp</a><a class="btn sm" id="ld-tel" href="tel:${esc(l.telefone)}">📞 Ligar</a>` : ''}</div></div>
+      ${l.precisa_humano ? '<div class="warnbox">O cliente pediu para falar com um atendente no assistente do site.</div>' : ''}
+      ${l.atrasado ? `<div class="warnbox">Sem resposta há ${quandoCurto(l.created_at)}. Quanto mais rápido o primeiro contato, maior a chance de venda.</div>` : ''}
+      <div class="ldgrid">
+        <div>
+          ${v ? `<div class="kc-v ld-v">${v.foto ? `<img src="/media/${esc(v.foto)}" alt="">` : ''}<span><button class="vlink" type="button" data-vp="${v.id}">${esc(v.titulo)}</button><br><span class="sub">${brl(v.preco)}${v.placa ? ' · ' + esc(v.placa) : ''}${v.status === 'vendido' ? ' · vendido' : ''}</span></span></div>` : ''}
+          <div class="fields">
+            <div class="f w3"><label for="ld-n">Nome</label><input id="ld-n" value="${esc(l.nome)}"></div>
+            <div class="f w3"><label for="ld-t">Telefone</label><input id="ld-t" value="${esc(l.telefone)}" inputmode="tel"></div>
+            <div class="f w3"><label for="ld-e">E-mail</label><input id="ld-e" value="${esc(l.email)}"></div>
+            <div class="f w3"><label for="ld-et">Etapa</label><select id="ld-et">${M.etapas.map(([k, lb]) => `<option value="${k}" ${k === l.etapa ? 'selected' : ''}>${esc(lb)}</option>`).join('')}</select></div>
+            <div class="f w6"><label for="ld-v">Carro de interesse</label><select id="ld-v"><option value="">— nenhum específico —</option>${veics.map((x) => `<option value="${x.id}" ${x.id === l.vehicle_id ? 'selected' : ''}>${esc(x.marca)} ${esc(x.modelo)} ${esc(x.ano_modelo || '')}${x.placa ? ' · ' + esc(x.placa) : ''}</option>`).join('')}</select></div>
+            <div class="f w6"><label for="ld-i">O que procura</label><input id="ld-i" value="${esc(l.interesse)}"></div>
+            <div class="f w2"><label for="ld-o">Orçamento (R$)</label><input id="ld-o" inputmode="numeric" value="${l.orcamento ? esc(l.orcamento.toLocaleString('pt-BR')) : ''}"></div>
+            <div class="f w2"><label for="ld-pg">Pagamento</label><select id="ld-pg">${Object.entries(M.pagamentos).map(([k, lb]) => `<option value="${k}" ${k === (l.pagamento || '') ? 'selected' : ''}>${esc(lb)}</option>`).join('')}</select></div>
+            <div class="f w2"><label for="ld-tp">Temperatura</label><select id="ld-tp">${Object.entries(M.temperaturas).map(([k, lb]) => `<option value="${k}" ${k === l.temperatura ? 'selected' : ''}>${tempIco[k]} ${lb}</option>`).join('')}</select></div>
+            <div class="f w6"><label for="ld-tr">Carro na troca</label><input id="ld-tr" value="${esc(l.troca)}" placeholder="Modelo, ano, km, estado"></div>
+            <div class="f w3"><label for="ld-or">Origem</label><select id="ld-or">${Object.entries(M.origens).map(([k, lb]) => `<option value="${k}" ${k === l.origem ? 'selected' : ''}>${esc(lb)}</option>`).join('')}</select></div>
+            <div class="f w3"><label for="ld-vd">Vendedor</label><select id="ld-vd" ${can('gestao') ? '' : 'disabled'}><option value="">— sem vendedor —</option>${M.usuarios.map((u) => `<option value="${u.id}" ${u.id === l.vendedor_id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></div>
+            <div class="f w6"><label for="ld-ob">Observações</label><textarea id="ld-ob" rows="2">${esc(l.obs)}</textarea></div>
+          </div>
+          <div class="btnrow" style="margin-top:8px"><button class="btn primary" type="button" id="ld-save">Salvar</button><button class="btn" type="button" id="ld-vis">📅 Agendar visita</button><button class="btn" type="button" id="ld-tk">✓ Tarefa</button>${l.vehicle_id ? '<button class="btn" type="button" id="ld-ct">📄 Contrato</button>' : ''}${!['perdido', 'vendido'].includes(l.etapa) ? '<button class="btn ghost danger" type="button" id="ld-lost">Perdido</button>' : ''}</div>
+        </div>
+        <div>
+          ${D.visitas.length ? `<h4>Visitas</h4>${D.visitas.map((x) => `<div class="rgrow"><span>${esc(x.tipo_label)} · <b>${dh(x.data_hora)}</b> <span class="sub">${esc(x.vendedor_nome || '')}</span></span><span class="pill ${x.status === 'realizada' ? 'p-ok' : x.status === 'faltou' || x.status === 'cancelada' ? 'p-bad' : 'p-info'}">${esc(x.status_label)}</span></div>`).join('')}` : ''}
+          ${D.tarefas.length ? `<h4>Tarefas</h4>${D.tarefas.map((t) => `<label class="rgrow" style="cursor:pointer"><span><input type="checkbox" data-tkd="${t.id}" ${t.feita_em ? 'checked' : ''}> ${esc(t.titulo)}</span><span class="sub">${dh(t.vence_em)}</span></label>`).join('')}` : ''}
+          <h4>Histórico</h4>
+          <div class="ldnote"><select id="ln-t">${Object.entries(M.notas).map(([k, lb]) => `<option value="${k}">${lb}</option>`).join('')}</select><input id="ln-x" placeholder="Registrar contato, anotação, proposta…"><button class="btn sm" type="button" id="ln-ok">Adicionar</button></div>
+          <div class="timeline ldtl">${D.eventos.map((e) => `<div>${ico[e.tipo] || '•'} ${esc(e.texto)} <span class="sub">${dh(e.created_at)}${e.user_name ? ' · ' + esc(e.user_name) : ''}</span></div>`).join('')}</div>
+          ${D.conversa.length ? `<details style="margin-top:8px"><summary><b>🤖 Conversa com o assistente (${D.conversa.length})</b></summary><div class="chatlog">${D.conversa.map((m) => `<div class="cm ${m.papel === 'user' ? 'u' : 'b'}">${esc(m.texto)}<span>${dh(m.created_at)}</span></div>`).join('')}</div></details>` : ''}
+        </div>
+      </div>
+      <div class="modal-foot"><button class="btn" data-close type="button">Fechar</button></div>`, true);
+    const refresh = () => { if (S.view === 'crm') X.render(); };
+    if ($('#ld-wa')) $('#ld-wa').addEventListener('click', () => api('POST', `/api/leads/${id}/notes`, { tipo: 'whatsapp' }).then(refresh).catch(() => {}));
+    if ($('#ld-tel')) $('#ld-tel').addEventListener('click', () => api('POST', `/api/leads/${id}/notes`, { tipo: 'ligacao' }).then(refresh).catch(() => {}));
+    $('#ld-save').onclick = async () => {
+      const etapa = $('#ld-et').value;
+      if (etapa === 'perdido' && l.etapa !== 'perdido') return perdidoModal(id, () => leadModal(id));
+      try {
+        await api('PUT', `/api/leads/${id}`, { nome: $('#ld-n').value, telefone: $('#ld-t').value, email: $('#ld-e').value, etapa, vehicle_id: $('#ld-v').value, interesse: $('#ld-i').value,
+          orcamento: num($('#ld-o').value), pagamento: $('#ld-pg').value, temperatura: $('#ld-tp').value, troca: $('#ld-tr').value, origem: $('#ld-or').value, obs: $('#ld-ob').value,
+          ...(can('gestao') ? { vendedor_id: $('#ld-vd').value } : {}) });
+        toast('Lead salvo'); leadModal(id); refresh();
+      } catch (e) { toast(e.message, 6000); }
+    };
+    $('#ld-vis').onclick = () => visitaModal({ lead_id: id, vehicle_id: l.vehicle_id, vendedor_id: l.vendedor_id, after: () => leadModal(id) });
+    $('#ld-tk').onclick = () => tarefaModal({ lead_id: id, after: () => leadModal(id) });
+    if ($('#ld-ct')) $('#ld-ct').onclick = () => X.contratoDoCarro(l.vehicle_id);
+    if ($('#ld-lost')) $('#ld-lost').onclick = () => perdidoModal(id, () => { leadModal(id); refresh(); });
+    $$('[data-tkd]').forEach((c) => { c.onchange = async () => { await api('PUT', `/api/crm/tasks/${c.dataset.tkd}`, { feita: c.checked }); leadModal(id); refresh(); }; });
+    $('#ln-ok').onclick = async () => {
+      try { await api('POST', `/api/leads/${id}/notes`, { tipo: $('#ln-t').value, texto: $('#ln-x').value }); leadModal(id); refresh(); } catch (e) { toast(e.message); }
+    };
+    $('#ln-x').onkeydown = (e) => { if (e.key === 'Enter') $('#ln-ok').click(); };
+  }
+
+  async function visitaModal({ lead_id, vehicle_id, vendedor_id, after } = {}) {
+    const M = await crMeta();
+    const amanha = new Date(Date.now() + 864e5); amanha.setHours(10, 0, 0, 0);
+    const local = new Date(amanha.getTime() - amanha.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    modal(`<h3>Agendar visita</h3>
+      <div class="fields">
+        <div class="f w3"><label for="vs-d">Data e hora</label><input id="vs-d" type="datetime-local" value="${local}"></div>
+        <div class="f w3"><label for="vs-t">Tipo</label><select id="vs-t">${Object.entries(M.visita_tipos).map(([k, lb]) => `<option value="${k}">${esc(lb)}</option>`).join('')}</select></div>
+        <div class="f w3"><label for="vs-v">Carro</label><select id="vs-v"><option value="">—</option>${S.vehicles.filter((v) => v.status !== 'vendido').map((v) => `<option value="${v.id}" ${v.id === vehicle_id ? 'selected' : ''}>${esc(v.marca)} ${esc(v.modelo)} ${esc(v.ano_modelo || '')}</option>`).join('')}</select></div>
+        <div class="f w3"><label for="vs-vd">Quem atende</label><select id="vs-vd">${M.usuarios.map((u) => `<option value="${u.id}" ${u.id === (vendedor_id || S.me.user.id) ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></div>
+        <div class="f w6"><label for="vs-o">Observação</label><input id="vs-o" maxlength="300"></div>
+      </div>
+      <div class="modal-foot"><button class="btn" data-close type="button">Cancelar</button><button class="btn primary" id="vs-ok" type="button">Agendar</button></div>`);
+    $('#vs-ok').onclick = async () => {
+      try {
+        await api('POST', '/api/crm/visits', { lead_id, data_hora: $('#vs-d').value, tipo: $('#vs-t').value, vehicle_id: $('#vs-v').value, vendedor_id: $('#vs-vd').value, obs: $('#vs-o').value });
+        toast('Visita agendada'); closeModal(); if (after) after(); if (S.view === 'crm') X.render();
+      } catch (e) { toast(e.message); }
+    };
+  }
+
+  async function tarefaModal({ lead_id, after } = {}) {
+    const M = await crMeta();
+    modal(`<h3>Nova tarefa</h3>
+      <div class="chips">${['Retornar contato', 'Enviar fotos / vídeo', 'Mandar simulação', 'Avaliar a troca', 'Confirmar visita'].map((t) => `<button class="chip" type="button" data-tsug="${esc(t)}">${esc(t)}</button>`).join('')}</div>
+      <div class="fields" style="margin-top:8px">
+        <div class="f w6"><label for="tk-t">Tarefa</label><input id="tk-t" maxlength="200"></div>
+        <div class="f w3"><label for="tk-d">Até</label><input id="tk-d" type="datetime-local" value="${new Date(Date.now() + 864e5 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}"></div>
+        ${can('gestao') ? `<div class="f w3"><label for="tk-v">Responsável</label><select id="tk-v">${M.usuarios.map((u) => `<option value="${u.id}" ${u.id === S.me.user.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></div>` : ''}
+      </div>
+      <div class="modal-foot"><button class="btn" data-close type="button">Cancelar</button><button class="btn primary" id="tk-ok" type="button">Criar</button></div>`);
+    $$('[data-tsug]').forEach((b) => { b.onclick = () => { $('#tk-t').value = b.dataset.tsug; }; });
+    $('#tk-ok').onclick = async () => {
+      try { await api('POST', '/api/crm/tasks', { lead_id, titulo: $('#tk-t').value, vence_em: $('#tk-d').value, vendedor_id: $('#tk-v')?.value }); toast('Tarefa criada'); closeModal(); if (after) after(); if (S.view === 'crm') X.render(); }
+      catch (e) { toast(e.message); }
+    };
+  }
+
+  /* ---- Agenda ---- */
+  async function crAgenda(M) {
+    const xs = await api('GET', '/api/crm/visits' + (CR.meus ? '?meus=1' : ''));
+    CR.visitas = xs;
+    const hoje = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    const dias = {};
+    for (const x of xs) (dias[x.data_hora.slice(0, 10)] = dias[x.data_hora.slice(0, 10)] || []).push(x);
+    const nomeDia = (d) => { const dt = new Date(d + 'T12:00:00'); return `${dt.toLocaleDateString('pt-BR', { weekday: 'long' })}, ${dt.toLocaleDateString('pt-BR')}${d === hoje ? ' · hoje' : ''}`; };
+    const linhas = Object.keys(dias).sort().map((d) => `<div class="agd ${d < hoje ? 'past' : ''}"><h4>${nomeDia(d)}</h4>${dias[d].map((x) => `<div class="agrow">
+        <b class="mono">${x.data_hora.slice(11, 16)}</b>
+        <span>${x.lead_id ? `<button class="vlink" type="button" data-lead="${x.lead_id}">${esc(x.lead_nome || x.lead_tel || 'Lead')}</button>` : esc(x.obs || 'Visita')} <span class="sub">${esc(x.tipo_label)}${x.veiculo ? ' · ' + esc(x.veiculo) : ''} · ${esc(x.vendedor_nome || '')}</span></span>
+        <span class="pill ${x.status === 'realizada' ? 'p-ok' : ['faltou', 'cancelada'].includes(x.status) ? 'p-bad' : x.status === 'confirmada' ? 'p-info' : 'p-muted'}">${esc(x.status_label)}</span>
+        <span class="btnrow" style="gap:4px">${x.lead_tel && ['agendada', 'confirmada'].includes(x.status) ? `<a class="btn sm" href="${esc(waVisita(x))}" target="_blank" rel="noopener">💬 Confirmar</a>` : ''}
+          <select data-vst="${x.id}" class="sm">${Object.entries(M.visita_status).map(([k, lb]) => `<option value="${k}" ${k === x.status ? 'selected' : ''}>${esc(lb)}</option>`).join('')}</select></span></div>`).join('')}</div>`).join('');
+    return `<div class="btnrow" style="margin-bottom:10px"><button class="btn" type="button" id="agNova">+ Agendar visita</button>${can('gestao') ? `<label class="chip"><input type="checkbox" id="crM2" ${CR.meus ? 'checked' : ''}> Só as minhas</label>` : ''}</div>
+      ${linhas || '<p class="sub">Nenhuma visita nos últimos 7 e próximos 30 dias. Agende pelo lead ou pelo botão acima.</p>'}`;
+  }
+  function crAgendaBind() {
+    if ($('#agNova')) $('#agNova').onclick = () => visitaModal({});
+    if ($('#crM2')) $('#crM2').onchange = () => { CR.meus = $('#crM2').checked; X.render(); };
+    $$('[data-vst]').forEach((s) => { s.onchange = async () => { try { await api('PUT', `/api/crm/visits/${s.dataset.vst}`, { status: s.value }); toast('Visita atualizada'); X.render(); } catch (e) { toast(e.message); } }; });
+  }
+
+  /* ---- Tarefas ---- */
+  async function crTarefas() {
+    const ts = await api('GET', '/api/crm/tasks' + (CR.meus ? '?meus=1' : ''));
+    const hoje = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    const grupos = [['Atrasadas', ts.filter((t) => !t.feita_em && t.vence_em.slice(0, 10) < hoje)], ['Hoje', ts.filter((t) => !t.feita_em && t.vence_em.slice(0, 10) === hoje)], ['Próximas', ts.filter((t) => !t.feita_em && t.vence_em.slice(0, 10) > hoje)], ['Concluídas (2 dias)', ts.filter((t) => t.feita_em)]];
+    return `<div class="btnrow" style="margin-bottom:10px"><button class="btn" type="button" id="tkNova">+ Nova tarefa</button>${can('gestao') ? `<label class="chip"><input type="checkbox" id="crM3" ${CR.meus ? 'checked' : ''}> Só as minhas</label>` : ''}</div>
+      ${grupos.filter(([, g]) => g.length).map(([n, g]) => `<h4>${n} (${g.length})</h4><div class="rglist">${g.map((t) => `<label class="rgrow" style="cursor:pointer"><span><input type="checkbox" data-tkd="${t.id}" ${t.feita_em ? 'checked' : ''}> ${esc(t.titulo)}${t.lead_id ? ` · <button class="vlink" type="button" data-lead="${t.lead_id}">${esc(t.lead_nome || t.lead_tel || 'lead')}</button>` : ''}</span><span class="sub">${dh(t.vence_em)} · ${esc(t.vendedor_nome || '')}</span><span></span></label>`).join('')}</div>`).join('') || '<p class="sub">Nenhuma tarefa. Crie tarefas de retorno dentro de cada lead.</p>'}`;
+  }
+  function crTarefasBind() {
+    if ($('#tkNova')) $('#tkNova').onclick = () => tarefaModal({});
+    if ($('#crM3')) $('#crM3').onchange = () => { CR.meus = $('#crM3').checked; X.render(); };
+    $$('[data-tkd]').forEach((c) => { c.onchange = async () => { await api('PUT', `/api/crm/tasks/${c.dataset.tkd}`, { feita: c.checked }); X.render(); }; });
+  }
+
+  /* ---- Relatório ---- */
+  async function crRelatorio() {
+    const from = CR.from || new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
+    const to = CR.to || today();
+    const R = await api('GET', `/api/crm/stats?from=${from}&to=${to}`);
+    const k = R.kpis;
+    const t = (l, v, sub) => `<div class="pt" style="cursor:default"><span>${l}</span><b>${v}</b>${sub ? `<em>${sub}</em>` : ''}</div>`;
+    const min = (m) => (m === null || m === undefined ? '—' : m < 60 ? `${m} min` : m < 1440 ? `${Math.round(m / 60)} h` : `${Math.round(m / 1440)} d`);
+    const tab = (titulo, rows) => `<h4>${titulo}</h4><div class="table-wrap"><table class="tbl compact"><thead><tr><th></th><th class="r">Leads</th><th class="r">Visitaram</th><th class="r">Vendas</th><th class="r">Conversão</th><th class="r">Perdidos</th><th class="r">1ª resposta</th></tr></thead><tbody>
+      ${rows.map((r) => `<tr><td><b>${esc(r.nome)}</b></td><td class="r">${r.leads}</td><td class="r">${r.visitas}</td><td class="r">${r.vendidos}</td><td class="r">${String(r.conversao).replace('.', ',')}%</td><td class="r">${r.perdidos}</td><td class="r">${min(r.resposta_min)}</td></tr>`).join('') || '<tr><td colspan="7" class="sub">Sem leads no período.</td></tr>'}</tbody></table></div>`;
+    return `<div class="btnrow" style="margin-bottom:10px"><label class="sub">De <input type="date" id="rlF" value="${from}"></label><label class="sub">até <input type="date" id="rlT" value="${to}"></label></div>
+      <div class="pgrid">${t('Leads', k.leads, `${k.abertos} em aberto`)}${t('Vendas', k.vendidos, k.leads ? `${String(Math.round((k.vendidos / k.leads) * 1000) / 10).replace('.', ',')}% de conversão` : '')}${t('1ª resposta (média)', min(k.resposta_min), `${k.sem_resposta} sem resposta agora`)}${t('Visitas', `${k.visitas_realizadas}/${k.visitas_agendadas}`, `${k.faltas} não compareceram`)}${t('Perdidos', k.perdidos, '')}</div>
+      ${tab('Por origem', R.origens)}${tab('Por vendedor', R.vendedores)}
+      ${R.motivos.length ? `<h4>Motivos de perda</h4><div class="rglist">${R.motivos.map((m) => `<div class="rgrow"><span>${esc(m.motivo)}</span><b>${m.n}</b><span></span></div>`).join('')}</div>` : ''}`;
+  }
+  function crRelBind() {
+    const go = () => { CR.from = $('#rlF').value; CR.to = $('#rlT').value; X.render(); };
+    if ($('#rlF')) { $('#rlF').onchange = go; $('#rlT').onchange = go; }
+  }
+
+  /* ---- Configurar ---- */
+  function crConfig(M) {
+    const c = M.config;
+    const vitrine = S.me.vitrine_url;
+    return `<div class="panel"><h2>Distribuição de leads</h2>
+        <label class="check"><input type="radio" name="cf-d" value="rodizio" ${c.distribuicao === 'rodizio' ? 'checked' : ''}><div><b>Rodízio automático</b><span>Cada lead novo vai para o próximo vendedor da lista.</span></div></label>
+        <label class="check"><input type="radio" name="cf-d" value="manual" ${c.distribuicao === 'manual' ? 'checked' : ''}><div><b>Manual</b><span>Leads chegam sem vendedor; quem atender primeiro assume (ou o gestor repassa).</span></div></label>
+        <h4>Participam do rodízio</h4><p class="sub">Nenhum marcado = todos que podem vender.</p>
+        <div class="chips">${M.usuarios.map((u) => `<label class="chip"><input type="checkbox" data-cfv="${u.id}" ${c.vendedores.includes(u.id) ? 'checked' : ''}> ${esc(u.name)}</label>`).join('')}</div>
+        <div class="fields" style="margin-top:10px">
+          <div class="f w2"><label for="cf-sla">Alerta de "sem resposta" após (min)</label><input id="cf-sla" inputmode="numeric" value="${c.sla_min}"></div>
+          <div class="f w6"><label for="cf-h">Horário de atendimento e visitas</label><input id="cf-h" value="${esc(c.horarios || '')}"></div>
+        </div>
+        <div class="form-foot"><button class="btn primary" type="button" id="cf-save">Salvar</button></div></div>
+      <div class="panel"><h2>De onde vêm os leads</h2>
+        <div class="rglist">
+          <div class="rgrow"><span><b>Site da loja</b><br><span class="sub">Formulário "Tenho interesse" na vitrine e em cada carro.</span></span><a class="btn sm" href="${esc(vitrine)}" target="_blank" rel="noopener">Abrir vitrine</a><span></span></div>
+          <div class="rgrow"><span><b>QR code no carro</b><br><span class="sub">A folha A4 do carro leva para a página dele; quem pede contato entra como "QR code no carro".</span></span><span></span><span></span></div>
+          <div class="rgrow"><span><b>Cadastro manual</b><br><span class="sub">WhatsApp, telefone, visita na loja, Marketplace, indicação: use "+ Novo lead".</span></span><span></span><span></span></div>
+        </div></div>`;
+  }
+  function crConfigBind() {
+    if (!$('#cf-save')) return;
+    $('#cf-save').onclick = async () => {
+      try {
+        await api('PUT', '/api/crm/config', { distribuicao: $('input[name="cf-d"]:checked').value, vendedores: $$('[data-cfv]').filter((x) => x.checked).map((x) => Number(x.dataset.cfv)), sla_min: $('#cf-sla').value, horarios: $('#cf-h').value });
+        toast('Configuração do CRM salva'); CR.meta = null; X.render();
+      } catch (e) { toast(e.message); }
+    };
+  }
+
+  // Contador no menu: leads novos + sem resposta.
+  async function crBadge() {
+    if (!podeCrm() || Date.now() - CR.resumoEm < 60000) return;
+    CR.resumoEm = Date.now();
+    try {
+      const r = await api('GET', '/api/crm/resumo');
+      const n = r.novos || 0;
+      const b = $('#c-crm'); if (b) { b.textContent = n ? String(n) : ''; b.classList.toggle('hot', !!r.atrasados); }
+    } catch { /* sem acesso */ }
   }
 
   /* ======================= Contratos (v2.8) ======================= */
@@ -2182,6 +2533,7 @@
     const nav = $('.nav'); if (!nav || $('[data-view="gestao"]')) return;
     const cfg = nav.querySelector('[data-view="config"]');
     if (S.me.store.logo_file && !$('#storeLogo')) $('.side-foot .store')?.insertAdjacentHTML('beforebegin', `<img id="storeLogo" class="store-logo" src="/media/${esc(S.me.store.logo_file)}" alt="${esc(S.me.store.name)}">`);
+    if (podeCrm()) nav.querySelector('[data-view="republicacao"]')?.insertAdjacentHTML('beforebegin', '<button data-view="crm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/></svg>CRM<span class="count" id="c-crm"></span></button>');
     if (can('gestao')) nav.querySelector('[data-view="estoque"]')?.insertAdjacentHTML('beforebegin', '<button data-view="painel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Painel</button>');
     cfg.insertAdjacentHTML('beforebegin', `
       ${can('vender') || can('cadastrar') || can('gestao') ? '<button data-view="contratos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>Contratos</button>' : ''}
@@ -2191,7 +2543,7 @@
     if (S.me.user.is_admin) cfg.insertAdjacentHTML('afterend', '<button data-view="dev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></svg>Desenvolvedor</button>');
     if (!$('#fbLink')) $('.side-foot .store')?.insertAdjacentHTML('beforebegin', '<button class="btn ghost sm" id="fbLink" type="button" title="Informar erros e sugerir melhorias">💬 Sugestões e erros</button>');
     if ($('#fbLink')) $('#fbLink').onclick = () => feedbackModal();
-    $$('.nav [data-view="gestao"], .nav [data-view="resultados"], .nav [data-view="equipe"], .nav [data-view="painel"], .nav [data-view="dev"], .nav [data-view="contratos"]').forEach((b) => b.addEventListener('click', () => { if (b.dataset.view === 'contratos') { KT.modo = 'lista'; KT.ed = null; KT.me = null; KT.preVehicle = null; } if (location.hash === '#' + b.dataset.view) X.route(); else location.hash = b.dataset.view; }));
+    $$('.nav [data-view="gestao"], .nav [data-view="resultados"], .nav [data-view="equipe"], .nav [data-view="painel"], .nav [data-view="dev"], .nav [data-view="contratos"], .nav [data-view="crm"]').forEach((b) => b.addEventListener('click', () => { if (b.dataset.view === 'contratos') { KT.modo = 'lista'; KT.ed = null; KT.me = null; KT.preVehicle = null; } if (location.hash === '#' + b.dataset.view) X.route(); else location.hash = b.dataset.view; }));
     // Esconde o que o vendedor não pode usar
     if (!can('campanhas')) nav.querySelector('[data-view="campanhas"]')?.setAttribute('hidden', '');
     if (!can('cadastrar')) nav.querySelector('[data-view="novo"]')?.setAttribute('hidden', '');
@@ -2199,6 +2551,7 @@
 
   X.after = (view) => {
     navSetup();
+    crBadge();
     const atual = view === 'novo' || view === 'importar' || view === 'rapido' ? 'estoque' : view;
     $$('.nav button').forEach((b) => { if (b.dataset.view === atual) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
     if (view === 'novo') enhanceForm();

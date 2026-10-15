@@ -350,6 +350,101 @@ db.exec(`CREATE TABLE IF NOT EXISTS contracts (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 )`);
+// v2.9: CRM — leads, histórico, visitas e tarefas. v2.10: conversas do assistente do site e leads por e-mail.
+addColumn('stores', 'crm_config', "TEXT NOT NULL DEFAULT '{}'");
+db.exec(`CREATE TABLE IF NOT EXISTS leads (
+  id INTEGER PRIMARY KEY,
+  store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+  contact_id INTEGER REFERENCES contacts(id) ON DELETE SET NULL,
+  nome TEXT DEFAULT '',
+  telefone TEXT DEFAULT '',
+  email TEXT DEFAULT '',
+  origem TEXT NOT NULL DEFAULT 'outro',
+  origem_detalhe TEXT DEFAULT '',
+  vehicle_id INTEGER REFERENCES vehicles(id) ON DELETE SET NULL,
+  interesse TEXT DEFAULT '',
+  orcamento INTEGER NOT NULL DEFAULT 0,
+  troca TEXT DEFAULT '',
+  pagamento TEXT DEFAULT '',
+  temperatura TEXT DEFAULT 'morno',
+  etapa TEXT NOT NULL DEFAULT 'novo',
+  etapa_em TEXT,
+  vendedor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  motivo_perda TEXT DEFAULT '',
+  obs TEXT DEFAULT '',
+  precisa_humano INTEGER NOT NULL DEFAULT 0,
+  primeira_resposta_em TEXT,
+  ultimo_contato TEXT,
+  created_by INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS leads_store ON leads(store_id, etapa)');
+db.exec('CREATE INDEX IF NOT EXISTS leads_tel ON leads(store_id, telefone)');
+db.exec(`CREATE TABLE IF NOT EXISTS lead_events (
+  id INTEGER PRIMARY KEY,
+  lead_id INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+  tipo TEXT NOT NULL DEFAULT 'nota',
+  texto TEXT NOT NULL DEFAULT '',
+  user_id INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS lead_events_lead ON lead_events(lead_id)');
+db.exec(`CREATE TABLE IF NOT EXISTS lead_visits (
+  id INTEGER PRIMARY KEY,
+  store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+  lead_id INTEGER REFERENCES leads(id) ON DELETE CASCADE,
+  vehicle_id INTEGER REFERENCES vehicles(id) ON DELETE SET NULL,
+  vendedor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  data_hora TEXT NOT NULL,
+  tipo TEXT NOT NULL DEFAULT 'visita',
+  status TEXT NOT NULL DEFAULT 'agendada',
+  obs TEXT DEFAULT '',
+  created_by INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS lead_tasks (
+  id INTEGER PRIMARY KEY,
+  store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+  lead_id INTEGER REFERENCES leads(id) ON DELETE CASCADE,
+  vendedor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  titulo TEXT NOT NULL,
+  vence_em TEXT NOT NULL,
+  feita_em TEXT,
+  created_by INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS chat_sessions (
+  id TEXT PRIMARY KEY,
+  store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+  lead_id INTEGER REFERENCES leads(id) ON DELETE SET NULL,
+  vehicle_id INTEGER,
+  dados TEXT NOT NULL DEFAULT '{}',
+  teste INTEGER NOT NULL DEFAULT 0,
+  ip TEXT DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS chat_messages (
+  id INTEGER PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+  papel TEXT NOT NULL,
+  texto TEXT NOT NULL DEFAULT '',
+  meta TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS inbound_emails (
+  id INTEGER PRIMARY KEY,
+  store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+  remetente TEXT DEFAULT '',
+  assunto TEXT DEFAULT '',
+  portal TEXT DEFAULT '',
+  lead_id INTEGER,
+  status TEXT NOT NULL DEFAULT 'ok',
+  erro TEXT DEFAULT '',
+  msg_id TEXT DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`);
 // v2.5: contato de quem vendeu o carro para a loja, troca ligada a outro veículo e composição do pagamento.
 for (const [col, def] of [
   ['compra_de_tel', "TEXT DEFAULT ''"], ['venda_troca_id', 'INTEGER'], ['troca_de_id', 'INTEGER'],

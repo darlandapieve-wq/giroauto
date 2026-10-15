@@ -96,7 +96,7 @@ app.get('/v/:slug/:id', (req, res) => {
   const store = get('SELECT * FROM stores WHERE slug = ?', req.params.slug);
   const v = store && V.serialize(V.findVehicle(store.id, req.params.id));
   if (!v || v.status === 'rascunho') return res.status(404).send(pages.notFound());
-  res.send(pages.vehiclePage(store, v));
+  res.send(pages.vehiclePage(store, v, { origem: req.query.o === 'qr' ? 'qr' : 'vitrine' }));
 });
 
 /* ------------------------------------------------------------------ */
@@ -549,6 +549,7 @@ app.post('/api/vehicles/:id/sold', team.can('vender'), (req, res) => {
   run(`UPDATE ext_jobs SET status='cancelado', updated_at=datetime('now') WHERE vehicle_id=? AND status='pendente'`, v.id);
   if (wasPublished && pubMode === 'extensao') run('INSERT INTO ext_jobs (store_id, vehicle_id, type) VALUES (?, ?, ?)', req.user.storeId, v.id, 'excluir');
   logEvent(req.user.storeId, `${v.marca} ${v.modelo} ${v.versao} marcado como vendido`);
+  try { require('./crm').onSold(req.user.storeId, v.id, req.user.id); } catch (e) { console.error('crm onSold', e.message); }
   const campanhas = all(`SELECT c.id, c.name FROM campaigns c JOIN campaign_vehicles cv ON cv.campaign_id = c.id
     WHERE cv.vehicle_id = ? AND c.status IN ('ativa','analise')`, v.id);
   res.json({ ok: true, campanhas_ativas: campanhas, excluir_manual: wasPublished && pubMode !== 'extensao', listing_url: v.fb_listing_url || '', remover: channels.manualRemovals(v.id) });

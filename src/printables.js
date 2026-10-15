@@ -6,7 +6,8 @@ const V = require('./vehicles');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const brl = (n) => 'R$ ' + Number(n || 0).toLocaleString('pt-BR');
 const km = (n) => Number(n || 0).toLocaleString('pt-BR') + ' km';
-const vehicleUrl = (store, v) => `${config.publicUrl}/v/${store.slug}/${v.id}`;
+// O QR leva ?o=qr para o lead entrar no CRM com a origem "QR code no carro" (v2.9).
+const vehicleUrl = (store, v) => `${config.publicUrl}/v/${store.slug}/${v.id}?o=qr`;
 const logoUrl = (store) => (store.logo_file ? `${config.publicUrl}/media/${store.logo_file}` : '');
 
 async function qrDataUrl(text, opts = {}) {

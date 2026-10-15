@@ -1141,6 +1141,83 @@ test('v2.8: contratos — modelos, pré-preenchimento, cláusulas, personalizaç
   assert.equal((r.body.html.match(/class="ass"/g) || []).length, 4);
 });
 
+test('v2.9: CRM — captação pública, rodízio, funil, histórico, visitas, tarefas, relatório e venda', async () => {
+  const slug = (await api('GET', '/api/me')).body.store.slug;
+  let r = await api('POST', '/api/vehicles', { marca: 'Jeep', modelo: 'Renegade', ano_modelo: 2021, preco: 99000, placa: 'REN1A21' });
+  const vid = r.body.id;
+  require('../src/db').run("UPDATE vehicles SET status = 'pronto' WHERE id = ?", vid);
+  // Página do carro com o formulário e a origem do QR.
+  let q = await (await fetch(`${base}/v/${slug}/${vid}?o=qr`)).text();
+  assert.match(q, /id="lf"/); assert.match(q, /d\.origem="qr"/);
+  // Lead público pelo QR code.
+  r = await fetch(`${base}/api/public/${slug}/lead`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome: 'Lucas QR', telefone: '(44) 98888-1212', vehicle_id: vid, origem: 'qr', visita: true, mensagem: 'Aceita troca?' }) });
+  assert.equal(r.status, 200);
+  r = await fetch(`${base}/api/public/${slug}/lead`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome: 'X', telefone: '123' }) });
+  assert.equal(r.status, 400);
+  // Mesmo telefone de novo: junta no mesmo lead.
+  await fetch(`${base}/api/public/${slug}/lead`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome: 'Lucas QR', telefone: '44988881212', origem: 'vitrine', mensagem: 'Ainda disponível?' }) });
+  r = await api('GET', '/api/leads');
+  const meus = r.body.filter((l) => l.telefone === '44988881212');
+  assert.equal(meus.length, 1);
+  const lead = meus[0];
+  assert.equal(lead.origem, 'qr'); assert.equal(lead.temperatura, 'quente'); assert.equal(lead.veiculo.titulo, 'Jeep Renegade 2021');
+  assert.ok(lead.vendedor_id, 'distribuído no rodízio');
+  r = await api('GET', `/api/leads/${lead.id}`);
+  assert.ok(r.body.eventos.some((e) => e.tipo === 'contato' && /Ainda disponível/.test(e.texto)));
+  // Contato criado com o papel "Interessado".
+  const D = require('../src/db');
+  assert.ok(JSON.parse(D.get('SELECT papeis FROM contacts WHERE telefone = ?', '44988881212').papeis).includes('lead'));
+  // Registro de WhatsApp: vira "em atendimento" e marca a 1ª resposta.
+  r = await api('POST', `/api/leads/${lead.id}/notes`, { tipo: 'whatsapp' });
+  assert.equal(r.body.lead.etapa, 'atendimento'); assert.ok(r.body.lead.primeira_resposta_em);
+  // Visita agendada move para "Visita agendada"; compareceu → "Visitou".
+  r = await api('POST', '/api/crm/visits', { lead_id: lead.id, data_hora: '2026-10-20T10:30', tipo: 'test_drive' });
+  const xid = r.body.id;
+  r = await api('GET', `/api/leads/${lead.id}`);
+  assert.equal(r.body.lead.etapa, 'visita'); assert.equal(r.body.visitas[0].data_hora, '2026-10-20 10:30:00');
+  r = await api('GET', '/api/crm/visits?from=2026-10-19&to=2026-10-21');
+  assert.equal(r.body.length, 1); assert.equal(r.body[0].lead_nome, 'Lucas QR');
+  await api('PUT', `/api/crm/visits/${xid}`, { status: 'realizada' });
+  r = await api('GET', `/api/leads/${lead.id}`);
+  assert.equal(r.body.lead.etapa, 'visitou');
+  // Tarefa.
+  r = await api('POST', '/api/crm/tasks', { lead_id: lead.id, titulo: 'Mandar simulação', vence_em: '2026-10-16T09:00' });
+  const tid = r.body.id;
+  r = await api('GET', '/api/crm/tasks');
+  assert.ok(r.body.some((t) => t.id === tid && t.lead_nome === 'Lucas QR'));
+  await api('PUT', `/api/crm/tasks/${tid}`, { feita: true });
+  // Perdido exige motivo.
+  r = await api('POST', '/api/leads', { nome: 'Ana Perdida', telefone: '44977776666', origem: 'marketplace' });
+  assert.equal(r.status, 201);
+  const perd = r.body.id;
+  r = await api('PUT', `/api/leads/${perd}`, { etapa: 'perdido' });
+  assert.equal(r.status, 400);
+  r = await api('PUT', `/api/leads/${perd}`, { etapa: 'perdido', motivo_perda: 'Preço / negociação' });
+  assert.equal(r.body.lead.etapa, 'perdido');
+  // Venda do carro para o telefone do lead: lead vira vendido.
+  r = await api('POST', `/api/vehicles/${vid}/sold`, { venda_data: '2026-10-15', venda_valor: 97000, venda_comprador: 'Lucas QR', comprador_tel: '44 98888-1212', venda_pagamento: 'PIX' });
+  r = await api('GET', `/api/leads/${lead.id}`);
+  assert.equal(r.body.lead.etapa, 'vendido');
+  // Relatório por origem.
+  r = await api('GET', '/api/crm/stats');
+  const qr = r.body.origens.find((o) => o.chave === 'qr');
+  assert.equal(qr.vendidos, 1); assert.equal(qr.conversao, 100);
+  assert.ok(r.body.motivos.some((m) => m.motivo === 'Preço / negociação'));
+  r = await api('GET', '/api/crm/meta');
+  assert.ok(r.body.etapas.length === 8); assert.ok('novos' in r.body.resumo);
+  // Configuração: distribuição manual → lead novo sem vendedor (quando vem do site).
+  r = await api('PUT', '/api/crm/config', { distribuicao: 'manual', sla_min: 30, horarios: 'Seg a sáb' });
+  assert.equal(r.body.sla_min, 30);
+  await fetch(`${base}/api/public/${slug}/lead`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome: 'Sem Dono', telefone: '44966665555' }) });
+  r = await api('GET', '/api/leads');
+  assert.equal(r.body.find((l) => l.telefone === '44966665555').vendedor_id, null);
+  await api('PUT', '/api/crm/config', { distribuicao: 'rodizio' });
+  // Histórico do contato mostra o lead.
+  const cid = D.get('SELECT id FROM contacts WHERE telefone = ?', '44988881212').id;
+  r = await api('GET', `/api/contacts/${cid}`);
+  assert.ok(r.body.historico.some((e) => e.tipo === 'lead'));
+});
+
 test('v2.0: agenda de republicação, QR, folha A4, painel TV e fotos prontas', async () => {
   const sched = require('../src/schedule');
   const db = require('../src/db');

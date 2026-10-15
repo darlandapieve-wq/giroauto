@@ -2,6 +2,33 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.9 — 15/10/2026
+
+**CRM de leads**
+
+- Novo item **CRM** no menu, com um contador de leads novos (fica vermelho quando há lead sem resposta).
+- **Funil em colunas**:
+  - etapas: Novo → Em atendimento → Qualificado → Visita agendada → Visitou → Proposta → Vendido / Perdido;
+  - arraste o card para mudar de etapa;
+  - o card mostra o carro de interesse com foto, a origem, a temperatura (🔥🌤️❄️), o vendedor, a próxima visita, a próxima tarefa e o alerta de "sem resposta";
+  - busca por nome, telefone, carro ou placa, com filtros por origem, vendedor e "só os meus".
+- **Ficha do lead**:
+  - dados do cliente, carro de interesse, o que procura, orçamento, forma de pagamento, carro na troca, origem, vendedor e observações;
+  - botões de WhatsApp (mensagem pronta citando o carro) e de ligar, que ficam registrados no histórico;
+  - histórico completo: criação, novos contatos, anotações, propostas, mudanças de etapa, repasses, visitas e tarefas;
+  - atalhos para agendar visita, criar tarefa, gerar contrato e marcar perdido (com motivo).
+- **Agenda**: visitas, test-drives, avaliações da troca e entregas, por dia. Tem botão de WhatsApp com a mensagem de confirmação pronta e a situação: confirmada, compareceu, não compareceu ou cancelada. "Compareceu" move o lead para "Visitou".
+- **Tarefas**: retornos com prazo e responsável, separados em atrasadas, hoje e próximas.
+- **Relatório** (gestão): leads, vendas, conversão, tempo médio da 1ª resposta e visitas agendadas × realizadas, por origem e por vendedor, além dos motivos de perda.
+- **Distribuição**: rodízio automático entre os vendedores escolhidos, ou manual (quem atender primeiro assume). O tempo do alerta "sem resposta" e o horário de atendimento são configuráveis.
+- **Vendedor** vê só os próprios leads e os sem dono; quem tem acesso à gestão vê todos e repassa leads entre vendedores.
+- **Captação**:
+  - formulário "Tenho interesse" na página de cada carro e "Não achou o que procura?" na vitrine;
+  - quem chega pelo **QR code da folha A4** entra com a origem "QR code no carro";
+  - o mesmo telefone não duplica: o novo contato entra no lead em aberto;
+  - o cliente vira **Contato** com o papel "Interessado", e o lead aparece no histórico do contato.
+- **Venda**: ao marcar o carro como vendido, o lead em aberto com o telefone do comprador vai para "Vendido".
+
 ## v2.8.1 — 15/10/2026
 
 - **Configurações > Dados da loja para contratos**: razão social, CNPJ, representante legal e CPF, endereço para o contrato e foro. Esses dados entram em todos os contratos e continuam editáveis em cada um; o que for alterado no contrato também fica salvo.

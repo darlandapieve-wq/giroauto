@@ -81,6 +81,9 @@ function historico(storeId, c) {
       ev.push({ data: k.data || k.created_at, tipo: 'custo', icone: '🧾', texto: `Serviço no ${k.marca} ${k.modelo}: ${k.descricao || ''} · R$ ${k.valor.toLocaleString('pt-BR')}${k.status === 'previsto' ? ' (previsto)' : ''}`, vehicle_id: k.vehicle_id });
     }
   }
+  for (const l of all(`SELECT l.*, v.marca, v.modelo FROM leads l LEFT JOIN vehicles v ON v.id = l.vehicle_id WHERE l.store_id = ? AND (l.contact_id = ? OR l.telefone = ?)`, storeId, c.id, c.telefone)) {
+    ev.push({ data: l.created_at, tipo: 'lead', icone: '🎯', texto: `Lead pelo ${require('./crm').ORIGENS[l.origem] || l.origem}${l.marca ? ` — ${l.marca} ${l.modelo}` : ''} (${(require('./crm').ETAPAS.find((e) => e[0] === l.etapa) || [])[1] || l.etapa})`, lead_id: l.id });
+  }
   for (const n of all(`SELECT n.*, u.name AS user_name FROM contact_notes n LEFT JOIN users u ON u.id = n.user_id WHERE n.contact_id = ? ORDER BY n.id DESC LIMIT 200`, c.id)) {
     ev.push({ data: n.created_at, tipo: n.tipo, icone: { ligacao: '📞', mensagem: '💬', campanha: '📣', visita: '🏪', proposta: '💰' }[n.tipo] || '📝', texto: `${NOTA_TIPOS[n.tipo] || 'Anotação'}: ${n.texto}`, user: n.user_name || '', id: n.id });
   }
@@ -243,4 +246,4 @@ function markSend(storeId, campaignId, sendId, status, userId) {
   run('UPDATE wa_campaigns SET enviados = ?, status = ? WHERE id = ?', n.e || 0, n.p ? 'aberta' : 'concluida', w.id);
 }
 
-module.exports = { PAPEIS, NOTA_TIPOS, fone, sync, list, find, save, addNote, historico, serialize, vinculos, cloudPublic, saveCloud, createCampaign, runCampaign, campaigns, campaign, markSend, render };
+module.exports = { upsert, PAPEIS, NOTA_TIPOS, fone, sync, list, find, save, addNote, historico, serialize, vinculos, cloudPublic, saveCloud, createCampaign, runCampaign, campaigns, campaign, markSend, render };

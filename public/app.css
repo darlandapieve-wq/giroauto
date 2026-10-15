@@ -648,3 +648,49 @@ main{gap:12px;padding-block:16px 40px;padding-inline:clamp(12px,2.2vw,28px)}
 .ktvar span{color:var(--muted)}
 @media (max-width:760px){.ktform .fields .f,.ktform .fields .f.w4{grid-column:span 2}.ktform .fields .f.w1{grid-column:span 1}}
 @media (max-width:1000px){.ktwrap{grid-template-columns:1fr}.ktprev{position:static;max-height:none}.ktdoc{max-height:70vh}}
+
+/* ---------- v2.9: CRM ---------- */
+.nav .count:empty{display:none}
+.nav .count.hot{background:var(--bad-soft);color:var(--bad)}
+.crk{grid-template-columns:repeat(4,minmax(0,1fr))}
+.crbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.crbar #crQ,.crbar select{border:1px solid var(--line);background:var(--surface);border-radius:7px;padding:7px 9px;font:inherit;font-size:13.5px}
+.crbar #crQ{flex:1;min-width:180px;max-width:320px}
+.modal.wide:has(.ldgrid){max-width:1100px;width:calc(100vw - 32px)}
+.kanban{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(230px,1fr);gap:10px;overflow-x:auto;padding-bottom:8px;align-items:start}
+.kcol{background:var(--sunken);border-radius:10px;padding:8px;min-height:120px;display:flex;flex-direction:column;gap:6px}
+.kcol.over{outline:2px dashed var(--accent);outline-offset:-2px}
+.kcol-h{display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:2px 4px}
+.kcol-h span{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.kcol[data-col="vendido"] .kcol-h b{color:var(--ok)}.kcol[data-col="perdido"] .kcol-h b{color:var(--bad)}
+.kcol-b{display:flex;flex-direction:column;gap:6px;max-height:calc(100vh - 330px);overflow-y:auto}
+.kvazio{text-align:center;margin:8px 0}
+.kcard{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--line);border-radius:8px;padding:8px 9px;cursor:pointer;display:flex;flex-direction:column;gap:5px;font-size:13px}
+.kcard:hover{border-color:var(--accent)}
+.kcard.late{border-left-color:var(--bad)}
+.kcard.dragging{opacity:.5}
+.kc-top{display:flex;justify-content:space-between;gap:6px;align-items:baseline}
+.kc-top b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kc-v{display:flex;gap:7px;align-items:center;font-size:12.5px}
+.kc-v img{width:46px;height:34px;object-fit:cover;border-radius:4px;flex:none}
+.kc-tags{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.kc-tags .pill{font-size:11px;padding:1px 7px}
+.kc-foot{display:flex;justify-content:space-between;align-items:center}
+.ldh{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start}
+.ldh h3{margin:0}
+.ldgrid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:18px;margin-top:10px}
+.ld-v{margin-bottom:10px}.ld-v img{width:80px;height:58px}
+.ldnote{display:flex;gap:6px;margin-bottom:8px}
+.ldnote input{flex:1;min-width:0;border:1px solid var(--line);border-radius:7px;padding:6px 8px;background:var(--bg)}
+.ldnote select{border:1px solid var(--line);border-radius:7px;background:var(--bg)}
+.ldtl{max-height:340px;overflow:auto}
+.chatlog{display:flex;flex-direction:column;gap:6px;max-height:320px;overflow:auto;padding:8px;background:var(--sunken);border-radius:8px;margin-top:6px}
+.cm{max-width:85%;padding:6px 9px;border-radius:10px;font-size:13px;white-space:pre-wrap}
+.cm span{display:block;font-size:10.5px;color:var(--muted);margin-top:2px}
+.cm.u{align-self:flex-end;background:var(--accent-soft)}
+.cm.b{align-self:flex-start;background:var(--surface);border:1px solid var(--line)}
+.agd{margin-bottom:12px}.agd.past{opacity:.65}
+.agd h4{text-transform:capitalize;margin:8px 0 6px}
+.agrow{display:grid;grid-template-columns:52px minmax(0,1fr) auto auto;gap:10px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:7px 10px;margin-bottom:5px}
+.agrow select{border:1px solid var(--line);border-radius:6px;padding:4px;background:var(--bg);font-size:12.5px}
+@media (max-width:900px){.ldgrid{grid-template-columns:1fr}.crk{grid-template-columns:repeat(2,minmax(0,1fr))}.agrow{grid-template-columns:44px minmax(0,1fr)}.agrow > .pill,.agrow > .btnrow{grid-column:2}}
