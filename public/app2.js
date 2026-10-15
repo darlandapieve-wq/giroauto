@@ -1355,7 +1355,8 @@
           </div>
         </div>
       </div>
-      <div class="modal-foot">${fin ? '<button class="btn" type="button" id="vp-fin">Custos e margem</button>' : ''}<button class="btn" data-close type="button">Fechar</button>${can('cadastrar') || can('vender') ? '<button class="btn primary" type="button" id="vp-ed">Editar</button>' : ''}</div>`, true);
+      <div class="modal-foot">${fin ? '<button class="btn" type="button" id="vp-fin">Custos e margem</button>' : ''}${podeContrato() ? '<button class="btn" type="button" id="vp-ct">📄 Contrato</button>' : ''}<button class="btn" data-close type="button">Fechar</button>${can('cadastrar') || can('vender') ? '<button class="btn primary" type="button" id="vp-ed">Editar</button>' : ''}</div>`, true);
+    if ($('#vp-ct')) $('#vp-ct').onclick = () => X.contratoDoCarro(id);
     if ($('#vp-ed')) $('#vp-ed').onclick = () => { if (vend && !can('cadastrar')) return saleEditModal(id); closeModal(); location.hash = 'editar-' + id; };
     if ($('#vp-fin')) $('#vp-fin').onclick = () => financeModal(id);
   }
@@ -1747,7 +1748,7 @@
   async function feedbackModal() {
     const F = await api('GET', '/api/feedback').catch(() => ({ itens: [], tipos: {} }));
     const tipos = Object.entries(F.tipos || { erro: 'Erro / problema', melhoria: 'Melhoria', funcionalidade: 'Nova funcionalidade', duvida: 'Dúvida', outro: 'Outro' });
-    const telaAtual = ({ painel: 'Painel', estoque: 'Estoque', novo: 'Cadastro do veículo', republicacao: 'Republicação', campanhas: 'Campanhas', gestao: 'Gestão', resultados: 'Resultados', equipe: 'Equipe', config: 'Configurações' })[S.view] || S.view || '';
+    const telaAtual = ({ painel: 'Painel', estoque: 'Estoque', novo: 'Cadastro do veículo', republicacao: 'Republicação', campanhas: 'Campanhas', gestao: 'Gestão', contratos: 'Contratos', resultados: 'Resultados', equipe: 'Equipe', config: 'Configurações' })[S.view] || S.view || '';
     modal(`<h3>Sugestões e erros</h3>
       <p class="lead">Conte o que deu errado ou o que poderia ser melhor. Toda mensagem é lida pelo desenvolvedor e a resposta aparece aqui embaixo.</p>
       <div class="chips" role="radiogroup">${tipos.map(([k, l], i) => `<label class="chip"><input type="radio" name="fb-t" value="${k}" ${i === 0 ? 'checked' : ''}> ${esc(l)}</label>`).join('')}</div>
@@ -1843,6 +1844,319 @@
       <div class="modal-foot"><button class="btn primary" data-close type="button">Fechar</button></div>`, true);
   }
 
+  /* ======================= Contratos (v2.8) ======================= */
+  const KT = { modo: 'lista', busca: '', preVehicle: null, ed: null, me: null, data: null };
+  const kGet = (o, k) => k.split('.').reduce((a, p) => (a && typeof a === 'object' ? a[p] : undefined), o);
+  const kSet = (o, k, v) => { const ps = k.split('.'); let a = o; for (const p of ps.slice(0, -1)) { if (!a[p] || typeof a[p] !== 'object') a[p] = {}; a = a[p]; } a[ps[ps.length - 1]] = v; };
+  const podeContrato = () => can('vender') || can('cadastrar') || can('gestao');
+  const vNome = (v) => `${v.marca} ${v.modelo}${v.ano_modelo ? ' ' + v.ano_modelo : ''}${v.placa ? ' · ' + v.placa : ''}${v.status === 'vendido' ? ' · vendido' : ''}`;
+  const AVISO_JUR = 'Modelos de apoio, escritos com base no Código de Defesa do Consumidor, Código Civil, Código de Trânsito e LGPD. Cada loja deve revisar os textos com o seu advogado antes de usar e adaptar à sua realidade.';
+
+  async function ktLoad() {
+    const [M, L] = await Promise.all([api('GET', '/api/contracts/models'), api('GET', '/api/contracts')]);
+    KT.data = { ...M, lista: L };
+    return KT.data;
+  }
+
+  // Agrupa os campos do modelo em seções (o primeiro campo de cada grupo traz o nome).
+  function ktSecoes(m) {
+    const fixos = []; const opc = [];
+    let grupo = 'Dados da loja';
+    for (const c of m.campos) {
+      if (c.grupo) grupo = c.grupo;
+      if (c.se) opc.push(c); else {
+        let s = fixos.find((x) => x.nome === grupo);
+        if (!s) { s = { nome: grupo, campos: [] }; fixos.push(s); }
+        s.campos.push(c);
+      }
+    }
+    return { fixos, opc };
+  }
+
+  function ktCampo(c, dados) {
+    const val = kGet(dados, c.k) ?? '';
+    const w = `w${Math.min(6, c.w || 2)}`;
+    const id = 'kf-' + c.k.replace(/\./g, '-');
+    const inp = c.tipo === 'textarea'
+      ? `<textarea id="${id}" data-k="${esc(c.k)}" rows="2">${esc(val)}</textarea>`
+      : `<input id="${id}" data-k="${esc(c.k)}" ${c.tipo === 'date' ? 'type="date"' : 'type="text"'} ${c.tipo === 'money' ? 'inputmode="decimal" placeholder="0,00"' : ''} value="${esc(val)}">`;
+    return `<div class="f ${w}"><label for="${id}">${esc(c.label)}</label>${inp}</div>`;
+  }
+
+  X.views.contratos = {
+    async html() {
+      if (!podeContrato()) return '<div class="err">Seu acesso não permite gerar contratos.</div>';
+      if (KT.modo === 'gerar' && KT.ed) return ktFormHtml();
+      if (KT.modo === 'modelo' && KT.me) return ktModeloHtml();
+      const D = await ktLoad();
+      const pv = KT.preVehicle ? S.vehicles.find((v) => v.id === KT.preVehicle) : null;
+      const q = KT.busca.toLowerCase();
+      const lista = D.lista.filter((c) => !q || [c.titulo, c.modelo_nome, c.cliente_nome, c.veiculo_resumo].join(' ').toLowerCase().includes(q));
+      return `<div class="head"><div><h1>Contratos</h1><p>Escolha o modelo, puxe os dados do carro e do cliente, marque as cláusulas e imprima. Cláusulas usuais já vêm marcadas; as específicas (troca, financiamento, leilão, sinistro…) você marca quando se aplicam.</p></div></div>
+        <div class="warnbox" style="margin-bottom:12px">⚖️ ${esc(AVISO_JUR)}</div>
+        ${pv ? `<div class="infobox" style="margin-bottom:12px">Veículo selecionado: <b>${esc(vNome(pv))}</b>. Escolha o modelo abaixo. <button class="linkbtn" type="button" id="kt-novei">trocar/limpar</button></div>` : ''}
+        <div class="ktgrid">${D.modelos.map((m) => `<div class="ktcard">
+            <div class="ktc-h"><span class="ktc-i">${m.icone}</span><b>${esc(m.nome)}${m.proprio ? ' <span class="pill p-info">modelo da loja</span>' : m.personalizado ? ' <span class="pill p-info">personalizado</span>' : ''}</b></div>
+            <p class="sub">${esc(m.descricao || '')}</p>
+            <p class="sub">${m.clausulas.filter((c) => c.padrao).length} cláusulas usuais · ${m.clausulas.filter((c) => !c.padrao).length} opcionais</p>
+            <div class="btnrow"><button class="btn sm primary" type="button" data-kg="${esc(m.key)}">Gerar</button>${can('config') ? `<button class="btn sm" type="button" data-km="${esc(m.key)}">Editar modelo</button>` : ''}</div>
+          </div>`).join('')}</div>
+        <div class="panel" style="margin-top:16px"><div class="btnrow" style="justify-content:space-between;align-items:center"><h3 style="margin:0">Contratos emitidos (${D.lista.length})</h3><input id="kt-busca" placeholder="Buscar por cliente, carro, placa…" value="${esc(KT.busca)}" style="max-width:280px"></div>
+          ${lista.length ? `<div class="table-wrap"><table class="tbl compact"><thead><tr><th>Data</th><th>Documento</th><th>Cliente</th><th>Veículo</th><th>Por</th><th></th></tr></thead><tbody>${lista.map((c) => `<tr>
+            <td>${fmtDate(c.created_at)}</td><td><b>${esc(c.modelo_nome || c.titulo)}</b></td><td>${esc(c.cliente_nome || '—')}</td>
+            <td>${c.vehicle_id ? `<button class="vlink" type="button" data-vp="${c.vehicle_id}">${esc(c.veiculo_resumo || 'ver carro')}</button>` : esc(c.veiculo_resumo || '—')}</td><td class="sub">${esc(c.user_name || '')}</td>
+            <td class="r"><div class="btnrow" style="justify-content:flex-end;gap:4px;flex-wrap:nowrap"><a class="btn sm" href="${esc(c.print_url)}" target="_blank" rel="noopener">Imprimir</a><button class="btn sm" type="button" data-ke="${c.id}">Abrir</button><button class="btn sm ghost" type="button" data-kc="${c.id}" title="Usar como base para um novo contrato">Copiar</button>${can('excluir') || can('gestao') ? `<button class="btn sm ghost danger" type="button" data-kx="${c.id}">Excluir</button>` : ''}</div></td></tr>`).join('')}</tbody></table></div>`
+          : `<p class="sub">${D.lista.length ? 'Nada encontrado.' : 'Nenhum contrato emitido ainda.'}</p>`}</div>`;
+    },
+    bind() {
+      if (KT.modo === 'gerar' && KT.ed) return ktFormBind();
+      if (KT.modo === 'modelo' && KT.me) return ktModeloBind();
+      $$('[data-kg]').forEach((b) => { b.onclick = () => ktNovo(b.dataset.kg, { vehicle_id: KT.preVehicle }); });
+      $$('[data-km]').forEach((b) => { b.onclick = () => { KT.me = JSON.parse(JSON.stringify(KT.data.modelos.find((m) => m.key === b.dataset.km))); KT.modo = 'modelo'; X.render(); }; });
+      $$('[data-ke]').forEach((b) => { b.onclick = () => ktAbrir(Number(b.dataset.ke), false); });
+      $$('[data-kc]').forEach((b) => { b.onclick = () => ktAbrir(Number(b.dataset.kc), true); });
+      $$('[data-kx]').forEach((b) => {
+        b.onclick = () => confirmBox('Excluir este contrato do histórico?', 'O documento já impresso não é afetado.', 'Excluir', async () => { await api('DELETE', `/api/contracts/${b.dataset.kx}`); toast('Contrato excluído'); X.render(); }, true);
+      });
+      if ($('#kt-novei')) $('#kt-novei').onclick = () => { KT.preVehicle = null; X.render(); };
+      const busca = $('#kt-busca');
+      if (busca) busca.oninput = () => { KT.busca = busca.value; clearTimeout(KT.tb); KT.tb = setTimeout(() => { X.render().then?.(() => { const i = $('#kt-busca'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }); }, 350); };
+    },
+  };
+
+  async function ktContatos() {
+    if (KT.contatos) return KT.contatos;
+    try { KT.contatos = (await api('GET', '/api/contacts')).contatos || []; } catch { KT.contatos = []; }
+    return KT.contatos;
+  }
+
+  async function ktNovo(chave, { vehicle_id, contact_id } = {}) {
+    const m = (KT.data?.modelos || (await ktLoad()).modelos).find((x) => x.key === chave);
+    if (!m) return toast('Modelo não encontrado.');
+    let P;
+    try { P = await api('POST', '/api/contracts/prefill', { modelo: chave, vehicle_id, contact_id }); } catch (e) { return toast(e.message); }
+    const sel = Object.fromEntries(m.clausulas.map((c) => [c.key, !!c.padrao || P.marcar.includes(c.key)]));
+    KT.ed = { id: null, m, dados: P.dados, sel, textos: {}, extras: [], vehicle_id: vehicle_id || null, contact_id: contact_id || null, titulo: m.titulo };
+    KT.modo = 'gerar';
+    await ktContatos();
+    await X.render(); window.scrollTo(0, 0);
+  }
+
+  async function ktAbrir(id, copia) {
+    let c;
+    try { c = await api('GET', `/api/contracts/${id}`); } catch (e) { return toast(e.message); }
+    const modelos = KT.data?.modelos || (await ktLoad()).modelos;
+    const m = modelos.find((x) => x.key === c.modelo);
+    if (!m) return toast('O modelo deste contrato foi excluído. Abra pelo botão Imprimir.');
+    const sel = Object.fromEntries(m.clausulas.map((x) => [x.key, false]));
+    const textos = {}; const extras = [];
+    for (const cl of c.clausulas) {
+      const ref = m.clausulas.find((x) => x.key === cl.key);
+      if (ref) { sel[cl.key] = true; if (cl.texto !== ref.texto) textos[cl.key] = cl.texto; } else extras.push({ key: cl.key, titulo: cl.titulo, texto: cl.texto });
+    }
+    KT.ed = { id: copia ? null : c.id, m, dados: c.dados, sel, textos, extras, vehicle_id: c.vehicle_id, contact_id: c.contact_id, titulo: c.titulo };
+    if (copia) { KT.ed.dados.geral = { ...(KT.ed.dados.geral || {}), data: today() }; }
+    KT.modo = 'gerar';
+    await ktContatos();
+    await X.render(); window.scrollTo(0, 0);
+  }
+
+  // Cláusulas finais na ordem do modelo; as avulsas entram antes das disposições gerais/LGPD/foro.
+  function ktClausulas() {
+    const E = KT.ed;
+    const fim = ['integralidade', 'lgpd', 'lgpd_marketing', 'foro'];
+    const marcadas = E.m.clausulas.filter((c) => E.sel[c.key]).map((c) => ({ key: c.key, titulo: c.titulo, texto: E.textos[c.key] ?? c.texto }));
+    const extras = E.extras.filter((x) => x.titulo.trim() && x.texto.trim());
+    const i = marcadas.findIndex((c) => fim.includes(c.key));
+    if (i < 0) return [...marcadas, ...extras];
+    return [...marcadas.slice(0, i), ...extras, ...marcadas.slice(i)];
+  }
+
+  function ktOpcHtml() {
+    const E = KT.ed;
+    const { opc } = ktSecoes(E.m);
+    const ativos = opc.filter((c) => E.sel[c.se]);
+    if (!ativos.length) return '';
+    const porCl = {};
+    for (const c of ativos) (porCl[c.se] = porCl[c.se] || []).push(c);
+    return `<div class="ktsec"><h4>Dados das cláusulas marcadas</h4>${Object.entries(porCl).map(([k, cs]) => `<div class="ktsub">${esc(E.m.clausulas.find((c) => c.key === k)?.titulo || k)}</div><div class="fields">${cs.map((c) => ktCampo(c, E.dados)).join('')}</div>`).join('')}</div>`;
+  }
+
+  function ktFormHtml() {
+    const E = KT.ed; const m = E.m;
+    const { fixos } = ktSecoes(m);
+    const veics = [...S.vehicles].filter((v) => v.status !== 'vendido' || !v.vendido_em || Date.now() - Date.parse(String(v.vendido_em).replace(' ', 'T') + 'Z') < 400 * 864e5 || v.id === E.vehicle_id)
+      .sort((a, b) => (a.status === 'vendido') - (b.status === 'vendido') || vNome(a).localeCompare(vNome(b)));
+    const sec = (s) => {
+      const loja = s.nome === 'Dados da loja';
+      const inner = `<div class="fields">${s.campos.map((c) => ktCampo(c, E.dados)).join('')}</div>`;
+      return loja
+        ? `<details class="ktsec"><summary><h4 style="display:inline">Dados da loja</h4> <span class="sub">já preenchidos — clique para conferir ou completar (razão social, CNPJ, representante). Ficam salvos para os próximos contratos.</span></summary>${inner}</details>`
+        : `<div class="ktsec"><h4>${esc(s.nome)}</h4>${inner}</div>`;
+    };
+    const cls = m.clausulas;
+    return `<div class="head"><div><h1>${m.icone} ${esc(m.nome)}</h1><p>${E.id ? `Editando o contrato nº ${E.id}.` : 'Novo documento.'} A prévia à direita mostra o texto final; espaços em branco ficam com linha para preencher à mão.</p></div>
+        <div class="btnrow"><button class="btn" type="button" id="kt-back">Voltar</button><button class="btn" type="button" id="kt-save">Salvar</button><button class="btn primary" type="button" id="kt-print">Salvar e imprimir</button></div></div>
+      <div class="ktwrap">
+        <div class="ktform">
+          <div class="ktsec"><div class="fields">
+            <div class="f w3"><label for="kt-v">Veículo (puxa os dados)</label><select id="kt-v"><option value="">— nenhum / digitar —</option>${veics.map((v) => `<option value="${v.id}" ${v.id === E.vehicle_id ? 'selected' : ''}>${esc(vNome(v))}</option>`).join('')}</select></div>
+            <div class="f w3"><label for="kt-c">Cliente dos contatos (opcional)</label><select id="kt-c"><option value="">— nenhum / digitar —</option>${(KT.contatos || []).map((c) => `<option value="${c.id}" ${c.id === E.contact_id ? 'selected' : ''}>${esc(c.nome || c.telefone)}${c.nome ? ' · ' + esc(c.telefone) : ''}</option>`).join('')}</select></div>
+            <div class="f w6"><label for="kt-ti">Título do documento</label><input id="kt-ti" value="${esc(E.titulo)}"></div>
+          </div></div>
+          ${fixos.map(sec).join('')}
+          <div class="ktsec"><h4>Cláusulas</h4>
+            <p class="sub">Marcadas = entram no contrato. <span class="pill p-ok">usual</span> já vem marcada; <span class="pill p-muted">específica</span> marque quando o caso pedir. "Editar" muda o texto só neste contrato.</p>
+            <div class="ktcls">${cls.map((c) => `<div class="ktcl ${E.sel[c.key] ? 'on' : ''}">
+                <label class="ktcl-h"><input type="checkbox" data-ck="${esc(c.key)}" ${E.sel[c.key] ? 'checked' : ''}><span><b>${esc(c.titulo)}</b> <span class="pill ${c.padrao ? 'p-ok' : 'p-muted'}">${c.padrao ? 'usual' : 'específica'}</span>${E.textos[c.key] !== undefined ? ' <span class="pill p-warn">texto editado</span>' : ''}</span></label>
+                <button class="linkbtn" type="button" data-cte="${esc(c.key)}">${E.textos[c.key] !== undefined ? 'editar' : 'ver / editar'}</button>
+                <div class="ktcl-t" data-ctb="${esc(c.key)}" hidden><textarea rows="5" data-ctx="${esc(c.key)}">${esc(E.textos[c.key] ?? c.texto)}</textarea>${E.textos[c.key] !== undefined ? `<button class="linkbtn" type="button" data-ctr="${esc(c.key)}">voltar ao texto do modelo</button>` : ''}</div>
+              </div>`).join('')}</div>
+            <div id="kt-extras">${E.extras.map((x, i) => `<div class="ktcl on"><div class="fields"><div class="f w6"><label>Cláusula avulsa — título</label><input data-xt="${i}" value="${esc(x.titulo)}"></div><div class="f w6"><label>Texto</label><textarea rows="4" data-xx="${i}">${esc(x.texto)}</textarea></div></div><button class="linkbtn" type="button" data-xr="${i}">remover</button></div>`).join('')}</div>
+            <button class="btn sm" type="button" id="kt-addx">+ Cláusula avulsa neste contrato</button>
+          </div>
+          <div id="kt-opc">${ktOpcHtml()}</div>
+          <p class="note">⚖️ ${esc(AVISO_JUR)}</p>
+        </div>
+        <div class="ktprev"><div class="ktprev-h"><b>Prévia</b><span class="sub" id="kt-pst"></span></div><div class="ktdoc" id="kt-doc"><div class="loading">Gerando prévia…</div></div></div>
+      </div>`;
+  }
+
+  function ktPreview() {
+    clearTimeout(KT.tp);
+    KT.tp = setTimeout(async () => {
+      const E = KT.ed; if (!E || !$('#kt-doc')) return;
+      try {
+        const r = await api('POST', '/api/contracts/preview', { modelo: E.m.key, dados: E.dados, clausulas: ktClausulas(), titulo: E.titulo });
+        if ($('#kt-doc')) $('#kt-doc').innerHTML = r.html;
+      } catch (e) { if ($('#kt-doc')) $('#kt-doc').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+    }, 350);
+  }
+
+  function ktBindCampos(root) {
+    $$('[data-k]', root).forEach((el) => { el.oninput = () => { kSet(KT.ed.dados, el.dataset.k, el.value); ktPreview(); }; });
+  }
+
+  async function ktSalvar(imprimir) {
+    const E = KT.ed;
+    const w = imprimir ? window.open('about:blank', '_blank') : null;
+    try {
+      const body = { modelo: E.m.key, dados: E.dados, clausulas: ktClausulas(), titulo: E.titulo, vehicle_id: E.vehicle_id, contact_id: E.contact_id };
+      const c = E.id ? await api('PUT', `/api/contracts/${E.id}`, body) : await api('POST', '/api/contracts', body);
+      E.id = c.id;
+      toast(`Contrato nº ${c.id} salvo`);
+      if (w) w.location = c.print_url;
+      const h = $('.head p'); if (h) h.textContent = `Editando o contrato nº ${c.id}. Salve de novo depois de qualquer alteração.`;
+    } catch (e) { if (w) w.close(); toast(e.message, 6000); }
+  }
+
+  function ktFormBind() {
+    const E = KT.ed;
+    ktBindCampos(document);
+    $('#kt-back').onclick = () => { KT.modo = 'lista'; KT.ed = null; X.render(); };
+    $('#kt-save').onclick = () => ktSalvar(false);
+    $('#kt-print').onclick = () => ktSalvar(true);
+    $('#kt-ti').oninput = () => { E.titulo = $('#kt-ti').value; ktPreview(); };
+    const repuxar = async () => {
+      try {
+        const P = await api('POST', '/api/contracts/prefill', { modelo: E.m.key, vehicle_id: E.vehicle_id, contact_id: E.contact_id });
+        // Atualiza veículo e cliente com o que veio; mantém o que o usuário já digitou nos outros campos.
+        for (const g of Object.keys(P.dados)) {
+          if (g === 'loja' || g === 'geral') continue;
+          for (const [k, v] of Object.entries(P.dados[g] || {})) if (v !== '' && v !== undefined) kSet(E.dados, `${g}.${k}`, v);
+        }
+        for (const k of P.marcar) E.sel[k] = true;
+        X.render();
+      } catch (e) { toast(e.message); }
+    };
+    $('#kt-v').onchange = () => { E.vehicle_id = Number($('#kt-v').value) || null; if (E.vehicle_id) repuxar(); };
+    $('#kt-c').onchange = () => { E.contact_id = Number($('#kt-c').value) || null; if (E.contact_id) repuxar(); };
+    $$('[data-ck]').forEach((cb) => {
+      cb.onchange = () => {
+        E.sel[cb.dataset.ck] = cb.checked;
+        cb.closest('.ktcl').classList.toggle('on', cb.checked);
+        $('#kt-opc').innerHTML = ktOpcHtml(); ktBindCampos($('#kt-opc'));
+        ktPreview();
+      };
+    });
+    $$('[data-cte]').forEach((b) => { b.onclick = () => { const box = $(`[data-ctb="${b.dataset.cte}"]`); box.hidden = !box.hidden; }; });
+    $$('[data-ctx]').forEach((t) => {
+      t.oninput = () => {
+        const k = t.dataset.ctx; const orig = E.m.clausulas.find((c) => c.key === k)?.texto;
+        if (t.value.trim() === String(orig).trim()) delete E.textos[k]; else E.textos[k] = t.value;
+        if (!E.sel[k]) { E.sel[k] = true; const cb = $(`[data-ck="${k}"]`); if (cb) { cb.checked = true; cb.closest('.ktcl').classList.add('on'); } }
+        ktPreview();
+      };
+    });
+    $$('[data-ctr]').forEach((b) => { b.onclick = () => { delete E.textos[b.dataset.ctr]; X.render(); }; });
+    $('#kt-addx').onclick = () => { E.extras.push({ key: 'avulsa_' + Date.now().toString(36), titulo: '', texto: '' }); X.render(); };
+    $$('[data-xt]').forEach((i) => { i.oninput = () => { E.extras[Number(i.dataset.xt)].titulo = i.value; ktPreview(); }; });
+    $$('[data-xx]').forEach((i) => { i.oninput = () => { E.extras[Number(i.dataset.xx)].texto = i.value; ktPreview(); }; });
+    $$('[data-xr]').forEach((b) => { b.onclick = () => { E.extras.splice(Number(b.dataset.xr), 1); X.render(); }; });
+    ktPreview();
+  }
+
+  /* ---- Editor do modelo (por loja) ---- */
+  function ktModeloHtml() {
+    const m = KT.me;
+    const vars = [...m.campos.map((c) => [c.k, c.label]), ['veiculo_resumo', 'Resumo do veículo (marca, modelo, ano, placa…)'], ['geral.data_extenso', 'Data por extenso']];
+    const money = m.campos.filter((c) => c.tipo === 'money').map((c) => [c.k + '_extenso', c.label.replace(' (R$)', '') + ' por extenso']);
+    return `<div class="head"><div><h1>Editar modelo: ${esc(m.nome)}</h1><p>As mudanças valem só para a sua loja e para os próximos contratos. Os contratos já emitidos não mudam.</p></div>
+        <div class="btnrow"><button class="btn" type="button" id="km-back">Voltar</button>
+          ${m.proprio ? '<button class="btn danger" type="button" id="km-del">Excluir modelo</button>' : m.personalizado ? '<button class="btn" type="button" id="km-reset">Restaurar o padrão</button>' : ''}
+          <button class="btn" type="button" id="km-dup">Duplicar</button><button class="btn primary" type="button" id="km-save">Salvar modelo</button></div></div>
+      <div class="warnbox" style="margin-bottom:12px">⚖️ ${esc(AVISO_JUR)}</div>
+      <div class="ktwrap">
+        <div class="ktform">
+          <div class="ktsec"><div class="fields">
+            <div class="f w3"><label for="km-n">Nome do modelo</label><input id="km-n" value="${esc(m.nome)}"></div>
+            <div class="f w3"><label for="km-t">Título no documento</label><input id="km-t" value="${esc(m.titulo)}"></div>
+            <div class="f w6"><label for="km-d">Descrição</label><input id="km-d" value="${esc(m.descricao || '')}"></div>
+            <label class="f w6" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="km-w" ${m.testemunhas ? 'checked' : ''} style="width:auto"> Linhas para 2 testemunhas</label>
+          </div></div>
+          <div class="ktsec"><h4>Cláusulas (na ordem do documento)</h4>
+            <p class="sub">"Marcada por padrão" = já vem selecionada ao gerar. Use as setas para mudar a ordem.</p>
+            ${m.clausulas.map((c, i) => `<div class="ktcl on">
+              <div class="ktcl-bar"><span class="sub">${i + 1}.</span><input data-mt="${i}" value="${esc(c.titulo)}" placeholder="Título"><label class="sub" style="white-space:nowrap"><input type="checkbox" data-mp="${i}" ${c.padrao ? 'checked' : ''}> marcada por padrão</label>
+                <button class="btn sm ghost" type="button" data-mu="${i}" title="Subir" ${i === 0 ? 'disabled' : ''}>↑</button><button class="btn sm ghost" type="button" data-md="${i}" title="Descer" ${i === m.clausulas.length - 1 ? 'disabled' : ''}>↓</button><button class="btn sm ghost danger" type="button" data-mr="${i}" title="Remover">✕</button></div>
+              <textarea rows="4" data-mx="${i}">${esc(c.texto)}</textarea></div>`).join('')}
+            <button class="btn sm" type="button" id="km-add">+ Nova cláusula</button>
+          </div>
+        </div>
+        <div class="ktprev"><div class="ktprev-h"><b>Campos que podem ir no texto</b></div><div class="ktvars"><p class="sub">Clique para copiar e cole no texto da cláusula. No contrato, vira o dado preenchido.</p>${[...vars, ...money].map(([k, l]) => `<button class="ktvar" type="button" data-cv="{{${esc(k)}}}"><code>{{${esc(k)}}}</code><span>${esc(l)}</span></button>`).join('')}</div></div>
+      </div>`;
+  }
+
+  function ktModeloBind() {
+    const m = KT.me;
+    const ler = () => {
+      m.nome = $('#km-n').value; m.titulo = $('#km-t').value; m.descricao = $('#km-d').value; m.testemunhas = $('#km-w').checked;
+      m.clausulas.forEach((c, i) => { c.titulo = $(`[data-mt="${i}"]`).value; c.texto = $(`[data-mx="${i}"]`).value; c.padrao = $(`[data-mp="${i}"]`).checked; });
+    };
+    $('#km-back').onclick = () => { KT.modo = 'lista'; KT.me = null; X.render(); };
+    $$('[data-mu]').forEach((b) => { b.onclick = () => { ler(); const i = Number(b.dataset.mu); [m.clausulas[i - 1], m.clausulas[i]] = [m.clausulas[i], m.clausulas[i - 1]]; X.render(); }; });
+    $$('[data-md]').forEach((b) => { b.onclick = () => { ler(); const i = Number(b.dataset.md); [m.clausulas[i + 1], m.clausulas[i]] = [m.clausulas[i], m.clausulas[i + 1]]; X.render(); }; });
+    $$('[data-mr]').forEach((b) => { b.onclick = () => { ler(); const i = Number(b.dataset.mr); confirmBox('Remover esta cláusula do modelo?', esc(m.clausulas[i].titulo), 'Remover', async () => { m.clausulas.splice(i, 1); setTimeout(() => X.render(), 0); }, true); }; });
+    $('#km-add').onclick = () => { ler(); m.clausulas.push({ key: 'propria_' + Date.now().toString(36), titulo: 'Nova cláusula', texto: '', padrao: true, propria: true }); X.render(); };
+    $$('[data-cv]').forEach((b) => { b.onclick = () => { X.copyText ? X.copyText(b.dataset.cv) : navigator.clipboard?.writeText(b.dataset.cv); toast(`${b.dataset.cv} copiado`); }; });
+    $('#km-save').onclick = async () => {
+      ler();
+      try { const r = await api('PUT', `/api/contracts/models/${encodeURIComponent(m.key)}`, { nome: m.nome, titulo: m.titulo, descricao: m.descricao, testemunhas: m.testemunhas, clausulas: m.clausulas }); KT.me = r; toast('Modelo salvo'); KT.modo = 'lista'; KT.me = null; X.render(); }
+      catch (e) { toast(e.message, 6000); }
+    };
+    $('#km-dup').onclick = async () => {
+      ler();
+      try { const r = await api('POST', `/api/contracts/models/${encodeURIComponent(m.key)}/duplicate`, { nome: `${m.nome} (cópia)` }); KT.me = r; toast('Cópia criada: edite à vontade'); X.render(); }
+      catch (e) { toast(e.message); }
+    };
+    const apagar = (msg) => async () => { await api('DELETE', `/api/contracts/models/${encodeURIComponent(m.key)}`); toast(msg); KT.modo = 'lista'; KT.me = null; setTimeout(() => X.render(), 0); };
+    if ($('#km-reset')) $('#km-reset').onclick = () => confirmBox('Restaurar o texto padrão?', 'As alterações da loja neste modelo serão perdidas.', 'Restaurar', apagar('Modelo restaurado'));
+    if ($('#km-del')) $('#km-del').onclick = () => confirmBox('Excluir este modelo da loja?', 'Os contratos já emitidos continuam no histórico.', 'Excluir', apagar('Modelo excluído'), true);
+  }
+
+  // Atalho a partir do carro (popup do veículo).
+  X.contratoDoCarro = (id) => { KT.preVehicle = id; KT.modo = 'lista'; KT.ed = null; closeModal(); if (location.hash === '#contratos') X.render(); else location.hash = 'contratos'; };
+
   /* ======================= Navegação e app instalável ======================= */
   function navSetup() {
     const nav = $('.nav'); if (!nav || $('[data-view="gestao"]')) return;
@@ -1850,13 +2164,14 @@
     if (S.me.store.logo_file && !$('#storeLogo')) $('.side-foot .store')?.insertAdjacentHTML('beforebegin', `<img id="storeLogo" class="store-logo" src="/media/${esc(S.me.store.logo_file)}" alt="${esc(S.me.store.name)}">`);
     if (can('gestao')) nav.querySelector('[data-view="estoque"]')?.insertAdjacentHTML('beforebegin', '<button data-view="painel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Painel</button>');
     cfg.insertAdjacentHTML('beforebegin', `
+      ${can('vender') || can('cadastrar') || can('gestao') ? '<button data-view="contratos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>Contratos</button>' : ''}
       <button data-view="gestao"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v16"/></svg>Gestão</button>
       ${can('gestao') ? '<button data-view="resultados"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Resultados</button>' : ''}
       ${owner() ? '<button data-view="equipe"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.2"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2A5 5 0 0 1 21 19"/></svg>Equipe</button>' : ''}`);
     if (S.me.user.is_admin) cfg.insertAdjacentHTML('afterend', '<button data-view="dev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></svg>Desenvolvedor</button>');
     if (!$('#fbLink')) $('.side-foot .store')?.insertAdjacentHTML('beforebegin', '<button class="btn ghost sm" id="fbLink" type="button" title="Informar erros e sugerir melhorias">💬 Sugestões e erros</button>');
     if ($('#fbLink')) $('#fbLink').onclick = () => feedbackModal();
-    $$('.nav [data-view="gestao"], .nav [data-view="resultados"], .nav [data-view="equipe"], .nav [data-view="painel"], .nav [data-view="dev"]').forEach((b) => b.addEventListener('click', () => { if (location.hash === '#' + b.dataset.view) X.route(); else location.hash = b.dataset.view; }));
+    $$('.nav [data-view="gestao"], .nav [data-view="resultados"], .nav [data-view="equipe"], .nav [data-view="painel"], .nav [data-view="dev"], .nav [data-view="contratos"]').forEach((b) => b.addEventListener('click', () => { if (b.dataset.view === 'contratos') { KT.modo = 'lista'; KT.ed = null; KT.me = null; KT.preVehicle = null; } if (location.hash === '#' + b.dataset.view) X.route(); else location.hash = b.dataset.view; }));
     // Esconde o que o vendedor não pode usar
     if (!can('campanhas')) nav.querySelector('[data-view="campanhas"]')?.setAttribute('hidden', '');
     if (!can('cadastrar')) nav.querySelector('[data-view="novo"]')?.setAttribute('hidden', '');

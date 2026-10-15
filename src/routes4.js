@@ -18,6 +18,25 @@ function register(app) {
   app.get('/api/dev/feedback', DEV.requireDev, (req, res) => res.json({ itens: DEV.feedbackList(), tipos: DEV.TIPOS, status: DEV.STATUS, prioridades: DEV.PRIORIDADES }));
   app.put('/api/dev/feedback/:fid', DEV.requireDev, (req, res) => { DEV.updateFeedback(req.params.fid, req.body || {}); res.json({ ok: true }); });
 
+  /* ---------------- Contratos (v2.8) ---------------- */
+  const K = require('./contratos');
+  const emite = team.canAny('vender', 'cadastrar', 'gestao');
+  app.get('/api/contracts/models', emite, (req, res) => res.json({ modelos: K.models(req.user.storeId), loja: K.lojaDados(req.user.storeId) }));
+  app.put('/api/contracts/models/:key', team.can('config'), (req, res) => res.json(K.saveModel(req.user.storeId, req.params.key, req.body || {})));
+  app.post('/api/contracts/models/:key/duplicate', team.can('config'), (req, res) => res.status(201).json(K.duplicateModel(req.user.storeId, req.params.key, req.body?.nome)));
+  app.delete('/api/contracts/models/:key', team.can('config'), (req, res) => { K.resetModel(req.user.storeId, req.params.key); res.json({ ok: true }); });
+  app.post('/api/contracts/prefill', emite, (req, res) => res.json(K.prefill(req.user.storeId, req.body || {})));
+  app.post('/api/contracts/preview', emite, (req, res) => res.json(K.preview(req.user.storeId, req.body || {})));
+  app.get('/api/contracts', emite, (req, res) => res.json(K.list(req.user.storeId, req.query)));
+  app.post('/api/contracts', emite, (req, res) => { const id = K.save(req.user.storeId, null, req.body || {}, req.user.id); res.status(201).json(K.serialize(K.find(req.user.storeId, id))); });
+  app.get('/api/contracts/:cid', emite, (req, res) => res.json(K.serialize(K.find(req.user.storeId, req.params.cid))));
+  app.put('/api/contracts/:cid', emite, (req, res) => { K.save(req.user.storeId, req.params.cid, req.body || {}, req.user.id); res.json(K.serialize(K.find(req.user.storeId, req.params.cid))); });
+  app.delete('/api/contracts/:cid', team.canAny('excluir', 'gestao'), (req, res) => { K.remove(req.user.storeId, req.params.cid); res.json({ ok: true }); });
+  app.get('/contratos/:cid/imprimir', auth.requireUser, (req, res) => {
+    let c; try { c = K.find(req.user.storeId, req.params.cid); } catch { return res.status(404).send('Contrato não encontrado'); }
+    res.send(K.printPage(req.user.storeId, c));
+  });
+
   /* ---------------- Painel ---------------- */
   app.get('/api/painel', team.can('gestao'), (req, res) => res.json(painel(req.user.storeId, req.query, req.user.perms.has('financeiro'))));
 

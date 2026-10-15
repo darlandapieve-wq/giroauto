@@ -2,6 +2,46 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.8 — 15/10/2026
+
+**Contratos e termos**
+
+- Nova aba **Contratos** no menu, com 11 modelos prontos:
+  - compra e venda ao consumidor final (com a garantia legal de 90 dias do CDC);
+  - venda para lojista (repasse, no estado, sem garantia);
+  - consignação (contrato estimatório);
+  - compra pela loja ou recebimento na troca;
+  - recibo de sinal e reserva;
+  - termo de entrega e ciência;
+  - autorização e responsabilidade para test-drive;
+  - termo aditivo;
+  - recibo de pagamento;
+  - termo de garantia contratual;
+  - distrato.
+- **Preenchimento automático:**
+  - os dados da loja vêm preenchidos e podem ser editados (razão social, CNPJ e representante ficam salvos para os próximos contratos);
+  - escolhendo o carro, entram os dados do veículo (placa, Renavam, chassi, km), do comprador, o valor, a forma de pagamento (entrada, troca, financiamento, boletos), a troca e o financiamento;
+  - na consignação entram o dono, o repasse e a margem; na compra pela loja entram quem vendeu e o valor;
+  - CPF, RG e endereço de um cliente que já teve contrato são reaproveitados;
+  - valores saem por extenso.
+- **Cláusulas com caixinha:**
+  - as usuais já vêm marcadas;
+  - as específicas ficam desmarcadas, como troca, quitação do financiamento da troca, financiamento, parcelamento próprio, reserva de domínio, sinal, laudo cautelar, leilão, sinistro, uso em frota, chassi remarcado, quilometragem, serviços, acessórios, recall, IPVA, consignado, venda fora da loja, seguro e multa;
+  - ao marcar uma específica aparecem os campos dela;
+  - o texto de qualquer cláusula pode ser editado só naquele contrato, e dá para incluir cláusula avulsa.
+- **Prévia ao vivo** do documento. Campo vazio vira linha em branco para preencher à mão.
+- Página de impressão A4 com logo, cláusulas numeradas, assinaturas e testemunhas, para imprimir ou salvar em PDF.
+- **Histórico** dos contratos emitidos, com busca, abrir/editar, copiar para um novo, imprimir e excluir.
+- **Editar modelo** (quem tem acesso a Configurações):
+  - mudar nome, título e texto;
+  - escolher o que vem marcado;
+  - reordenar, remover ou criar cláusulas;
+  - lista de campos para usar no texto;
+  - duplicar para criar modelos da loja;
+  - restaurar o padrão.
+- Botão **📄 Contrato** no resumo de cada veículo.
+- Os textos-base seguem o CDC, o Código Civil, o CTB e a LGPD. São modelos de apoio: cada loja deve revisá-los com o seu advogado.
+
 ## v2.7 — 15/10/2026
 
 **Acesso do desenvolvedor e canal de sugestões e erros**

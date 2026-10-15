@@ -1028,6 +1028,96 @@ test('v2.7: sugestões e erros dos usuários e acesso do desenvolvedor', async (
   assert.equal(meu.status_label, 'Feito'); assert.equal(meu.resposta, 'Corrigido na v2.7');
 });
 
+test('v2.8: contratos — modelos, pré-preenchimento, cláusulas, personalização e impressão', async () => {
+  const K = require('../src/contratos');
+  assert.equal(K.extenso(45900.5), 'quarenta e cinco mil e novecentos reais e cinquenta centavos');
+  assert.equal(K.extenso(1530), 'mil quinhentos e trinta reais');
+  assert.equal(K.extenso(1000000), 'um milhão de reais');
+  let r = await api('GET', '/api/contracts/models');
+  assert.equal(r.status, 200);
+  const keys = r.body.modelos.map((m) => m.key);
+  for (const k of ['venda', 'venda_repasse', 'consignacao', 'compra', 'sinal', 'entrega', 'test_drive', 'aditivo', 'recibo', 'garantia', 'distrato']) assert.ok(keys.includes(k), k);
+  const venda = r.body.modelos.find((m) => m.key === 'venda');
+  assert.ok(venda.clausulas.find((c) => c.key === 'garantia_legal').padrao, 'garantia legal marcada por padrão');
+  assert.equal(venda.clausulas.find((c) => c.key === 'leilao').padrao, false, 'leilão é específica');
+  assert.equal(r.body.loja.nome, 'Autos Paraná');
+
+  // Carro vendido com troca e financiamento: o pré-preenchimento já marca as cláusulas certas.
+  r = await api('POST', '/api/vehicles', { marca: 'Toyota', modelo: 'Corolla', versao: 'XEi', ano_fab: 2019, ano_modelo: 2020, preco: 98000, placa: 'COR2A20', km: 54000 });
+  const vid = r.body.id;
+  require('../src/db').run('UPDATE vehicles SET renavam = ?, chassi = ? WHERE id = ?', '01234567890', '9BRBL3HE0L0123456', vid);
+  r = await api('POST', `/api/vehicles/${vid}/sold`, { venda_data: '2026-10-12', venda_entrada: 18000, venda_troca_valor: 30000, venda_financiado: 50000, venda_financeira: 'Banco X', venda_fin_parcelas: 48, venda_fin_parcela: 1490,
+    venda_pagamento: 'Financiamento', venda_comprador: 'Carla Contrato', comprador_doc: '123.456.789-09', comprador_tel: '44 97777-1234', troca_novo: { marca: 'Fiat', modelo: 'Uno', ano: 2014, placa: 'UNO1A14' } });
+  assert.equal(r.status, 200);
+  r = await api('POST', '/api/contracts/prefill', { modelo: 'venda', vehicle_id: vid });
+  assert.equal(r.status, 200);
+  const P = r.body;
+  assert.equal(P.dados.veiculo.placa, 'COR2A20'); assert.equal(P.dados.veiculo.chassi, '9BRBL3HE0L0123456');
+  assert.equal(P.dados.cliente.nome, 'Carla Contrato'); assert.equal(P.dados.negocio.valor, '98.000,00');
+  assert.match(P.dados.negocio.forma_pagamento, /financiados junto a Banco X em 48 parcelas/);
+  assert.ok(P.marcar.includes('troca') && P.marcar.includes('financiamento'));
+  assert.match(P.dados.troca.descricao, /Uno/);
+  P.dados.loja.razao_social = 'Autos Paraná Comércio de Veículos Ltda'; P.dados.loja.cnpj = '12.345.678/0001-90';
+  P.dados.cliente.rg = '';
+  const cls = venda.clausulas.filter((c) => c.padrao || P.marcar.includes(c.key)).map((c) => c.key);
+  r = await api('POST', '/api/contracts/preview', { modelo: 'venda', dados: P.dados, clausulas: cls });
+  assert.match(r.body.html, /CLÁUSULA 1ª – DO OBJETO/);
+  assert.match(r.body.html, /noventa e oito mil reais/);
+  assert.match(r.body.html, /DO FINANCIAMENTO BANCÁRIO/);
+  assert.ok(!/LEILÃO/.test(r.body.html), 'cláusula não marcada fica de fora');
+  assert.match(r.body.html, /class="blank"/, 'campo vazio vira linha em branco');
+  assert.ok(!r.body.html.includes('{{'), 'sem marcadores sobrando');
+  // Texto editado só neste contrato + cláusula avulsa.
+  const editadas = [...cls.map((k) => (k === 'entrega' ? { key: 'entrega', titulo: 'Da entrega', texto: 'Entrega imediata. <script>x</script>' } : k)), { key: 'avulsa1', titulo: 'Do brinde', texto: 'Tanque cheio por conta da loja.' }];
+  r = await api('POST', '/api/contracts', { modelo: 'venda', dados: P.dados, clausulas: editadas, vehicle_id: vid });
+  assert.equal(r.status, 201);
+  const cid = r.body.id;
+  assert.ok(r.body.clausulas.some((c) => c.key === 'avulsa1'));
+  assert.match(r.body.html, /Entrega imediata\. &lt;script&gt;/, 'texto escapado');
+  // Dados da loja ficam salvos para o próximo contrato.
+  r = await api('GET', '/api/contracts/models');
+  assert.equal(r.body.loja.cnpj, '12.345.678/0001-90');
+  // CPF/RG do cliente reaproveitados pelo telefone num próximo contrato.
+  r = await api('POST', '/api/contracts/prefill', { modelo: 'entrega', vehicle_id: vid });
+  assert.equal(r.body.dados.cliente.cpf, '123.456.789-09');
+  assert.equal(r.body.dados.entrega.data, '2026-10-12');
+  r = await api('GET', `/api/contracts?vehicle_id=${vid}`);
+  assert.equal(r.body.length, 1); assert.equal(r.body[0].cliente_nome, 'Carla Contrato');
+  let q = await fetch(`${base}/contratos/${cid}/imprimir`, { headers: { cookie } });
+  assert.equal(q.status, 200);
+  const page = await q.text();
+  assert.match(page, /window\.print/); assert.match(page, /Testemunha 1/); assert.match(page, /Autos Paraná Comércio de Veículos Ltda/);
+  assert.equal((await fetch(`${base}/contratos/${cid}/imprimir`)).status, 401);
+  r = await api('PUT', `/api/contracts/${cid}`, { modelo: 'venda', dados: P.dados, clausulas: ['objeto', 'preco'] });
+  assert.equal(r.body.clausulas.length, 2);
+
+  // Personalização do modelo pela loja: editar texto, desmarcar por padrão, nova cláusula, duplicar e restaurar.
+  const cons = (await api('GET', '/api/contracts/models')).body.modelos.find((m) => m.key === 'consignacao');
+  const novas = cons.clausulas.filter((c) => c.key !== 'exclusividade').map((c) => (c.key === 'prazo' ? { ...c, texto: 'Prazo de {{consig.prazo_dias}} dias corridos.' } : c));
+  novas.push({ key: 'propria_x', titulo: 'Da vistoria de entrada', texto: 'A loja fará vistoria fotográfica na entrada.', padrao: true, propria: true });
+  r = await api('PUT', '/api/contracts/models/consignacao', { nome: 'Consignação da loja', clausulas: novas });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.personalizado, true); assert.equal(r.body.nome, 'Consignação da loja');
+  assert.ok(!r.body.clausulas.some((c) => c.key === 'exclusividade'), 'removida continua fora');
+  assert.equal(r.body.clausulas.find((c) => c.key === 'prazo').texto, 'Prazo de {{consig.prazo_dias}} dias corridos.');
+  r = await api('POST', '/api/contracts/preview', { modelo: 'consignacao', dados: { consig: { prazo_dias: '45', repasse: '40000', comissao: '8%' } }, clausulas: ['prazo', 'preco', 'propria_x'] });
+  assert.match(r.body.html, /Prazo de <span class="fill">45<\/span> dias corridos/);
+  assert.match(r.body.html, /quarenta mil reais/); assert.match(r.body.html, /repasse, ajustada em 8%\./);
+  assert.match(r.body.html, /vistoria fotográfica/);
+  r = await api('POST', '/api/contracts/models/consignacao/duplicate', { nome: 'Consignação — moto' });
+  assert.equal(r.status, 201); assert.equal(r.body.proprio, true); assert.equal(r.body.base, 'consignacao');
+  const dup = r.body.key;
+  r = await api('DELETE', '/api/contracts/models/consignacao');
+  r = await api('GET', '/api/contracts/models');
+  assert.equal(r.body.modelos.find((m) => m.key === 'consignacao').personalizado, false, 'restaurado');
+  assert.ok(r.body.modelos.find((m) => m.key === dup).clausulas.some((c) => c.key === 'propria_x'), 'cópia mantém as mudanças');
+  r = await api('POST', '/api/contracts/prefill', { modelo: 'compra', vehicle_id: (await api('GET', '/api/vehicles')).body.find((v) => v.modelo === 'Uno').id });
+  assert.ok(r.body.marcar.includes('troca')); assert.match(r.body.dados.troca.venda, /Corolla/);
+  assert.equal(r.body.dados.negocio.valor, '30.000,00');
+  r = await api('DELETE', `/api/contracts/${cid}`);
+  assert.equal(r.status, 200);
+});
+
 test('v2.0: agenda de republicação, QR, folha A4, painel TV e fotos prontas', async () => {
   const sched = require('../src/schedule');
   const db = require('../src/db');

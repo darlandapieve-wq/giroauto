@@ -322,6 +322,34 @@ db.exec(`CREATE TABLE IF NOT EXISTS feedback (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 )`);
+// v2.8: contratos — modelos personalizados pela loja, contratos emitidos e dados jurídicos da loja.
+addColumn('stores', 'contrato_loja', "TEXT NOT NULL DEFAULT '{}'");
+db.exec(`CREATE TABLE IF NOT EXISTS contract_models (
+  id INTEGER PRIMARY KEY,
+  store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+  chave TEXT NOT NULL,
+  base TEXT NOT NULL,
+  dados TEXT NOT NULL DEFAULT '{}',
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (store_id, chave)
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS contracts (
+  id INTEGER PRIMARY KEY,
+  store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+  modelo TEXT NOT NULL,
+  modelo_nome TEXT DEFAULT '',
+  titulo TEXT NOT NULL,
+  vehicle_id INTEGER REFERENCES vehicles(id) ON DELETE SET NULL,
+  contact_id INTEGER REFERENCES contacts(id) ON DELETE SET NULL,
+  cliente_nome TEXT DEFAULT '',
+  veiculo_resumo TEXT DEFAULT '',
+  dados TEXT NOT NULL DEFAULT '{}',
+  clausulas TEXT NOT NULL DEFAULT '[]',
+  html TEXT NOT NULL DEFAULT '',
+  created_by INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`);
 // v2.5: contato de quem vendeu o carro para a loja, troca ligada a outro veículo e composição do pagamento.
 for (const [col, def] of [
   ['compra_de_tel', "TEXT DEFAULT ''"], ['venda_troca_id', 'INTEGER'], ['troca_de_id', 'INTEGER'],
