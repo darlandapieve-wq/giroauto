@@ -2,6 +2,10 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.11.3 — 15/10/2026
+
+- Ativação do WhatsApp: a conta do WhatsApp Business (WABA) agora também é descoberta pelas empresas ligadas ao token (escolhendo a que tem o número da loja), e a mensagem de erro mostra o motivo dado pela Meta.
+
 ## v2.11.2 — 15/10/2026
 
 - Ativação automática (uma vez) do assistente no WhatsApp para as lojas que já têm a API oficial configurada: ao iniciar, o servidor faz o mesmo que o botão "Ativar recebimento" e registra o resultado.

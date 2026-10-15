@@ -47,9 +47,9 @@ async function salvar(storeId, b) {
   if (b.inscrever) {
     const c = cfgOf(get('SELECT * FROM stores WHERE id = ?', storeId));
     if (!c.token || !c.phone_id) throw httpError(400, 'Configure primeiro o token e o ID do número (WhatsApp automático).');
-    const info = await tokenInfo(c.token).catch(() => null);
+    const info = await tokenInfo(c.token, c.phone_id).catch((e) => { diag.push(e.message); return null; });
     if (!raw.waba_id && info?.waba_ids?.length) raw.waba_id = info.waba_ids[0];
-    if (!raw.waba_id) throw httpError(400, 'Não consegui descobrir a conta do WhatsApp Business pelo token. Informe o ID da conta (WABA) que aparece em WhatsApp > Configuração da API.');
+    if (!raw.waba_id) throw httpError(400, `Não consegui descobrir a conta do WhatsApp Business pelo token. Informe o ID da conta (WABA) que aparece em WhatsApp > Configuração da API.${diag.length ? ` (Meta: ${diag.slice(-3).join(' · ')})` : ''}`);
     // Webhook no app da Meta do GiroAuto (se o token for desse app): feito pela API, sem abrir o painel da Meta.
     if (config.meta.appId && config.meta.appSecret && (!info?.app_id || String(info.app_id) === String(config.meta.appId))) {
       raw.webhook = await assinarWebhook().then(() => 'ok').catch((e) => `erro: ${e.message}`);
@@ -64,14 +64,29 @@ async function salvar(storeId, b) {
   return status(storeId);
 }
 
-// Descobre o app e as contas do WhatsApp Business ligadas ao token da loja.
-async function tokenInfo(token) {
-  if (!config.meta.appId || !config.meta.appSecret) return null;
-  const u = `${graph('debug_token')}?input_token=${encodeURIComponent(token)}&access_token=${encodeURIComponent(`${config.meta.appId}|${config.meta.appSecret}`)}`;
-  const d = (await (await fetch(u)).json().catch(() => ({}))).data || {};
-  const ids = new Set();
-  for (const g of d.granular_scopes || []) if (/whatsapp_business/.test(g.scope)) for (const t of g.target_ids || []) ids.add(String(t));
-  return { app_id: d.app_id, waba_ids: [...ids] };
+// Descobre o app e as contas do WhatsApp Business ligadas ao token da loja (vários caminhos da API da Meta).
+const diag = [];
+async function tokenInfo(token, phoneId) {
+  const ids = new Set(); let appId;
+  const pega = async (u, opts) => { const r = await fetch(u, opts); const d = await r.json().catch(() => ({})); if (d.error) diag.push(`${u.split('?')[0].split('/').slice(-2).join('/')}: ${d.error.message}`); return d; };
+  if (config.meta.appId && config.meta.appSecret) {
+    const d = (await pega(`${graph('debug_token')}?input_token=${encodeURIComponent(token)}&access_token=${encodeURIComponent(`${config.meta.appId}|${config.meta.appSecret}`)}`)).data || {};
+    appId = d.app_id;
+    for (const g of d.granular_scopes || []) if (/whatsapp_business/.test(g.scope)) for (const t of g.target_ids || []) ids.add(String(t));
+  }
+  // Contas do WhatsApp das empresas do token: escolhe a que tem o número da loja.
+  const auth = { headers: { Authorization: `Bearer ${token}` } };
+  const contas = [];
+  const b = await pega(`${graph('me/businesses')}?fields=owned_whatsapp_business_accounts{id,phone_numbers{id}},client_whatsapp_business_accounts{id,phone_numbers{id}}&limit=50`, auth);
+  for (const biz of b.data || []) for (const k of ['owned_whatsapp_business_accounts', 'client_whatsapp_business_accounts']) for (const w of biz[k]?.data || []) contas.push(w);
+  for (const t of ids) {
+    if (contas.some((w) => w.id === t)) continue;
+    const w = await pega(`${graph(t)}?fields=id,phone_numbers{id}`, auth);
+    if (w.id) contas.push(w);
+  }
+  const certa = contas.find((w) => (w.phone_numbers?.data || []).some((p) => String(p.id) === String(phoneId)));
+  const lista = certa ? [certa.id, ...ids] : [...ids, ...contas.map((w) => w.id)];
+  return { app_id: appId, waba_ids: [...new Set(lista)] };
 }
 
 // Assina o campo "messages" do WhatsApp no app da Meta, apontando para o webhook do GiroAuto.
@@ -258,8 +273,8 @@ function conversaDoLead(user, leadId) {
 // Ativação feita uma vez pelo sistema (pedido do administrador): lojas com o WhatsApp oficial configurado
 // e ainda não inscritas recebem a ativação do assistente no WhatsApp ao iniciar o servidor.
 async function ativacaoInicial() {
-  if (process.env.GIROAUTO_SKIP_WA_AUTO || readSetting('wa_auto_v2112')) return;
-  run("INSERT INTO settings (key, value) VALUES ('wa_auto_v2112', 'rodando') ON CONFLICT(key) DO UPDATE SET value = excluded.value");
+  if (process.env.GIROAUTO_SKIP_WA_AUTO || readSetting('wa_auto_v2113')) return;
+  run("INSERT INTO settings (key, value) VALUES ('wa_auto_v2113', 'rodando') ON CONFLICT(key) DO UPDATE SET value = excluded.value");
   const res = [];
   for (const s of all("SELECT id, name, wa_cloud FROM stores WHERE wa_cloud LIKE '%token_enc%'")) {
     const c = cfgOf(s);
@@ -269,7 +284,7 @@ async function ativacaoInicial() {
   }
   const txt = res.join(' | ') || 'nenhuma loja pendente';
   console.log('Ativação do assistente no WhatsApp:', txt);
-  run("UPDATE settings SET value = ? WHERE key = 'wa_auto_v2112'", txt.slice(0, 1000));
+  run("UPDATE settings SET value = ? WHERE key = 'wa_auto_v2113'", txt.slice(0, 1000));
 }
 
 module.exports = { ativacaoInicial, verifyToken, webhookUrl, status, salvar, assinaturaOk, processar, responderComoLoja, pausar, conversaDoLead, sendText, sidDe };
