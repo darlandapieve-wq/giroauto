@@ -108,6 +108,9 @@ function createMock() {
   });
   app.get('/:v/:act/reachestimate', (req, res) => res.json({ data: { users_lower_bound: 38000, users_upper_bound: 44700, estimate_ready: true } }));
   app.post('/:v/:act/adimages', (req, res) => res.json({ images: { bytes: { hash: 'hash_' + id(), url: 'https://x' } } }));
+  app.get('/:v/debug_token', (req, res) => res.json({ data: { granular_scopes: [{ scope: 'whatsapp_business_management', target_ids: ['77001'] }] } }));
+  state.appSubs = [];
+  app.post('/:v/:app/subscriptions', express.urlencoded({ extended: false }), (req, res) => { state.appSubs.push(req.body); res.json({ success: true }); });
   // WhatsApp Cloud API (mensagens com template).
   state.waCalls = [];
   app.post('/:v/:phone/messages', express.json(), (req, res) => {

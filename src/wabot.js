@@ -29,7 +29,7 @@ function status(storeId) {
   const c = cfgOf(store);
   const bot = require('./bot').botConfig(storeId);
   return {
-    pronto: !!(c.token && c.phone_id), ativo: !!bot.whatsapp, waba_id: c.waba_id || '', inscrito: !!c.inscrito, tem_app_secret: !!c.app_secret_enc,
+    pronto: !!(c.token && c.phone_id), ativo: !!bot.whatsapp, waba_id: c.waba_id || '', inscrito: !!c.inscrito, webhook: c.webhook || '', tem_app_secret: !!c.app_secret_enc,
     webhook_url: webhookUrl(), ultima: get(`SELECT MAX(m.created_at) t FROM chat_messages m JOIN chat_sessions s ON s.id = m.session_id WHERE s.store_id = ? AND s.canal = 'whatsapp' AND m.papel = 'user'`, storeId)?.t || null,
     conversas_7d: get(`SELECT COUNT(*) n FROM chat_sessions WHERE store_id = ? AND canal = 'whatsapp' AND updated_at >= datetime('now','-7 days')`, storeId).n,
   };
@@ -43,18 +43,44 @@ async function salvar(storeId, b) {
   if (b.app_secret === '') delete raw.app_secret_enc;
   run('UPDATE stores SET wa_cloud = ? WHERE id = ?', JSON.stringify(raw), storeId);
   if (b.ativo !== undefined) require('./bot').saveBotConfig(storeId, { whatsapp: !!b.ativo });
-  // Inscreve a conta do WhatsApp (WABA) no app, para a Meta mandar as mensagens para o GiroAuto.
+  // Ativação em um clique: webhook do app, conta do WhatsApp (WABA) e inscrição da conta no app.
   if (b.inscrever) {
     const c = cfgOf(get('SELECT * FROM stores WHERE id = ?', storeId));
     if (!c.token || !c.phone_id) throw httpError(400, 'Configure primeiro o token e o ID do número (WhatsApp automático).');
-    if (!raw.waba_id) throw httpError(400, 'Informe o ID da conta do WhatsApp Business (WABA).');
+    const info = await tokenInfo(c.token).catch(() => null);
+    if (!raw.waba_id && info?.waba_ids?.length) raw.waba_id = info.waba_ids[0];
+    if (!raw.waba_id) throw httpError(400, 'Não consegui descobrir a conta do WhatsApp Business pelo token. Informe o ID da conta (WABA) que aparece em WhatsApp > Configuração da API.');
+    // Webhook no app da Meta do GiroAuto (se o token for desse app): feito pela API, sem abrir o painel da Meta.
+    if (config.meta.appId && config.meta.appSecret && (!info?.app_id || String(info.app_id) === String(config.meta.appId))) {
+      raw.webhook = await assinarWebhook().then(() => 'ok').catch((e) => `erro: ${e.message}`);
+    } else raw.webhook = 'outro_app';
     const r = await fetch(graph(`${raw.waba_id}/subscribed_apps`), { method: 'POST', headers: { Authorization: `Bearer ${c.token}` } });
     const d = await r.json().catch(() => ({}));
     if (!r.ok || d.error) throw httpError(400, `A Meta recusou: ${d.error?.message || `HTTP ${r.status}`}`);
     raw.inscrito = true;
     run('UPDATE stores SET wa_cloud = ? WHERE id = ?', JSON.stringify(raw), storeId);
+    require('./bot').saveBotConfig(storeId, { whatsapp: b.ativo !== undefined ? !!b.ativo : true });
   }
   return status(storeId);
+}
+
+// Descobre o app e as contas do WhatsApp Business ligadas ao token da loja.
+async function tokenInfo(token) {
+  if (!config.meta.appId || !config.meta.appSecret) return null;
+  const u = `${graph('debug_token')}?input_token=${encodeURIComponent(token)}&access_token=${encodeURIComponent(`${config.meta.appId}|${config.meta.appSecret}`)}`;
+  const d = (await (await fetch(u)).json().catch(() => ({}))).data || {};
+  const ids = new Set();
+  for (const g of d.granular_scopes || []) if (/whatsapp_business/.test(g.scope)) for (const t of g.target_ids || []) ids.add(String(t));
+  return { app_id: d.app_id, waba_ids: [...ids] };
+}
+
+// Assina o campo "messages" do WhatsApp no app da Meta, apontando para o webhook do GiroAuto.
+async function assinarWebhook() {
+  const body = new URLSearchParams({ object: 'whatsapp_business_account', callback_url: webhookUrl(), verify_token: verifyToken(), fields: 'messages', include_values: 'true', access_token: `${config.meta.appId}|${config.meta.appSecret}` });
+  const r = await fetch(graph(`${config.meta.appId}/subscriptions`), { method: 'POST', body });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || d.error) throw new Error(d.error?.message || `HTTP ${r.status}`);
+  return true;
 }
 
 /* ---------------- Envio ---------------- */

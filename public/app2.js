@@ -1865,10 +1865,13 @@
       ${W.ativo && W.inscrito ? `<div class="okbox">Ativo. ${W.ultima ? `Última mensagem recebida: ${dhu(W.ultima)}.` : 'Ainda não chegou nenhuma mensagem.'} ${W.conversas_7d} conversa(s) em 7 dias.</div>` : ''}
       <ol class="steps-list" style="list-style:none;padding-left:0">
         ${passo(W.pronto, 'Token e ID do número salvos no quadro "WhatsApp automático" acima.')}
-        ${W.verify_token ? passo(false, `<b>Uma vez só, no app da Meta</b> (developers.facebook.com &gt; seu app &gt; WhatsApp &gt; Configuração &gt; Webhook): <b>URL de retorno</b> <code>${esc(W.webhook_url)}</code> e <b>Token de verificação</b> <code>${esc(W.verify_token)}</code>. Clique em Verificar e salvar e, em <b>Campos do webhook</b>, assine <b>messages</b>.`) : passo(false, 'O administrador do sistema configura o webhook no app da Meta (uma vez só).')}
-        ${passo(W.inscrito, 'Informe o ID da conta do WhatsApp Business (WABA) — está em WhatsApp &gt; Configuração da API, abaixo do número — e clique em "Ativar recebimento".')}
-        ${passo(W.ativo, 'Marque "Assistente responde no WhatsApp" e salve.')}
+        ${passo(W.inscrito && W.webhook === 'ok', '<b>Clique em "Ativar recebimento"</b>: o GiroAuto descobre a conta do WhatsApp (WABA), configura o webhook no app da Meta e liga o assistente, tudo sozinho.')}
+        ${W.webhook && W.webhook !== 'ok' ? `<li>⚠️ ${W.webhook === 'outro_app' ? 'O número está em outro app da Meta: configure o webhook manualmente nesse app (abaixo).' : `A Meta não aceitou configurar o webhook sozinha (${esc(W.webhook.replace(/^erro: /, ''))}). Faça o passo manual abaixo.`}</li>` : ''}
       </ol>
+      <details ${W.webhook && W.webhook !== 'ok' ? 'open' : ''}><summary class="note" style="cursor:pointer">Configuração manual (só se a automática não funcionar)</summary><ol class="steps-list" style="list-style:none;padding-left:0">
+        ${W.verify_token ? passo(false, `<b>Uma vez só, no app da Meta</b> (developers.facebook.com &gt; seu app &gt; WhatsApp &gt; Configuração &gt; Webhook): <b>URL de retorno</b> <code>${esc(W.webhook_url)}</code> e <b>Token de verificação</b> <code>${esc(W.verify_token)}</code>. Clique em Verificar e salvar e, em <b>Campos do webhook</b>, assine <b>messages</b>.`) : passo(false, 'O administrador do sistema configura o webhook no app da Meta (uma vez só).')}
+        ${passo(!!W.waba_id, 'Se pedir, informe o ID da conta do WhatsApp Business (WABA) — está em WhatsApp &gt; Configuração da API, abaixo do número — e clique de novo em "Ativar recebimento".')}
+      </ol></details>
       <div class="fields">
         <div class="f w3"><label for="wb-waba">ID da conta do WhatsApp Business (WABA)</label><input id="wb-waba" value="${esc(W.waba_id)}" inputmode="numeric"></div>
         <div class="f w3"><label for="wb-sec">Chave secreta do app (só se o número estiver em outro app da Meta)</label><input id="wb-sec" type="password" autocomplete="new-password" placeholder="${W.tem_app_secret ? '•••••• (guardada)' : 'opcional'}"></div>

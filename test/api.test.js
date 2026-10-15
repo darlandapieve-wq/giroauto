@@ -1412,6 +1412,12 @@ test('v2.11: assistente no WhatsApp — webhook, resposta com IA, lead, vendedor
   r = await api('GET', '/api/wa/bot');
   assert.equal(r.body.pronto, true); assert.ok(r.body.verify_token); assert.match(r.body.webhook_url, /\/api\/wa\/webhook$/);
   const vt = r.body.verify_token;
+  // Ativação em um clique: descobre a WABA pelo token, assina o webhook do app e liga o assistente.
+  r = await api('PUT', '/api/wa/bot', { inscrever: true });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.waba_id, '77001'); assert.equal(r.body.inscrito, true); assert.equal(r.body.ativo, true); assert.equal(r.body.webhook, 'ok');
+  const sub = mock.state.appSubs[mock.state.appSubs.length - 1];
+  assert.equal(sub.object, 'whatsapp_business_account'); assert.equal(sub.fields, 'messages'); assert.equal(sub.verify_token, vt); assert.match(sub.callback_url, /\/api\/wa\/webhook$/);
   r = await api('PUT', '/api/wa/bot', { waba_id: '9988', ativo: true, inscrever: true });
   assert.equal(r.body.inscrito, true); assert.equal(r.body.ativo, true);
   // Verificação do webhook pela Meta.

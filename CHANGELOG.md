@@ -2,6 +2,14 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.11.1 — 15/10/2026
+
+- **WhatsApp: ativação em um clique.** O botão **Ativar recebimento** agora faz tudo sozinho pela API da Meta:
+  - descobre a conta do WhatsApp Business (WABA) pelo token;
+  - configura o webhook de mensagens no app da Meta do GiroAuto (URL, token de verificação e o campo "messages");
+  - inscreve a conta no app e liga o assistente.
+- A configuração manual fica guardada num "Configuração manual", para números que estão em outro app da Meta.
+
 ## v2.11 — 15/10/2026
 
 **Assistente responde no WhatsApp**
