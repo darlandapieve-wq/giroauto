@@ -154,7 +154,30 @@ function register(app) {
   app.get('/api/wa/campaigns/:wid', pode, (req, res) => res.json(C.campaign(req.user.storeId, req.params.wid)));
   app.put('/api/wa/campaigns/:wid/sends/:sid', pode, (req, res) => { C.markSend(req.user.storeId, req.params.wid, req.params.sid, req.body?.status, req.user.id); res.json(C.campaign(req.user.storeId, req.params.wid)); });
   app.get('/api/wa/config', team.can('config'), (req, res) => res.json(C.cloudPublic(get('SELECT wa_cloud FROM stores WHERE id = ?', req.user.storeId))));
-  app.put('/api/wa/config', team.can('config'), (req, res) => { C.saveCloud(req.user.storeId, req.body || {}); res.json(C.cloudPublic(get('SELECT wa_cloud FROM stores WHERE id = ?', req.user.storeId))); });
+  app.put('/api/wa/config', team.can('config'), wrap(async (req, res) => {
+    const b = req.body || {};
+    // Confere o token e o número na Meta antes de salvar (token colado errado é o erro mais comum).
+    if (!b.remover && (b.token || b.phone_id)) {
+      const old = C.cloudCfg(get('SELECT wa_cloud FROM stores WHERE id = ?', req.user.storeId));
+      const token = String(b.token || old.token || '').trim().replace(/^Bearer\s+/i, '').replace(/\s+/g, '');
+      const phone = String(b.phone_id || old.phone_id || '').replace(/\D/g, '');
+      if (token && phone) {
+        const config = require('./config');
+        const r = await fetch(`${config.meta.graphUrl}/${config.meta.apiVersion}/${phone}?fields=display_phone_number,verified_name`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
+        const d = r ? await r.json().catch(() => ({})) : {};
+        if (!r || d.error) return res.status(400).json({ error: `A Meta recusou o token ou o ID do número: ${d.error?.message || 'sem resposta'}. Copie de novo o token permanente (começa com EAA) e o ID do número em WhatsApp > Configuração da API.` });
+        if (b.token) b.token = token;
+      }
+    }
+    C.saveCloud(req.user.storeId, b);
+    // Token novo e válido: já ativa o assistente no WhatsApp (webhook + conta), sem outro passo.
+    let ativacao = '';
+    if (b.token && !b.remover) {
+      try { const st = await require('./wabot').salvar(req.user.storeId, { inscrever: true, ativo: true }); ativacao = st.inscrito ? 'ok' : ''; }
+      catch (e) { ativacao = e.message; }
+    }
+    res.json({ ...C.cloudPublic(get('SELECT wa_cloud FROM stores WHERE id = ?', req.user.storeId)), ativacao });
+  }));
 }
 
 module.exports = { register, wrap, auth };

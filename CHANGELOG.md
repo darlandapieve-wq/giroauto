@@ -2,6 +2,11 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.11.4 — 15/10/2026
+
+- **WhatsApp automático**: ao salvar, o GiroAuto confere o token e o ID do número na Meta e mostra o motivo se estiverem errados, em vez de salvar um token inválido. Também tira espaços e um "Bearer" colado junto.
+- Com o token válido, o **assistente no WhatsApp é ativado na hora**: webhook, conta do WhatsApp Business e assistente ligado, sem outro passo.
+
 ## v2.11.3 — 15/10/2026
 
 - Ativação do WhatsApp: a conta do WhatsApp Business (WABA) agora também é descoberta pelas empresas ligadas ao token (escolhendo a que tem o número da loja), e a mensagem de erro mostra o motivo dado pela Meta.

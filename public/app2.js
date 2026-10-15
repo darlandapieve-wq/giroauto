@@ -1848,7 +1848,7 @@
       </div>
       <div class="form-foot">${c.configurado ? '<button class="btn ghost danger" type="button" id="wa-rm">Desativar</button>' : ''}<button class="btn primary" type="button" id="wa-ok">Salvar</button></div></div>`);
     $('#wa-ok').onclick = async () => {
-      try { await api('PUT', '/api/wa/config', { token: $('#wa-tk').value, phone_id: $('#wa-ph').value, template: $('#wa-tp').value, lang: $('#wa-lg').value, params: $('#wa-pr').value }); toast('WhatsApp automático salvo'); $('#cfgWa').remove(); waConfigPanel(); }
+      try { const r = await api('PUT', '/api/wa/config', { token: $('#wa-tk').value, phone_id: $('#wa-ph').value, template: $('#wa-tp').value, lang: $('#wa-lg').value, params: $('#wa-pr').value }); toast(r.ativacao === 'ok' ? 'WhatsApp salvo e assistente ativado: já pode testar mandando uma mensagem para o número da loja.' : r.ativacao ? `WhatsApp salvo. Assistente: ${r.ativacao}` : 'WhatsApp automático salvo', 8000); $('#cfgWa').remove(); $('#cfgWaBot')?.remove(); waConfigPanel(); }
       catch (e) { toast(e.message, 6000); }
     };
     if ($('#wa-rm')) $('#wa-rm').onclick = async () => { await api('PUT', '/api/wa/config', { remover: true }); $('#cfgWa').remove(); waConfigPanel(); };
