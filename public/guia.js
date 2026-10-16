@@ -280,6 +280,12 @@
     const head = $('#main .head'); if (!head || $('#cfgGuia')) return;
     head.insertAdjacentHTML('beforeend', '<div class="btnrow"><a class="btn" id="cfgGuia" href="#guia">📘 Guia de configuração</a></div>');
   }
+  // As abas de Configurações e do CRM são montadas depois da tela: espera aparecer (até ~4 s) e clica.
+  function clicaQuandoAparecer(sel, tentativas = 40) {
+    const el = $(sel);
+    if (el) { if (el.getAttribute('aria-pressed') !== 'true') el.click(); return; }
+    if (tentativas > 0) setTimeout(() => clicaQuandoAparecer(sel, tentativas - 1), 100);
+  }
   const antes = X.after;
   X.after = (view) => {
     antes?.(view);
@@ -287,8 +293,8 @@
     $$('.nav button').forEach((b) => { if (b.dataset.view === 'guia') { if (view === 'guia') b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); } });
     if (view === 'config') {
       cfgAtalho();
-      if (G.cfgTab) { const t = G.cfgTab; G.cfgTab = null; setTimeout(() => $(`[data-cfgt="${t}"]`)?.click(), 60); }
+      if (G.cfgTab) { const t = G.cfgTab; G.cfgTab = null; clicaQuandoAparecer(`[data-cfgt="${t}"]`); }
     }
-    if (view === 'crm' && G.crmTab) { const t = G.crmTab; G.crmTab = null; setTimeout(() => $(`[data-crt="${t}"]`)?.click(), 60); }
+    if (view === 'crm' && G.crmTab) { const t = G.crmTab; G.crmTab = null; clicaQuandoAparecer(`[data-crt="${t}"]`); }
   };
 })();
