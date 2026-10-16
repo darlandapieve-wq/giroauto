@@ -2,6 +2,10 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.13.1 — 16/10/2026
+
+- Vitrine: o botão de fechar os filtros só aparece no celular, e o espaçamento dos cards foi ajustado.
+
 ## v2.13.0 — 16/10/2026
 
 - **Gestão > Contatos: excluir contato.** Para excluir um contato, use o botão **Excluir contato** na ficha ou em Editar. Para excluir vários de uma vez, marque os contatos na lista e clique em **Excluir (N)**. Sempre há confirmação. O contato sai da lista e dos envios de mensagem, e as anotações são apagadas. Carros, vendas e leads ligados a ele continuam. Parceiros, donos e compradores excluídos não voltam sozinhos na sincronização; o contato só reaparece se a pessoa virar lead de novo ou for cadastrada à mão.

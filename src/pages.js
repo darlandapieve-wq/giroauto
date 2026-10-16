@@ -132,7 +132,8 @@ const FILTRO_CSS = `
 .side{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto;display:flex;flex-direction:column;gap:10px}
 .sh{display:flex;align-items:center;gap:8px}.sh b{flex:1;font-size:16px}
 .lnk{all:unset;cursor:pointer;color:var(--muted);text-decoration:underline;font-size:13px}
-.x{display:none;all:unset;cursor:pointer;font-size:18px;padding:0 4px}
+.card div div{padding:0}
+.x{all:unset;display:none;cursor:pointer;font-size:18px;padding:0 4px}
 .side input[type=search],.side select,.rg input{font:inherit;width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
 .fs{border-top:1px solid var(--line);padding-top:8px}.fs summary{cursor:pointer;font-weight:600;padding:2px 0;list-style:none;display:flex;justify-content:space-between}
 .fs summary::after{content:"+";color:var(--muted)}.fs[open] summary::after{content:"–"}.fs summary::-webkit-details-marker{display:none}
