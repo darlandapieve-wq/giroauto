@@ -1872,6 +1872,7 @@
         ${W.verify_token ? passo(false, `<b>Uma vez só, no app da Meta</b> (developers.facebook.com &gt; seu app &gt; WhatsApp &gt; Configuração &gt; Webhook): <b>URL de retorno</b> <code>${esc(W.webhook_url)}</code> e <b>Token de verificação</b> <code>${esc(W.verify_token)}</code>. Clique em Verificar e salvar e, em <b>Campos do webhook</b>, assine <b>messages</b>.`) : passo(false, 'O administrador do sistema configura o webhook no app da Meta (uma vez só).')}
         ${passo(!!W.waba_id, 'Se pedir, informe o ID da conta do WhatsApp Business (WABA) — está em WhatsApp &gt; Configuração da API, abaixo do número — e clique de novo em "Ativar recebimento".')}
       </ol></details>
+      ${W.pronto ? '<div id="wb-num" class="note">Conferindo o número na Meta…</div>' : ''}
       <div class="fields">
         <div class="f w3"><label for="wb-waba">ID da conta do WhatsApp Business (WABA)</label><input id="wb-waba" value="${esc(W.waba_id)}" inputmode="numeric"></div>
         <div class="f w3"><label for="wb-sec">Chave secreta do app (só se o número estiver em outro app da Meta)</label><input id="wb-sec" type="password" autocomplete="new-password" placeholder="${W.tem_app_secret ? '•••••• (guardada)' : 'opcional'}"></div>
@@ -1882,6 +1883,34 @@
     const reload = () => { $('#cfgWaBot')?.remove(); waBotPanel(); };
     $('#wb-save').onclick = async () => { try { await api('PUT', '/api/wa/bot', body()); toast('Assistente no WhatsApp salvo'); reload(); } catch (e) { toast(e.message, 7000); } };
     $('#wb-sub').onclick = async () => { try { await api('PUT', '/api/wa/bot', { ...body(), inscrever: true }); toast('Recebimento ativado: a Meta vai mandar as mensagens para o GiroAuto.', 6000); reload(); } catch (e) { toast(e.message, 8000); } };
+    if (W.pronto) waNumeroBox();
+  }
+
+  /* ---- Verificar e registrar o número na Meta (v2.11.5) ---- */
+  async function waNumeroBox(N) {
+    const box = $('#wb-num'); if (!box) return;
+    if (!N) {
+      try { N = await api('GET', '/api/wa/numero'); }
+      catch (e) { box.className = 'err'; box.innerHTML = `Não consegui conferir o número na Meta: ${esc(e.message)}`; return; }
+    }
+    const tel = N.numero ? `<b>${esc(N.numero)}</b>${N.nome ? ` (${esc(N.nome)})` : ''}` : `ID ${esc(N.phone_id)}`;
+    if (N.registrado) {
+      box.className = 'okbox';
+      box.innerHTML = `Número ${tel} verificado e registrado na Meta: pronto para receber e enviar mensagens.${N.nome_status && !/APPROVED|AVAILABLE/i.test(N.nome_status) ? ` Nome de exibição em análise pela Meta (${esc(N.nome_status)}).` : ''}`;
+      return;
+    }
+    box.className = 'panel'; box.style.margin = '12px 0';
+    box.innerHTML = `<h3 style="margin-top:0">Verificar o número na Meta</h3>
+      <p class="lead">O número ${tel} ainda ${N.verificado ? 'não foi <b>registrado</b> na API' : 'está <b>não verificado</b>'}: enquanto isso, nenhuma mensagem entra nem sai por ele. ${N.verificado ? 'Clique em <b>Registrar número</b>.' : 'Peça o código, digite o que chegar no celular desse número e clique em <b>Confirmar</b>. O GiroAuto confirma e registra o número sozinho.'}</p>
+      ${N.verificado ? '' : `<div class="fields">
+        <div class="f w3"><label for="wn-met">Receber o código por</label><select id="wn-met">${opt([['SMS', 'SMS'], ['VOICE', 'Ligação']], 'SMS')}</select></div>
+        <div class="f w3"><label for="wn-cod">Código recebido</label><input id="wn-cod" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="123456"></div>
+      </div>`}
+      <div class="form-foot">${N.verificado ? '<button class="btn primary" type="button" id="wn-reg">Registrar número</button>' : '<button class="btn" type="button" id="wn-ped">Pedir código</button><button class="btn primary" type="button" id="wn-ok">Confirmar</button>'}</div>`;
+    const busy = async (btn, fn) => { btn.disabled = true; try { await fn(); } catch (e) { toast(e.message, 9000); } finally { btn.disabled = false; } };
+    if ($('#wn-ped')) $('#wn-ped').onclick = (ev) => busy(ev.currentTarget, async () => { const r = await api('POST', '/api/wa/numero/codigo', { metodo: $('#wn-met').value }); toast(r.metodo === 'VOICE' ? 'Pedido feito: o número vai receber uma ligação com o código.' : 'Pedido feito: o código chega por SMS no celular desse número.', 7000); $('#wn-cod').focus(); });
+    if ($('#wn-ok')) $('#wn-ok').onclick = (ev) => busy(ev.currentTarget, async () => { const r = await api('POST', '/api/wa/numero/verificar', { codigo: $('#wn-cod').value }); toast('Número verificado e registrado na Meta.', 7000); waNumeroBox(r); });
+    if ($('#wn-reg')) $('#wn-reg').onclick = (ev) => busy(ev.currentTarget, async () => { const r = await api('POST', '/api/wa/numero/registrar', {}); toast('Número registrado na Meta.', 7000); waNumeroBox(r); });
   }
 
   /* ======================= Sugestões e erros (todos) ======================= */

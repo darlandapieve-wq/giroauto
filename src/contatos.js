@@ -154,12 +154,20 @@ function cloudPublic(store) {
 function saveCloud(storeId, b) {
   const store = get('SELECT wa_cloud FROM stores WHERE id = ?', storeId);
   const old = cloudCfg(store);
+  // Mantém o que o assistente do WhatsApp guarda no mesmo campo (conta WABA, inscrição, webhook, chave do app, PIN do número).
+  let raw = {}; try { raw = JSON.parse(store?.wa_cloud || '{}'); } catch { raw = {}; }
   const c = {
+    ...raw,
     phone_id: str(b.phone_id, 40).replace(/\D/g, ''), template: str(b.template, 80).replace(/[^a-z0-9_]/gi, '').toLowerCase(),
     lang: str(b.lang, 10) || 'pt_BR', params: [0, 1, 2].includes(Number(b.params)) ? Number(b.params) : 2,
     token_enc: b.token ? encrypt(str(b.token, 1000)) : old.token_enc || '',
   };
-  if (b.remover) Object.assign(c, { token_enc: '', phone_id: '', template: '' });
+  // Número trocado: o PIN e o registro eram do número anterior.
+  if (raw.phone_id && c.phone_id !== raw.phone_id) { delete c.pin_enc; delete c.registrado; }
+  if (b.remover) {
+    Object.assign(c, { token_enc: '', phone_id: '', template: '' });
+    for (const k of ['waba_id', 'inscrito', 'webhook', 'pin_enc', 'registrado']) delete c[k];
+  }
   run('UPDATE stores SET wa_cloud = ? WHERE id = ?', JSON.stringify(c), storeId);
 }
 

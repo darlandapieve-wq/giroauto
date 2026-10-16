@@ -2,6 +2,11 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.11.5 — 15/10/2026
+
+- **WhatsApp: verificar o número sem sair do GiroAuto.** Em Configurações > WhatsApp aparece o quadro **Verificar o número na Meta** enquanto o número estiver "não verificado": **Pedir código** (SMS ou ligação), digitar o código e **Confirmar**. O GiroAuto confirma o código e registra o número na API da Meta sozinho, com um PIN de 6 dígitos guardado criptografado. Se o número já estiver verificado e só faltar o registro, aparece **Registrar número**.
+- Correção: salvar o quadro **WhatsApp automático** apagava a conta do WhatsApp Business (WABA), a inscrição e a chave do app guardadas pelo assistente. Agora esses dados são mantidos.
+
 ## v2.11.4 — 15/10/2026
 
 - **WhatsApp automático**: ao salvar, o GiroAuto confere o token e o ID do número na Meta e mostra o motivo se estiverem errados, em vez de salvar um token inválido. Também tira espaços e um "Bearer" colado junto.

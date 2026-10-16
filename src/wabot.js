@@ -98,6 +98,61 @@ async function assinarWebhook() {
   return true;
 }
 
+/* ---------------- Verificação e registro do número (v2.11.5) ---------------- */
+// Um número novo na conta do WhatsApp começa "Não verificado": a Meta manda um código por SMS (ou ligação),
+// o código é confirmado e o número é registrado na Cloud API com um PIN de 6 dígitos (guardado criptografado).
+async function metaCall(c, path, { method = 'GET', body } = {}) {
+  const r = await fetch(graph(path), {
+    method, headers: { Authorization: `Bearer ${c.token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(20000),
+  }).catch(() => null);
+  const d = r ? await r.json().catch(() => ({})) : {};
+  if (!r || !r.ok || d.error) throw httpError(400, `A Meta recusou: ${d.error?.error_user_msg || d.error?.message || (r ? `HTTP ${r.status}` : 'sem resposta')}`);
+  return d;
+}
+function lojaWa(storeId) {
+  const store = get('SELECT * FROM stores WHERE id = ?', storeId);
+  const c = cfgOf(store);
+  if (!c.token || !c.phone_id) throw httpError(400, 'Configure primeiro o token e o ID do número (WhatsApp automático).');
+  return { c, raw: json(store.wa_cloud, {}) };
+}
+const gravaRaw = (storeId, raw) => run('UPDATE stores SET wa_cloud = ? WHERE id = ?', JSON.stringify(raw), storeId);
+
+async function numero(storeId) {
+  const { c, raw } = lojaWa(storeId);
+  const d = await metaCall(c, `${c.phone_id}?fields=display_phone_number,verified_name,code_verification_status,status,name_status,quality_rating,platform_type`);
+  const registrado = d.platform_type === 'CLOUD_API' || d.status === 'CONNECTED' || (!!raw.registrado && !d.platform_type && !d.status);
+  return {
+    phone_id: c.phone_id, numero: d.display_phone_number || '', nome: d.verified_name || '',
+    verificado: d.code_verification_status === 'VERIFIED' || registrado, codigo_status: d.code_verification_status || '',
+    status: d.status || '', nome_status: d.name_status || '', qualidade: d.quality_rating || '', registrado, tem_pin: !!raw.pin_enc,
+  };
+}
+
+async function pedirCodigo(storeId, metodo) {
+  const { c } = lojaWa(storeId);
+  await metaCall(c, `${c.phone_id}/request_code`, { method: 'POST', body: { code_method: metodo === 'VOICE' ? 'VOICE' : 'SMS', language: 'pt_BR' } });
+  return { ok: true, metodo: metodo === 'VOICE' ? 'VOICE' : 'SMS' };
+}
+
+async function registrarNumero(storeId) {
+  const { c, raw } = lojaWa(storeId);
+  let pin = ''; try { pin = raw.pin_enc ? decrypt(raw.pin_enc) : ''; } catch { pin = ''; }
+  if (!/^\d{6}$/.test(pin)) pin = String(crypto.randomInt(0, 1e6)).padStart(6, '0');
+  await metaCall(c, `${c.phone_id}/register`, { method: 'POST', body: { messaging_product: 'whatsapp', pin } });
+  raw.pin_enc = encrypt(pin); raw.registrado = true;
+  gravaRaw(storeId, raw);
+  return numero(storeId).catch(() => ({ phone_id: c.phone_id, verificado: true, registrado: true, tem_pin: true }));
+}
+
+async function confirmarCodigo(storeId, codigo) {
+  const { c } = lojaWa(storeId);
+  const code = String(codigo ?? '').replace(/\D/g, '');
+  if (code.length < 4 || code.length > 8) throw httpError(400, 'Digite o código que chegou por SMS ou ligação (só os números).');
+  await metaCall(c, `${c.phone_id}/verify_code`, { method: 'POST', body: { code } });
+  return registrarNumero(storeId);
+}
+
 /* ---------------- Envio ---------------- */
 async function send(c, body) {
   const r = await fetch(graph(`${c.phone_id}/messages`), {
@@ -287,4 +342,4 @@ async function ativacaoInicial() {
   run("UPDATE settings SET value = ? WHERE key = 'wa_auto_v2113'", txt.slice(0, 1000));
 }
 
-module.exports = { ativacaoInicial, verifyToken, webhookUrl, status, salvar, assinaturaOk, processar, responderComoLoja, pausar, conversaDoLead, sendText, sidDe };
+module.exports = { ativacaoInicial, numero, pedirCodigo, confirmarCodigo, registrarNumero, verifyToken, webhookUrl, status, salvar, assinaturaOk, processar, responderComoLoja, pausar, conversaDoLead, sendText, sidDe };

@@ -1479,6 +1479,39 @@ test('v2.11: assistente no WhatsApp — webhook, resposta com IA, lead, vendedor
   delete process.env.GEMINI_API_KEY; delete process.env.GEMINI_URL;
 });
 
+test('v2.11.5: verificar e registrar o número na Meta; salvar o WhatsApp automático mantém a conta (WABA)', async () => {
+  let r = await api('PUT', '/api/wa/config', { phone_id: '5550001', template: 'campanha_loja', lang: 'pt_BR', params: 2 });
+  assert.equal(r.status, 200);
+  r = await api('PUT', '/api/wa/bot', { waba_id: '9988' });
+  assert.equal(r.body.waba_id, '9988');
+  // Salvar o quadro "WhatsApp automático" de novo não pode apagar a WABA nem a inscrição.
+  r = await api('PUT', '/api/wa/config', { phone_id: '5550001', template: 'campanha_loja', lang: 'pt_BR', params: 2 });
+  r = await api('GET', '/api/wa/bot');
+  assert.equal(r.body.waba_id, '9988'); assert.equal(r.body.inscrito, true);
+
+  r = await api('GET', '/api/wa/numero');
+  assert.equal(r.status, 200);
+  assert.equal(r.body.verificado, false); assert.equal(r.body.registrado, false); assert.equal(r.body.numero, '+55 44 98822-7548');
+  r = await api('POST', '/api/wa/numero/codigo', { metodo: 'SMS' });
+  assert.equal(r.status, 200); assert.equal(r.body.metodo, 'SMS');
+  let call = mock.state.waNumCalls.at(-1);
+  assert.equal(call.edge, 'request_code'); assert.equal(call.phone, '5550001'); assert.equal(call.body.code_method, 'SMS'); assert.equal(call.auth, 'Bearer EAAGtoken');
+  r = await api('POST', '/api/wa/numero/verificar', { codigo: '12' });
+  assert.equal(r.status, 400);
+  r = await api('POST', '/api/wa/numero/verificar', { codigo: '999999' });
+  assert.equal(r.status, 400); assert.match(r.body.error, /Code mismatch/);
+  r = await api('POST', '/api/wa/numero/verificar', { codigo: '123 456' });
+  assert.equal(r.status, 200); assert.equal(r.body.registrado, true); assert.equal(r.body.tem_pin, true);
+  call = mock.state.waNumCalls.at(-1);
+  assert.equal(call.edge, 'register'); assert.equal(call.body.messaging_product, 'whatsapp'); assert.match(call.body.pin, /^\d{6}$/);
+  const pin = call.body.pin;
+  // Registrar de novo usa o mesmo PIN guardado.
+  r = await api('POST', '/api/wa/numero/registrar', {});
+  assert.equal(r.status, 200); assert.equal(mock.state.waNumCalls.at(-1).body.pin, pin);
+  const raw = JSON.parse(require('../src/db').get('SELECT wa_cloud FROM stores WHERE id = (SELECT store_id FROM users LIMIT 1)').wa_cloud);
+  assert.ok(raw.pin_enc && !raw.pin_enc.includes(pin));
+});
+
 test('v2.0: agenda de republicação, QR, folha A4, painel TV e fotos prontas', async () => {
   const sched = require('../src/schedule');
   const db = require('../src/db');

@@ -118,11 +118,24 @@ function createMock() {
     if (String(req.body?.to || '').endsWith('0000')) return res.status(400).json({ error: { message: 'Recipient not on WhatsApp', error_data: { details: 'Número sem WhatsApp' } } });
     res.json({ messages: [{ id: 'wamid.' + id() }] });
   });
+  // Verificação e registro do número (v2.11.5).
+  state.waNum = { code_verification_status: 'NOT_VERIFIED', status: 'PENDING', display_phone_number: '+55 44 98822-7548', verified_name: 'Topcar' };
+  state.waNumCalls = [];
+  app.post('/:v/:phone/:edge(request_code|verify_code|register)', (req, res) => {
+    state.waNumCalls.push({ edge: req.params.edge, phone: req.params.phone, auth: req.headers.authorization, body: req.body });
+    if (req.params.edge === 'verify_code') {
+      if (String(req.body?.code) !== '123456') return res.status(400).json({ error: { message: 'Code mismatch', code: 136025 } });
+      state.waNum.code_verification_status = 'VERIFIED';
+    }
+    if (req.params.edge === 'register') Object.assign(state.waNum, { status: 'CONNECTED', platform_type: 'CLOUD_API' });
+    res.json({ success: true });
+  });
   app.post('/:v/:node/:edge', (req, res) => res.json({ id: id() }));
   app.post('/:v/:node', (req, res) => res.json({ success: true }));
   app.get('/:v/:node/insights', (req, res) => res.json({ data: [{ impressions: '1200', reach: '900', clicks: '45', spend: '31.50', actions: [{ action_type: 'onsite_conversion.messaging_conversation_started_7d', value: '7' }] }] }));
   app.get('/:v/:node', (req, res) => {
     const f = String(req.p.fields || '');
+    if (f.includes('code_verification_status')) return res.json({ id: req.params.node, ...state.waNum });
     if (f.includes('status_code')) return res.json({ id: req.params.node, status_code: 'FINISHED' });
     if (f.includes('permalink')) return res.json({ id: req.params.node, permalink: 'https://www.instagram.com/p/TESTE123/' });
     res.json({ id: req.params.node, effective_status: 'ACTIVE' });

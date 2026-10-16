@@ -105,6 +105,11 @@ function register(app) {
   });
   app.get('/api/wa/bot', team.can('config'), (req, res) => res.json({ ...WA.status(req.user.storeId), ...(require('./db').get('SELECT is_admin FROM users WHERE id = ?', req.user.id)?.is_admin ? { verify_token: WA.verifyToken() } : {}) }));
   app.put('/api/wa/bot', team.can('config'), wrap(async (req, res) => res.json(await WA.salvar(req.user.storeId, req.body || {}))));
+  // Verificação do número na Meta (SMS/ligação) e registro na Cloud API, com o token já salvo (v2.11.5).
+  app.get('/api/wa/numero', team.can('config'), wrap(async (req, res) => res.json(await WA.numero(req.user.storeId))));
+  app.post('/api/wa/numero/codigo', team.can('config'), wrap(async (req, res) => res.json(await WA.pedirCodigo(req.user.storeId, req.body?.metodo))));
+  app.post('/api/wa/numero/verificar', team.can('config'), wrap(async (req, res) => res.json(await WA.confirmarCodigo(req.user.storeId, req.body?.codigo))));
+  app.post('/api/wa/numero/registrar', team.can('config'), wrap(async (req, res) => res.json(await WA.registrarNumero(req.user.storeId))));
   app.post('/api/leads/:lid/wa', crm, wrap(async (req, res) => { await WA.responderComoLoja(req.user, req.params.lid, req.body?.texto); res.json(CRM.detail(req.user, req.params.lid)); }));
   app.put('/api/leads/:lid/wa-bot', crm, (req, res) => res.json(WA.pausar(req.user, req.params.lid, req.body?.pausar !== false)));
 
