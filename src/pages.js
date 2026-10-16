@@ -133,6 +133,7 @@ const FILTRO_CSS = `
 .sh{display:flex;align-items:center;gap:8px}.sh b{flex:1;font-size:16px}
 .lnk{all:unset;cursor:pointer;color:var(--muted);text-decoration:underline;font-size:13px}
 .card div div{padding:0}
+.vt .card[hidden]{display:none}
 .x{all:unset;display:none;cursor:pointer;font-size:18px;padding:0 4px}
 .side input[type=search],.side select,.rg input{font:inherit;width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
 .fs{border-top:1px solid var(--line);padding-top:8px}.fs summary{cursor:pointer;font-weight:600;padding:2px 0;list-style:none;display:flex;justify-content:space-between}

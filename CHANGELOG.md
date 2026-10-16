@@ -2,6 +2,10 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.13.2 — 16/10/2026
+
+- Vitrine: os carros fora do filtro agora somem da tela, não só da contagem.
+
 ## v2.13.1 — 16/10/2026
 
 - Vitrine: o botão de fechar os filtros só aparece no celular, e o espaçamento dos cards foi ajustado.
