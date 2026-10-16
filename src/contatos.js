@@ -18,10 +18,17 @@ const fone = (x) => { const d = String(x || '').replace(/\D/g, ''); return d.len
 const valido = (d) => d.length >= 10 && d.length <= 11;
 const papeisDe = (c) => { try { return JSON.parse(c.papeis || '[]'); } catch { return []; } };
 
-function upsert(storeId, { nome, telefone, papel, origem }) {
+function upsert(storeId, { nome, telefone, papel, origem, sync: daSync }) {
   const tel = fone(telefone);
   if (!valido(tel)) return null;
   const c = get('SELECT * FROM contacts WHERE store_id = ? AND telefone = ?', storeId, tel);
+  // Excluído pela loja: a sincronização (parceiros, donos, compradores) não traz de volta;
+  // um contato novo de verdade (lead, assistente) volta a aparecer.
+  if (c?.excluido) {
+    if (daSync) return null;
+    run(`UPDATE contacts SET excluido = 0, nome = ?, papeis = ?, origem = ?, email = '', obs = '', cidade = '', opt_out = 0, updated_at = datetime('now') WHERE id = ?`, str(nome, 120), JSON.stringify(papel ? [papel] : []), origem || '', c.id);
+    return c.id;
+  }
   if (c) {
     const p = papeisDe(c);
     const novoNome = !c.nome && nome ? str(nome, 120) : c.nome;
@@ -38,16 +45,16 @@ function upsert(storeId, { nome, telefone, papel, origem }) {
 function sync(storeId) {
   tx(() => {
     for (const p of all('SELECT nome, contato, whatsapp, tipo FROM partners WHERE store_id = ? AND whatsapp != \'\'', storeId)) {
-      upsert(storeId, { nome: p.contato ? `${p.contato} (${p.nome})` : p.nome, telefone: p.whatsapp, papel: p.tipo === 'loja_parceira' ? 'parceiro' : 'fornecedor', origem: 'parceiros' });
+      upsert(storeId, { nome: p.contato ? `${p.contato} (${p.nome})` : p.nome, telefone: p.whatsapp, papel: p.tipo === 'loja_parceira' ? 'parceiro' : 'fornecedor', origem: 'parceiros', sync: true });
     }
     for (const v of all(`SELECT compra_de, compra_de_tel FROM vehicles WHERE store_id = ? AND compra_de_tel != ''`, storeId)) {
-      upsert(storeId, { nome: v.compra_de, telefone: v.compra_de_tel, papel: 'vendeu', origem: 'compras' });
+      upsert(storeId, { nome: v.compra_de, telefone: v.compra_de_tel, papel: 'vendeu', origem: 'compras', sync: true });
     }
     for (const v of all(`SELECT proprietario_tipo, proprietario_nome, proprietario_tel, comprador_tel, venda_comprador FROM vehicles WHERE store_id = ? AND (proprietario_tel != '' OR comprador_tel != '')`, storeId)) {
       if (v.proprietario_tel && v.proprietario_tipo !== 'proprio') {
-        upsert(storeId, { nome: v.proprietario_nome, telefone: v.proprietario_tel, papel: v.proprietario_tipo === 'consignado' ? 'consignatario' : v.proprietario_tipo === 'parceria' ? 'parceiro' : 'proprietario', origem: 'veículos' });
+        upsert(storeId, { nome: v.proprietario_nome, telefone: v.proprietario_tel, papel: v.proprietario_tipo === 'consignado' ? 'consignatario' : v.proprietario_tipo === 'parceria' ? 'parceiro' : 'proprietario', origem: 'veículos', sync: true });
       }
-      if (v.comprador_tel) upsert(storeId, { nome: v.venda_comprador, telefone: v.comprador_tel, papel: 'comprador', origem: 'vendas' });
+      if (v.comprador_tel) upsert(storeId, { nome: v.venda_comprador, telefone: v.comprador_tel, papel: 'comprador', origem: 'vendas', sync: true });
     }
   });
 }
@@ -107,7 +114,7 @@ function list(storeId) {
   sync(storeId);
   const vs = all(`SELECT * FROM vehicles WHERE store_id = ? AND (proprietario_tel != '' OR comprador_tel != '')`, storeId);
   const ps = all(`SELECT * FROM partners WHERE store_id = ? AND whatsapp != ''`, storeId);
-  return all('SELECT * FROM contacts WHERE store_id = ? ORDER BY nome COLLATE NOCASE', storeId).map((c) => serialize(storeId, c, {
+  return all('SELECT * FROM contacts WHERE store_id = ? AND excluido = 0 ORDER BY nome COLLATE NOCASE', storeId).map((c) => serialize(storeId, c, {
     comoDono: vs.filter((v) => fone(v.proprietario_tel) === c.telefone && v.proprietario_tipo !== 'proprio'),
     comoComprador: vs.filter((v) => fone(v.comprador_tel) === c.telefone),
     parceiros: ps.filter((p) => fone(p.whatsapp) === c.telefone),
@@ -115,7 +122,7 @@ function list(storeId) {
 }
 
 function find(storeId, id) {
-  const c = get('SELECT * FROM contacts WHERE id = ? AND store_id = ?', Number(id), storeId);
+  const c = get('SELECT * FROM contacts WHERE id = ? AND store_id = ? AND excluido = 0', Number(id), storeId);
   if (!c) throw httpError(404, 'Contato não encontrado.');
   return c;
 }
@@ -125,14 +132,44 @@ function save(storeId, id, b) {
   if (!valido(tel)) throw httpError(400, 'Informe o WhatsApp com DDD (ex.: 44 99999-1111).');
   const papeis = [...new Set((Array.isArray(b.papeis) ? b.papeis : []).filter((p) => PAPEIS[p]))];
   const d = { nome: str(b.nome, 120), telefone: tel, email: str(b.email, 120), papeis: JSON.stringify(papeis), obs: str(b.obs, 1000), cidade: str(b.cidade, 80), opt_out: b.opt_out ? 1 : 0 };
-  const dup = get('SELECT id FROM contacts WHERE store_id = ? AND telefone = ? AND id != ?', storeId, tel, Number(id) || 0);
-  if (dup) throw httpError(409, 'Já existe um contato com este WhatsApp.');
+  const dup = get('SELECT id, excluido FROM contacts WHERE store_id = ? AND telefone = ? AND id != ?', storeId, tel, Number(id) || 0);
+  if (dup && !dup.excluido) throw httpError(409, 'Já existe um contato com este WhatsApp.');
+  // Cadastrar de novo um telefone que tinha sido excluído: reaproveita o registro.
+  if (dup) {
+    if (id) run('DELETE FROM contacts WHERE id = ?', dup.id);
+    else {
+      run(`UPDATE contacts SET excluido=0, nome=?, email=?, papeis=?, obs=?, cidade=?, opt_out=?, origem='manual', updated_at=datetime('now') WHERE id=?`, d.nome, d.email, d.papeis, d.obs, d.cidade, d.opt_out, dup.id);
+      return dup.id;
+    }
+  }
   if (id) {
     const c = find(storeId, id);
     run(`UPDATE contacts SET nome=?, telefone=?, email=?, papeis=?, obs=?, cidade=?, opt_out=?, updated_at=datetime('now') WHERE id=?`, d.nome, d.telefone, d.email, d.papeis, d.obs, d.cidade, d.opt_out, c.id);
     return c.id;
   }
   return run('INSERT INTO contacts (store_id, nome, telefone, email, papeis, obs, cidade, opt_out, origem) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', storeId, d.nome, d.telefone, d.email, d.papeis, d.obs, d.cidade, d.opt_out, 'manual').lastInsertRowid;
+}
+
+// Exclui contatos: some da lista, das buscas e dos envios; anotações e mensagens pendentes são apagadas.
+// O telefone fica marcado para a sincronização automática não recriar o contato.
+function remove(storeId, ids) {
+  const lista = [...new Set((Array.isArray(ids) ? ids : [ids]).map(Number).filter(Boolean))];
+  if (!lista.length) throw httpError(400, 'Escolha ao menos um contato.');
+  let n = 0;
+  tx(() => {
+    for (const id of lista) {
+      const c = get('SELECT * FROM contacts WHERE id = ? AND store_id = ? AND excluido = 0', id, storeId);
+      if (!c) continue;
+      run('DELETE FROM contact_notes WHERE contact_id = ?', c.id);
+      run("DELETE FROM wa_sends WHERE contact_id = ? AND status = 'pendente'", c.id);
+      run('UPDATE leads SET contact_id = NULL WHERE store_id = ? AND contact_id = ?', storeId, c.id);
+      run(`UPDATE contacts SET excluido = 1, nome = '', email = '', obs = '', cidade = '', papeis = '[]', updated_at = datetime('now') WHERE id = ?`, c.id);
+      n++;
+    }
+  });
+  if (!n) throw httpError(404, 'Contato não encontrado.');
+  logEvent(storeId, n === 1 ? 'Contato excluído' : `${n} contatos excluídos`);
+  return n;
 }
 
 function addNote(storeId, id, b, userId) {
@@ -181,7 +218,7 @@ function createCampaign(storeId, b, userId) {
   const ids = [...new Set((Array.isArray(b.contatos) ? b.contatos : []).map(Number))].slice(0, 1000);
   const msg = str(b.mensagem, 1000);
   if (!msg) throw httpError(400, 'Escreva a mensagem.');
-  const cs = ids.map((id) => get('SELECT * FROM contacts WHERE id = ? AND store_id = ?', id, storeId)).filter((c) => c && !c.opt_out);
+  const cs = ids.map((id) => get('SELECT * FROM contacts WHERE id = ? AND store_id = ?', id, storeId)).filter((c) => c && !c.opt_out && !c.excluido);
   if (!cs.length) throw httpError(400, 'Selecione ao menos um contato (quem pediu para não receber mensagens fica de fora).');
   const modo = b.modo === 'api' ? 'api' : 'assistido';
   if (modo === 'api' && !cloudPublic(store).configurado) throw httpError(400, 'Configure a API oficial do WhatsApp antes de enviar automaticamente.');
@@ -254,4 +291,4 @@ function markSend(storeId, campaignId, sendId, status, userId) {
   run('UPDATE wa_campaigns SET enviados = ?, status = ? WHERE id = ?', n.e || 0, n.p ? 'aberta' : 'concluida', w.id);
 }
 
-module.exports = { cloudCfg, upsert, PAPEIS, NOTA_TIPOS, fone, sync, list, find, save, addNote, historico, serialize, vinculos, cloudPublic, saveCloud, createCampaign, runCampaign, campaigns, campaign, markSend, render };
+module.exports = { cloudCfg, upsert, PAPEIS, NOTA_TIPOS, fone, sync, list, find, save, remove, addNote, historico, serialize, vinculos, cloudPublic, saveCloud, createCampaign, runCampaign, campaigns, campaign, markSend, render };

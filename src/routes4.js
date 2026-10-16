@@ -21,6 +21,16 @@ function register(app) {
   /* ---------------- Guia "Primeiros passos" (v2.12) ---------------- */
   app.get('/api/guia', auth.requireUser, (req, res) => res.json(require('./guia').status(req.user.storeId)));
 
+  /* ---------------- Pendências dos carros: multas, IPVA, licenciamento, restrições… (v2.13) ---------------- */
+  const PD = require('./pendencias');
+  const pend = team.canAny('vender', 'gestao');
+  app.get('/api/pendencias', pend, (req, res) => res.json({ itens: PD.list(req.user.storeId, { vehicleId: req.query.vehicle_id }), tipos: PD.TIPOS, status: PD.STATUS, responsaveis: PD.RESPONSAVEL }));
+  app.get('/api/pendencias/resumo', auth.requireUser, (req, res) => res.json(PD.abertasPorVeiculo(req.user.storeId)));
+  app.post('/api/pendencias', pend, (req, res) => res.status(201).json({ id: PD.save(req.user.storeId, null, req.body || {}, req.user.id) }));
+  app.put('/api/pendencias/:pid', pend, (req, res) => res.json({ id: PD.save(req.user.storeId, req.params.pid, req.body || {}, req.user.id) }));
+  app.get('/api/pendencias/:pid/historico', pend, (req, res) => res.json(PD.moves(req.user.storeId, req.params.pid)));
+  app.delete('/api/pendencias/:pid', team.can('gestao'), (req, res) => res.json({ ok: PD.remove(req.user.storeId, req.params.pid) }));
+
   /* ---------------- CRM (v2.9) ---------------- */
   const CRM = require('./crm');
   const crm = team.canAny('vender', 'gestao');
@@ -154,6 +164,8 @@ function register(app) {
     const c = C.find(req.user.storeId, req.params.cid);
     res.json({ contato: C.serialize(req.user.storeId, c), historico: C.historico(req.user.storeId, c) });
   });
+  app.delete('/api/contacts/:cid', pode, (req, res) => res.json({ excluidos: C.remove(req.user.storeId, [req.params.cid]) }));
+  app.post('/api/contacts/excluir', pode, (req, res) => res.json({ excluidos: C.remove(req.user.storeId, req.body?.ids) }));
   app.post('/api/contacts/:cid/notes', pode, (req, res) => { C.addNote(req.user.storeId, req.params.cid, req.body || {}, req.user.id); res.status(201).json({ ok: true }); });
 
   /* ---------------- Mensagens em massa ---------------- */

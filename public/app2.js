@@ -544,6 +544,7 @@
     const need = { publicar: 'publicar', republicar: 'publicar', divulgar: 'publicar', vendido: 'vender', excluir: 'excluir', duplicar: 'cadastrar', editar: 'cadastrar' };
     $$('.list [data-act]').forEach((b) => { if (need[b.dataset.act] && !can(need[b.dataset.act])) b.hidden = true; });
     $$('[data-docgo]').forEach((b) => { b.onclick = () => { gTab = 'docs'; X.go('gestao'); }; });
+    if (can('vender') || can('gestao')) pendBadges();
     $$('[data-parado]').forEach((b) => { b.onclick = () => offerModal(V.find((x) => x.id === Number(b.dataset.parado))); });
     $$('[data-more]').forEach((b) => { b.onclick = (e) => moreMenu(V.find((x) => x.id === Number(b.dataset.more)), e.currentTarget); });
   }
@@ -569,6 +570,7 @@
       can('financeiro') && ['fin', 'Custos e margem'],
       can('vender') && v.status === 'vendido' && ['sale', 'Dados da venda'],
       can('publicar') && v.status !== 'vendido' && ['repasse', 'Enviar para grupo de repasse'],
+      (can('vender') || can('gestao')) && ['pend', 'Registrar pendência (multa, IPVA…)'],
       ['ficha', 'Ficha rápida do veículo'],
     ].filter(Boolean);
     const r = anchor.getBoundingClientRect();
@@ -586,6 +588,7 @@
         if (k === 'offer') offerModal(v);
         if (k === 'loc') locationModal(v);
         if (k === 'fin') financeModal(v.id);
+        if (k === 'pend') pendModal(null, v.id, () => { if (S.view === 'estoque') X.render(); });
         if (k === 'sale') saleEditModal(v.id);
         if (k === 'repasse') X.repasseModal(v, (t) => { S.chanTab = t; $$(`[data-act="divulgar"][data-id="${v.id}"]`)[0]?.click(); });
         if (k === 'ficha') vehiclePop(v.id);
@@ -909,6 +912,93 @@
     return `<div class="dsteps" title="${esc(i.status_label)}">${keys.map((k, n) => `<i class="${n <= at ? 'on' : ''}"></i>`).join('')}</div><span class="sub">${esc(i.status_label)}</span>`;
   }
 
+  /* ======================= Pendências dos carros (v2.13) ======================= */
+  const PD = { filtro: 'abertas', tipo: '', veiculo: 0, data: null };
+  async function pendBadges() {
+    const R = await api('GET', '/api/pendencias/resumo').catch(() => ({}));
+    $$('.list .row').forEach((row) => {
+      const id = Number(row.querySelector('[data-id]')?.dataset.id); const r = R[id];
+      const st = row.querySelector('.state'); if (!r || !st || st.querySelector('[data-pendgo]')) return;
+      st.insertAdjacentHTML('beforeend', `<button class="pill ${r.vencidas ? 'p-bad' : 'p-warn'} badge-btn" type="button" data-pendgo="${id}" title="Ver em Gestão > Pendências">⚠ ${r.n} ${r.n === 1 ? 'pendência' : 'pendências'}${r.total ? ` · ${brl(r.total)}` : ''}</button>`);
+    });
+    $$('[data-pendgo]').forEach((b) => { b.onclick = () => { PD.veiculo = Number(b.dataset.pendgo); PD.filtro = 'abertas'; gTab = 'pend'; X.go('gestao'); }; });
+  }
+  const pendRows = (L) => L.map((p) => `<tr class="${p.aberta ? '' : 'muted'}">
+      <td>${p.veiculo ? `<button class="vlink" type="button" data-vp="${p.veiculo.id}">${esc(p.veiculo.titulo)}</button><br><span class="sub">${esc(p.veiculo.placa)}${p.veiculo.vendido ? ` · <span class="pill p-muted">vendido</span>${p.veiculo.comprador ? ' ' + esc(p.veiculo.comprador.split(' ')[0]) : ''}` : ''}</span>` : '<span class="sub">—</span>'}</td>
+      <td><b>${esc(p.tipo_label)}</b>${p.descricao ? `<br><span class="sub">${esc(p.descricao)}</span>` : ''}</td>
+      <td class="r">${p.valor ? brl(p.valor) : '<span class="sub">—</span>'}</td>
+      <td>${p.vencimento ? `${fmtDate(p.vencimento)}<br><span class="sub ${p.vencida ? 'neg' : p.aberta && p.vence_em <= 7 ? 'warn' : ''}">${!p.aberta ? '' : p.vencida ? `vencida há ${-p.vence_em} dia(s)` : p.vence_em === 0 ? 'vence hoje' : `em ${p.vence_em} dia(s)`}</span>` : '<span class="sub">—</span>'}</td>
+      <td>${esc(p.responsavel_label)}</td>
+      <td><span class="pill ${p.status === 'resolvida' ? 'p-ok' : p.status === 'cancelada' ? 'p-muted' : p.vencida ? 'p-bad' : p.status === 'andamento' ? 'p-info' : 'p-warn'}">${esc(p.status_label)}</span>${p.obs ? `<br><span class="sub">${esc(p.obs.slice(0, 80))}</span>` : ''}</td>
+      <td><div class="btnrow" style="gap:4px;flex-wrap:nowrap">${p.aberta ? `<button class="btn sm" type="button" data-pok="${p.id}">Resolvida</button>` : ''}<button class="btn sm ${p.aberta ? 'primary' : ''}" type="button" data-ped="${p.id}">${p.aberta ? 'Atualizar' : 'Abrir'}</button></div></td></tr>`).join('');
+  async function pendHtml() {
+    const D = await api('GET', '/api/pendencias'); PD.data = D;
+    const ab = D.itens.filter((p) => p.aberta);
+    const venc = ab.filter((p) => p.vencida);
+    const semana = ab.filter((p) => !p.vencida && p.vence_em !== null && p.vence_em <= 7);
+    const total = ab.reduce((t, p) => t + (p.valor || 0), 0);
+    const res30 = D.itens.filter((p) => p.status === 'resolvida' && p.resolvido_em && diasDesde(p.resolvido_em) <= 30).length;
+    let L = D.itens;
+    if (PD.filtro === 'abertas') L = ab; else if (PD.filtro === 'vencidas') L = venc; else if (PD.filtro === 'fechadas') L = D.itens.filter((p) => !p.aberta);
+    if (PD.tipo) L = L.filter((p) => p.tipo === PD.tipo);
+    if (PD.veiculo) L = L.filter((p) => p.veiculo?.id === PD.veiculo);
+    const vsel = PD.veiculo && S.vehicles.find((v) => v.id === PD.veiculo);
+    return `<div class="kpis">
+        <div class="kpi"><span>Em aberto</span><b>${ab.length}</b><em>${new Set(ab.map((p) => p.vehicle_id)).size} carro(s)</em></div>
+        <div class="kpi"><span>Vencidas</span><b class="${venc.length ? 'neg' : ''}">${venc.length}</b><em>passaram do vencimento</em></div>
+        <div class="kpi"><span>Vencem em 7 dias</span><b class="${semana.length ? 'warn' : ''}">${semana.length}</b><em>resolver logo</em></div>
+        <div class="kpi"><span>Valor em aberto</span><b>${brl(total)}</b><em>multas, IPVA, taxas…</em></div>
+        <div class="kpi"><span>Resolvidas (30 dias)</span><b>${res30}</b></div>
+      </div>
+      <div class="toolbar" style="gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <div class="chips">${[['abertas', `Em aberto (${ab.length})`], ['vencidas', `Vencidas (${venc.length})`], ['fechadas', 'Resolvidas e canceladas'], ['todas', 'Todas']].map(([k, l]) => `<button class="chip" type="button" data-pf="${k}" aria-pressed="${k === PD.filtro}">${l}</button>`).join('')}</div>
+        <select id="pd-tipo" aria-label="Tipo de pendência" style="width:auto"><option value="">Todos os tipos</option>${opt(Object.entries(D.tipos), PD.tipo)}</select>
+        ${vsel ? `<span class="pill p-info">${esc(vsel.marca)} ${esc(vsel.modelo)} ${esc(vsel.placa || '')} <button class="vlink" type="button" id="pd-vx" aria-label="Ver todos os carros">✕</button></span>` : ''}
+        <span class="grow1"></span><button class="btn primary" type="button" id="pd-new">+ Nova pendência</button>
+      </div>
+      <div class="table-wrap"><table class="tbl"><thead><tr><th>Veículo</th><th>Pendência</th><th class="r">Valor</th><th>Vencimento</th><th>Responsável</th><th>Situação</th><th></th></tr></thead><tbody>
+        ${pendRows(L) || `<tr><td colspan="7" class="sub">${D.itens.length ? 'Nenhuma pendência com esse filtro.' : 'Nenhuma pendência registrada. Use <b>+ Nova pendência</b> para multas, IPVA, licenciamento, restrição judicial, gravame, recall ou outro débito de um carro em estoque ou já vendido.'}</td></tr>`}</tbody></table></div>
+      <p class="note">Antes de comprar e antes de vender, consulte a placa no Detran do estado e no Renajud. Registre aqui o que precisar ser resolvido e quem é o responsável: loja, antigo dono ou comprador.</p>`;
+  }
+  function pendBind() {
+    $$('[data-pf]').forEach((b) => { b.onclick = () => { PD.filtro = b.dataset.pf; X.render(); }; });
+    if ($('#pd-tipo')) $('#pd-tipo').onchange = () => { PD.tipo = $('#pd-tipo').value; X.render(); };
+    if ($('#pd-vx')) $('#pd-vx').onclick = () => { PD.veiculo = 0; X.render(); };
+    if ($('#pd-new')) $('#pd-new').onclick = () => pendModal(null, PD.veiculo || 0, () => X.render());
+    $$('[data-ped]').forEach((b) => { b.onclick = () => pendModal(PD.data.itens.find((p) => p.id === Number(b.dataset.ped)), 0, () => X.render()); });
+    $$('[data-pok]').forEach((b) => { b.onclick = async () => { try { await api('PUT', `/api/pendencias/${b.dataset.pok}`, { status: 'resolvida', obs: 'Marcada como resolvida' }); toast('Pendência resolvida'); X.render(); } catch (e) { toast(e.message, 6000); } }; });
+  }
+  async function pendModal(p, vehicleId, done) {
+    const M = PD.data || await api('GET', '/api/pendencias').catch(() => null);
+    if (!M) return toast('Não consegui carregar as pendências.');
+    PD.data = M;
+    const hist = p ? await api('GET', `/api/pendencias/${p.id}/historico`).catch(() => []) : [];
+    const vid = p?.vehicle_id || vehicleId || 0;
+    const vs = [...S.vehicles].sort((a, b) => (a.status === 'vendido') - (b.status === 'vendido') || `${a.marca} ${a.modelo}`.localeCompare(`${b.marca} ${b.modelo}`));
+    const vopt = (v) => `<option value="${v.id}" ${v.id === vid ? 'selected' : ''}>${esc(`${v.marca} ${v.modelo} ${v.ano_modelo || ''}${v.placa ? ' · ' + v.placa : ''}`)}</option>`;
+    modal(`<h3>${p ? 'Pendência: ' + esc(p.tipo_label) : 'Nova pendência'}</h3>
+      <div class="fields">
+        <div class="f w6"><label for="pd-v">Veículo</label><select id="pd-v"><option value="">Escolha o carro</option><optgroup label="Em estoque">${vs.filter((v) => v.status !== 'vendido').map(vopt).join('')}</optgroup><optgroup label="Vendidos">${vs.filter((v) => v.status === 'vendido').map(vopt).join('')}</optgroup></select></div>
+        <div class="f w3"><label for="pd-t">Tipo</label><select id="pd-t">${opt(Object.entries(M.tipos), p?.tipo || 'multa')}</select></div>
+        <div class="f w3"><label for="pd-d">Descrição</label><input id="pd-d" maxlength="300" value="${esc(p?.descricao || '')}" placeholder="Ex.: multa de velocidade (AIT 123), IPVA 2025"></div>
+        <div class="f"><label for="pd-val">Valor (R$)</label><input id="pd-val" inputmode="decimal" value="${p?.valor ? String(p.valor).replace('.', ',') : ''}" placeholder="0,00"></div>
+        <div class="f"><label for="pd-ven">Vencimento / prazo</label><input id="pd-ven" type="date" value="${esc(p?.vencimento || '')}"></div>
+        <div class="f w2"><label for="pd-r">Quem resolve / paga</label><select id="pd-r">${opt(Object.entries(M.responsaveis), p?.responsavel || 'loja')}</select></div>
+        <div class="f w2"><label for="pd-s">Situação</label><select id="pd-s">${opt(Object.entries(M.status), p?.status || 'aberta')}</select></div>
+        <div class="f w6"><label for="pd-o">${p ? 'Andamento (fica no histórico)' : 'Observação'}</label><input id="pd-o" maxlength="1000" placeholder="Ex.: boleto pedido ao despachante; antigo dono vai pagar até sexta"></div>
+      </div>
+      ${p ? `<h4>Histórico</h4><div class="timeline">${hist.map((h) => `<div><b>${esc(h.status_label)}</b> <span class="sub">${fmtDate(h.created_at)}${h.user_name ? ' · ' + esc(h.user_name) : ''}</span>${h.obs ? `<br>${esc(h.obs)}` : ''}</div>`).join('') || '<p class="sub">Sem registros.</p>'}</div>` : ''}
+      <div class="err" id="pd-err" hidden></div>
+      <div class="modal-foot">${p && can('gestao') ? '<button class="btn ghost danger" type="button" id="pd-del" style="margin-right:auto">Excluir</button>' : ''}<button class="btn" data-close type="button">Cancelar</button><button class="btn primary" id="pd-ok" type="button">${p ? 'Salvar' : 'Registrar'}</button></div>`, true);
+    $('#pd-ok').onclick = async () => {
+      const body = { vehicle_id: $('#pd-v').value, tipo: $('#pd-t').value, descricao: $('#pd-d').value, valor: $('#pd-val').value, vencimento: $('#pd-ven').value, responsavel: $('#pd-r').value, status: $('#pd-s').value, obs: $('#pd-o').value };
+      if (!body.vehicle_id) { $('#pd-err').textContent = 'Escolha o veículo.'; $('#pd-err').hidden = false; return; }
+      try { await api(p ? 'PUT' : 'POST', p ? `/api/pendencias/${p.id}` : '/api/pendencias', body); closeModal(); toast(p ? 'Pendência atualizada' : 'Pendência registrada'); done?.(); }
+      catch (e) { $('#pd-err').textContent = e.message; $('#pd-err').hidden = false; }
+    };
+    if ($('#pd-del')) $('#pd-del').onclick = () => confirmBox('Excluir a pendência?', 'Use só para registro feito por engano. Se ela foi paga ou resolvida, marque a situação como Resolvida para manter o histórico.', 'Excluir', async () => { await api('DELETE', `/api/pendencias/${p.id}`); toast('Pendência excluída'); done?.(); }, true);
+  }
+
   /* ======================= Gráficos simples ======================= */
   function hbars(list, val, fmt = (x) => x, label = (x) => x.label) {
     const max = Math.max(1, ...list.map((x) => Math.abs(val(x))));
@@ -932,7 +1022,7 @@
   X.views.gestao = {
     async html() {
       const fin = can('financeiro');
-      const tabs = [fin && ['estoque', 'Estoque e margem'], ['local', 'Acompanhamento'], (can('vender') || can('gestao')) && ['docs', 'Documentação'], (can('vender') || can('gestao')) && ['contatos', 'Contatos'], fin && ['desp', 'Despesas da loja'], ['parc', 'Parceiros']].filter(Boolean);
+      const tabs = [fin && ['estoque', 'Estoque e margem'], ['local', 'Acompanhamento'], (can('vender') || can('gestao')) && ['docs', 'Documentação'], (can('vender') || can('gestao')) && ['pend', 'Pendências'], (can('vender') || can('gestao')) && ['contatos', 'Contatos'], fin && ['desp', 'Despesas da loja'], ['parc', 'Parceiros']].filter(Boolean);
       if (!tabs.some((t) => t[0] === gTab)) gTab = tabs[0][0];
       const P = await loadPartners(true);
       const V = S.vehicles.filter((v) => v.status !== 'vendido');
@@ -985,7 +1075,8 @@
             <td>${docSteps(i)}${i.obs ? `<br><span class="sub">${esc(i.obs)}</span>` : ''}</td>
             <td>${fmtDate(i.atualizado)}</td>
             <td><div class="btnrow" style="gap:4px;flex-wrap:nowrap">${i.wa_url ? `<a class="btn sm" href="${esc(i.wa_url)}" target="_blank" rel="noopener" title="Avisar o comprador">WhatsApp</a>` : ''}<button class="btn sm primary" type="button" data-doc="${i.id}">Atualizar</button></div></td></tr>`).join('') || '<tr><td colspan="6" class="sub">Nada por aqui. Ao marcar um carro como vendido, a transferência do documento aparece nesta lista.</td></tr>'}</tbody></table></div>
-          <p class="note">Etapas: ${Object.values(S.me.options.doc_status || {}).filter((x) => x !== 'Não se aplica').join(' → ')}.</p>`;
+          <p class="note">Etapas: ${Object.values(S.me.options.doc_status || {}).filter((x) => x !== 'Não se aplica').join(' → ')}.</p>
+          <div class="infobox conn-row" style="margin-top:10px"><span><b>Multas, IPVA, licenciamento, restrição judicial ou gravame?</b> Registre e acompanhe na aba <b>Pendências</b>, para carros em estoque ou já vendidos.</span><button class="btn sm" type="button" data-gt="pend">Abrir Pendências</button></div>`;
         X._docs = D.docs;
       }
       if (gTab === 'desp') {
@@ -1018,11 +1109,12 @@
           <p class="note">Comissão de vendedor lançada aqui entra no resultado como comissão (e no ranking de vendedores), não como despesa fixa. A comissão também pode ser informada ao concluir a venda.</p>`;
       }
       if (gTab === 'contatos') body = await contatosHtml();
+      if (gTab === 'pend') body = await pendHtml();
       if (gTab === 'parc') {
         body = `<div class="btnrow" style="margin-bottom:10px">${can('parceiros') ? '<button class="btn primary" type="button" id="ptNew">+ Novo parceiro</button>' : ''}</div>
           <div class="cfields">${P.partners.length ? P.partners.map((p) => `<div class="cf"><span class="k"><b>${esc(p.nome)}</b><br><span class="sub">${esc(p.tipo_label)}</span></span><span class="v">${esc(p.contato || '')} ${esc(p.whatsapp || '')}<br><span class="sub">${p.carros} carro(s) lá agora${p.endereco ? ' · ' + esc(p.endereco) : ''}</span></span><span class="btnrow" style="gap:6px">${p.wa ? `<a class="btn sm" href="https://wa.me/${p.wa}" target="_blank" rel="noopener">WhatsApp</a>` : ''}${can('parceiros') ? `<button class="btn sm" type="button" data-pe="${p.id}">Editar</button>` : ''}</span></div>`).join('') : '<div class="cf"><span class="v sub">Cadastre oficinas, funilarias, estética, lavador, lojas parceiras e despachante para saber onde cada carro está.</span></div>'}</div>`;
       }
-      return `<div class="head"><div><h1>Gestão</h1><p>Estoque, margem, acompanhamento dos carros, documentos das vendas e despesas da loja. Clique no nome de um carro para ver os dados.</p></div></div>
+      return `<div class="head"><div><h1>Gestão</h1><p>Estoque, margem, acompanhamento dos carros, documentos das vendas, pendências (multas, IPVA, restrições), contatos e despesas da loja. Clique no nome de um carro para ver os dados.</p></div></div>
         <div class="chips tabs" style="margin-bottom:14px">${tabs.map(([k, l]) => `<button class="chip" type="button" data-gt="${k}" aria-pressed="${k === gTab}">${l}</button>`).join('')}</div>${body}`;
     },
     bind() {
@@ -1032,6 +1124,7 @@
       $$('[data-pe]').forEach((b) => { b.onclick = () => partnerForm(PARTNERS.partners.find((p) => p.id === Number(b.dataset.pe))); });
       if ($('#ptNew')) $('#ptNew').onclick = () => partnerForm();
       if (gTab === 'contatos') contatosBind();
+      if (gTab === 'pend') pendBind();
       $$('[data-df]').forEach((b) => { b.onclick = () => { docFiltro = b.dataset.df; X.render(); }; });
       $$('[data-doc]').forEach((b) => { b.onclick = () => docModal(X._docs.find((i) => i.id === Number(b.dataset.doc)), () => X.render()); });
       $$('[data-dm]').forEach((b) => { b.onclick = () => { const [y, m] = despMes.split('-').map(Number); despMes = new Date(Date.UTC(y, m - 1 + Number(b.dataset.dm), 1)).toISOString().slice(0, 7); X.render(); }; });
@@ -1641,6 +1734,7 @@
         <div class="chips">${[['', `Todos (${D.contatos.length})`], ...Object.entries(D.papeis).filter(([k]) => cont(k)).map(([k, l]) => [k, `${l} (${cont(k)})`])].map(([k, l]) => `<button class="chip" type="button" data-cp="${k}" aria-pressed="${CT.papel === k}">${l}</button>`).join('')}</div>
         <select id="ct-f" aria-label="Filtro"><option value="">Todos</option><option value="posvenda" ${CT.filtro === 'posvenda' ? 'selected' : ''}>Compraram nos últimos 30 dias (pós-venda)</option><option value="compraram6m" ${CT.filtro === 'compraram6m' ? 'selected' : ''}>Compraram há 6+ meses (resgatar)</option><option value="semcontato90" ${CT.filtro === 'semcontato90' ? 'selected' : ''}>Sem contato há 90+ dias</option><option value="optout" ${CT.filtro === 'optout' ? 'selected' : ''}>Não querem receber</option></select>
         <span class="grow1"></span>
+        <button class="btn ghost danger" type="button" id="ct-del" ${CT.sel.size ? '' : 'hidden'}>Excluir (<span id="ct-nd">${CT.sel.size}</span>)</button>
         <button class="btn" type="button" id="ct-new">+ Contato</button>
         <button class="btn primary" type="button" id="ct-send">Enviar mensagem (<span id="ct-n">${CT.sel.size}</span>)</button>
       </div>
@@ -1650,9 +1744,10 @@
       </div>`;
   }
   function contatosBind() {
-    const refresh = () => { $('#ct-tab').innerHTML = ctTabela(); $('#ct-n').textContent = CT.sel.size; bindTab(); };
+    const selUi = () => { $('#ct-n').textContent = CT.sel.size; $('#ct-nd').textContent = CT.sel.size; $('#ct-del').hidden = !CT.sel.size; };
+    const refresh = () => { $('#ct-tab').innerHTML = ctTabela(); selUi(); bindTab(); };
     const bindTab = () => {
-      $$('[data-cs]').forEach((c) => { c.onchange = () => { if (c.checked) CT.sel.add(Number(c.dataset.cs)); else CT.sel.delete(Number(c.dataset.cs)); $('#ct-n').textContent = CT.sel.size; }; });
+      $$('[data-cs]').forEach((c) => { c.onchange = () => { if (c.checked) CT.sel.add(Number(c.dataset.cs)); else CT.sel.delete(Number(c.dataset.cs)); selUi(); }; });
       $('#ct-all') && ($('#ct-all').onchange = () => { ctFiltrados().filter((c) => !c.opt_out).forEach((c) => { if ($('#ct-all').checked) CT.sel.add(c.id); else CT.sel.delete(c.id); }); refresh(); });
       $$('[data-ct]').forEach((b) => { b.onclick = () => contactModal(Number(b.dataset.ct)); });
     };
@@ -1661,6 +1756,7 @@
     $('#ct-f').onchange = () => { CT.filtro = $('#ct-f').value; refresh(); };
     $$('[data-cp]').forEach((b) => { b.onclick = () => { CT.papel = b.dataset.cp; $$('[data-cp]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); refresh(); }; });
     $('#ct-new').onclick = () => contactForm();
+    $('#ct-del').onclick = () => { const ids = [...CT.sel]; if (ids.length) ctExcluir(ids); };
     $('#ct-send').onclick = () => (CT.sel.size ? composeModal([...CT.sel]) : toast('Selecione os contatos na lista (caixinha à esquerda).'));
     $$('[data-wq]').forEach((b) => { b.onclick = () => queueModal(Number(b.dataset.wq)); });
   }
@@ -1678,12 +1774,24 @@
       <div class="chips">${Object.entries(P).map(([k, l]) => `<label class="chip"><input type="checkbox" data-pp="${k}" ${(c.papeis || []).includes(k) ? 'checked' : ''}> ${esc(l)}</label>`).join('')}</div>
       <label class="check" style="margin-top:10px"><input type="checkbox" id="cf-x" ${c.opt_out ? 'checked' : ''}><div><b>Não quer receber mensagens</b><span>Fica de fora dos envios em massa.</span></div></label>
       <div class="err" id="cf-err" hidden></div>
-      <div class="modal-foot"><button class="btn" data-close type="button">Cancelar</button><button class="btn primary" id="cf-ok" type="button">Salvar</button></div>`);
+      <div class="modal-foot">${c.id ? '<button class="btn ghost danger" type="button" id="cf-del" style="margin-right:auto">Excluir</button>' : ''}<button class="btn" data-close type="button">Cancelar</button><button class="btn primary" id="cf-ok" type="button">Salvar</button></div>`);
+    if ($('#cf-del')) $('#cf-del').onclick = () => ctExcluir([c.id], c.nome);
     $('#cf-ok').onclick = async () => {
       const body = { nome: $('#cf-n').value, telefone: $('#cf-t').value, cidade: $('#cf-c').value, email: $('#cf-e').value, obs: $('#cf-o').value, opt_out: $('#cf-x').checked, papeis: $$('[data-pp]').filter((x) => x.checked).map((x) => x.dataset.pp) };
       try { await api(c.id ? 'PUT' : 'POST', c.id ? `/api/contacts/${c.id}` : '/api/contacts', body); closeModal(); toast('Contato salvo'); X.render(); }
       catch (e) { $('#cf-err').textContent = e.message; $('#cf-err').hidden = false; }
     };
+  }
+  // Exclui um ou vários contatos, com confirmação (v2.13).
+  function ctExcluir(ids, nome) {
+    const um = ids.length === 1;
+    confirmBox(um ? 'Excluir contato?' : `Excluir ${ids.length} contatos?`,
+      `${um ? `<b>${esc(nome || 'Este contato')}</b> sai` : 'Eles saem'} da lista de contatos e dos envios de mensagem, e as anotações do histórico são apagadas. Carros, vendas e leads ligados continuam como estão. Se a pessoa voltar como lead, o contato reaparece.`,
+      'Excluir', async () => {
+        const r = await api('POST', '/api/contacts/excluir', { ids });
+        ids.forEach((i) => CT.sel.delete(i));
+        toast(r.excluidos === 1 ? 'Contato excluído' : `${r.excluidos} contatos excluídos`); X.render();
+      }, true);
   }
   async function contactModal(id) {
     let D; try { D = await api('GET', `/api/contacts/${id}`); } catch (e) { return toast(e.message); }
@@ -1695,7 +1803,8 @@
       <div class="fields"><div class="f"><label for="cm-t">Tipo</label><select id="cm-t">${opt(Object.entries(CT.data?.tipos_nota || { nota: 'Anotação' }).filter(([k]) => k !== 'campanha'), 'nota')}</select></div><div class="f w3"><label for="cm-x">O que foi conversado</label><input id="cm-x" placeholder="Ex.: quer um SUV até 90 mil, ligar em março"></div><div class="f" style="align-self:end"><button class="btn" type="button" id="cm-add">Registrar</button></div></div>
       <h4>Histórico</h4>
       <div class="timeline">${D.historico.length ? D.historico.map((e) => `<div>${e.icone} <b>${esc(e.texto)}</b> <span class="sub">${fmtDate(e.data)}${e.user ? ' · ' + esc(e.user) : ''}</span>${e.vehicle_id ? ` <button class="vlink sub" type="button" data-vp="${e.vehicle_id}">ver carro</button>` : ''}</div>`).join('') : '<p class="sub">Sem histórico ainda.</p>'}</div>
-      <div class="modal-foot"><button class="btn" data-close type="button">Fechar</button></div>`, true);
+      <div class="modal-foot"><button class="btn ghost danger" type="button" id="cm-del" style="margin-right:auto">Excluir contato</button><button class="btn" data-close type="button">Fechar</button></div>`, true);
+    $('#cm-del').onclick = () => ctExcluir([c.id], c.nome);
     $('#cm-ed').onclick = () => contactForm(c);
     $('#cm-msg').onclick = () => composeModal([c.id]);
     $('#cm-add').onclick = async () => {

@@ -530,6 +530,34 @@ if (!db.prepare('SELECT 1 FROM users WHERE is_admin = 1').get()) {
   db.exec('UPDATE users SET is_admin = 1 WHERE id = (SELECT MIN(id) FROM users)');
 }
 
+// v2.13: contato excluído (o telefone fica guardado para a sincronização não trazê-lo de volta) e pendências dos carros.
+addColumn('contacts', 'excluido', 'INTEGER NOT NULL DEFAULT 0');
+db.exec(`CREATE TABLE IF NOT EXISTS pendencias (
+  id INTEGER PRIMARY KEY,
+  store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+  vehicle_id INTEGER NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
+  tipo TEXT NOT NULL DEFAULT 'outro',
+  descricao TEXT NOT NULL DEFAULT '',
+  valor REAL NOT NULL DEFAULT 0,
+  vencimento TEXT,
+  responsavel TEXT NOT NULL DEFAULT 'loja',
+  status TEXT NOT NULL DEFAULT 'aberta',
+  obs TEXT DEFAULT '',
+  resolvido_em TEXT,
+  created_by INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS pendencias_store ON pendencias(store_id, status)');
+db.exec(`CREATE TABLE IF NOT EXISTS pendencia_moves (
+  id INTEGER PRIMARY KEY,
+  pendencia_id INTEGER NOT NULL REFERENCES pendencias(id) ON DELETE CASCADE,
+  status TEXT NOT NULL,
+  obs TEXT DEFAULT '',
+  user_id INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`);
+
 function tx(fn) {
   db.exec('BEGIN');
   try { const r = fn(); db.exec('COMMIT'); markDirty(); return r; }

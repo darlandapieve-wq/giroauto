@@ -209,6 +209,7 @@
           `${B('QR code e folha A4 no carro')}: no menu ${B('Mais')} de cada carro. O cliente aponta o celular e cai na página do carro, e o lead entra no CRM.`,
           `${B('Contratos')}: menu Contratos, para compra, venda, consignação e recibo, preenchidos com os dados do carro e da loja.`,
           `${B('Gestão e Resultados')}: custos por carro, despesas da loja, venda, comissão, DRE e indicadores.`,
+          `${B('Pendências dos carros')}: em ${B('Gestão > Pendências')}, registre multas, IPVA, licenciamento, restrição judicial, gravame e outras, nos carros em estoque ou vendidos, com valor, vencimento e responsável. O carro mostra um aviso no Estoque até a pendência ser resolvida.`,
           `${B('Republicação agendada')}: ${B('Configurações > Publicação e fotos > Republicação agendada')}, para o Marketplace se renovar sozinho nos dias e horários escolhidos.`,
           `Encontrou um erro ou tem uma ideia? Botão ${B('💬 Sugestões e erros')} no menu lateral.`,
         ],

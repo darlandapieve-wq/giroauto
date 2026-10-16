@@ -2,6 +2,12 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.13.0 — 16/10/2026
+
+- **Gestão > Contatos: excluir contato.** Para excluir um contato, use o botão **Excluir contato** na ficha ou em Editar. Para excluir vários de uma vez, marque os contatos na lista e clique em **Excluir (N)**. Sempre há confirmação. O contato sai da lista e dos envios de mensagem, e as anotações são apagadas. Carros, vendas e leads ligados a ele continuam. Parceiros, donos e compradores excluídos não voltam sozinhos na sincronização; o contato só reaparece se a pessoa virar lead de novo ou for cadastrada à mão.
+- **Vitrine da loja com menu de filtros** à esquerda (no celular, pelo botão **Filtros**). Os filtros são: busca, marca, categoria (SUV, sedã, hatch…), faixa de preço ou preço mínimo e máximo, diferenciais (perícia aprovada, perícia premium, único dono, IPVA pago, garantia, aceita troca, financiamento, blindado…), ano, quilometragem, câmbio e combustível. A vitrine também ordena por mais recentes, menor ou maior preço, menor km ou mais novos. Só aparecem as opções que existem no estoque, com a quantidade ao lado. O endereço guarda os filtros, então dá para mandar ao cliente o link já filtrado (ex.: `/v/loja?cat=suv&faixa=70000-100000`). Os cards mostram até dois selos (perícia, único dono, IPVA pago, garantia).
+- **Gestão > Pendências**: acompanhamento de multas, IPVA atrasado, licenciamento, restrição judicial (Renajud), gravame, restrição administrativa, bloqueio de furto/roubo, recall, vistoria, documentos e outras pendências, nos carros em estoque ou já vendidos. Cada pendência tem valor, vencimento, responsável (loja, antigo dono, comprador, consignatário, despachante), situação e histórico. A aba mostra os indicadores (em aberto, vencidas, vencem em 7 dias, valor em aberto, resolvidas em 30 dias) e filtros por situação, tipo e carro. No Estoque, o carro ganha o aviso "⚠ N pendências" (vermelho se alguma venceu), e o menu **Mais** de cada carro tem **Registrar pendência**.
+
 ## v2.12.1 — 16/10/2026
 
 - Guia: os botões "Abrir…" agora chegam na aba certa de Configurações e do CRM, como WhatsApp, Publicação e Portais.

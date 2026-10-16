@@ -1524,6 +1524,69 @@ test('v2.12: guia Primeiros passos mostra a situação de cada etapa', async () 
   assert.match(html, /Primeiros passos/);
 });
 
+test('v2.13: excluir contato, filtros da vitrine e pendências dos carros', async () => {
+  const D = require('../src/db');
+  const slug = (await api('GET', '/api/me')).body.store.slug;
+  // Contato que vem da sincronização (parceiro): excluído não volta sozinho.
+  let r = await api('POST', '/api/partners', { nome: 'Funilaria Teste', tipo: 'oficina', whatsapp: '(44) 97777-6655' });
+  r = await api('GET', '/api/contacts');
+  const c = r.body.contatos.find((x) => x.telefone === '44977776655');
+  assert.ok(c, 'parceiro virou contato');
+  await api('POST', `/api/contacts/${c.id}/notes`, { tipo: 'nota', texto: 'teste' });
+  r = await api('POST', '/api/contacts/excluir', { ids: [c.id] });
+  assert.equal(r.status, 200); assert.equal(r.body.excluidos, 1);
+  r = await api('GET', '/api/contacts');
+  assert.ok(!r.body.contatos.some((x) => x.telefone === '44977776655'), 'não volta pela sincronização');
+  assert.equal((await api('GET', `/api/contacts/${c.id}`)).status, 404);
+  assert.equal(D.get('SELECT COUNT(*) n FROM contact_notes WHERE contact_id = ?', c.id).n, 0);
+  // Cadastrar o mesmo telefone de novo reaproveita o registro.
+  r = await api('POST', '/api/contacts', { nome: 'Voltou', telefone: '44977776655' });
+  assert.equal(r.status, 201); assert.equal(r.body.id, c.id);
+  r = await api('DELETE', `/api/contacts/${c.id}`);
+  assert.equal(r.body.excluidos, 1);
+  // Virar lead de novo traz o contato de volta.
+  await fetch(`${base}/api/public/${slug}/lead`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome: 'Lead Novo', telefone: '(44) 97777-6655' }) });
+  r = await api('GET', '/api/contacts');
+  assert.ok(r.body.contatos.some((x) => x.telefone === '44977776655' && x.nome === 'Lead Novo'));
+  assert.equal((await api('POST', '/api/contacts/excluir', { ids: [] })).status, 400);
+
+  // Vitrine com menu de filtros.
+  r = await api('POST', '/api/vehicles', { marca: 'Honda', modelo: 'HR-V', ano_modelo: 2020, km: 60000, preco: 98000, carroceria: 'SUV', cambio: 'CVT', destaques: ['pericia_aprovada', 'unico_dono'] });
+  const vid = r.body.id;
+  D.run("UPDATE vehicles SET status = 'pronto' WHERE id = ?", vid);
+  const html = await (await fetch(`${base}/v/${slug}/`)).text();
+  assert.match(html, /id="fside"/); assert.match(html, /name="marca" value="honda"/); assert.match(html, /name="cat" value="suv"/);
+  assert.match(html, /name="dest" value="pericia_aprovada"/); assert.match(html, /Perícia aprovada/); assert.match(html, /data-preco="98000"/);
+
+  // Pendências: registrar, listar, aviso no estoque, resolver, histórico e excluir.
+  r = await api('POST', '/api/pendencias', { vehicle_id: vid, tipo: 'multa', descricao: 'Velocidade AIT 123', valor: '195,23', vencimento: '2020-01-10', responsavel: 'antigo_dono' });
+  assert.equal(r.status, 201); const pid = r.body.id;
+  assert.equal((await api('POST', '/api/pendencias', { vehicle_id: vid, tipo: 'outro' })).status, 400);
+  assert.equal((await api('POST', '/api/pendencias', { vehicle_id: 999999, tipo: 'ipva' })).status, 404);
+  await api('POST', '/api/pendencias', { vehicle_id: vid, tipo: 'ipva', valor: 1200 });
+  r = await api('GET', '/api/pendencias');
+  const p = r.body.itens.find((x) => x.id === pid);
+  assert.equal(p.valor, 195.23); assert.equal(p.vencida, true); assert.equal(p.aberta, true); assert.equal(p.veiculo.id, vid); assert.equal(p.responsavel_label, 'Antigo dono / quem vendeu');
+  assert.ok(r.body.tipos.restricao_judicial && r.body.tipos.licenciamento);
+  r = await api('GET', '/api/pendencias/resumo');
+  assert.equal(r.body[vid].n, 2); assert.equal(r.body[vid].vencidas, 1); assert.equal(r.body[vid].total, 1395.23);
+  r = await api('PUT', `/api/pendencias/${pid}`, { status: 'resolvida', obs: 'Antigo dono pagou' });
+  assert.equal(r.status, 200);
+  r = await api('GET', `/api/pendencias?vehicle_id=${vid}`);
+  const resolvida = r.body.itens.find((x) => x.id === pid);
+  assert.equal(resolvida.aberta, false); assert.ok(resolvida.resolvido_em); assert.equal(resolvida.vencida, false);
+  r = await api('GET', `/api/pendencias/${pid}/historico`);
+  assert.equal(r.body.length, 2); assert.equal(r.body[0].obs, 'Antigo dono pagou');
+  assert.equal((await api('GET', '/api/pendencias/resumo')).body[vid].n, 1);
+  assert.equal((await api('DELETE', `/api/pendencias/${pid}`)).status, 200);
+  // Vale também para carro vendido.
+  D.run("UPDATE vehicles SET status = 'vendido', vendido_em = date('now') WHERE id = ?", vid);
+  r = await api('POST', '/api/pendencias', { vehicle_id: vid, tipo: 'licenciamento', responsavel: 'comprador' });
+  assert.equal(r.status, 201);
+  r = await api('GET', '/api/pendencias');
+  assert.equal(r.body.itens.find((x) => x.id === r.body.itens[0].id).veiculo.vendido, true);
+});
+
 test('v2.0: agenda de republicação, QR, folha A4, painel TV e fotos prontas', async () => {
   const sched = require('../src/schedule');
   const db = require('../src/db');
