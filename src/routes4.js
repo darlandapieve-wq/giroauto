@@ -18,6 +18,9 @@ function register(app) {
   app.get('/api/dev/feedback', DEV.requireDev, (req, res) => res.json({ itens: DEV.feedbackList(), tipos: DEV.TIPOS, status: DEV.STATUS, prioridades: DEV.PRIORIDADES }));
   app.put('/api/dev/feedback/:fid', DEV.requireDev, (req, res) => { DEV.updateFeedback(req.params.fid, req.body || {}); res.json({ ok: true }); });
 
+  /* ---------------- Guia "Primeiros passos" (v2.12) ---------------- */
+  app.get('/api/guia', auth.requireUser, (req, res) => res.json(require('./guia').status(req.user.storeId)));
+
   /* ---------------- CRM (v2.9) ---------------- */
   const CRM = require('./crm');
   const crm = team.canAny('vender', 'gestao');

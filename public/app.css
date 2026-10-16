@@ -725,3 +725,29 @@ main{gap:12px;padding-block:16px 40px;padding-inline:clamp(12px,2.2vw,28px)}
 .cm.l{align-self:flex-end;background:#dcf8c6;color:#1b2b14}
 .wabox{display:flex;gap:6px;margin-top:6px}
 .wabox textarea{flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;padding:6px 8px;background:var(--bg);font:inherit;font-size:13px;min-height:38px;resize:vertical}
+
+/* Guia "Primeiros passos" (v2.12) */
+.gd-top p{margin:10px 0 0}
+.gd-prog{height:10px;border-radius:10px;background:var(--sunken);overflow:hidden}
+.gd-prog>div{height:100%;background:var(--ok);border-radius:10px;transition:width .4s}
+.gd-wrap{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+.gd-g{margin:18px 0 2px;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.gd-step{background:var(--surface);border:1px solid var(--line);border-radius:10px}
+.gd-step.gd-ok{border-color:color-mix(in srgb,var(--ok) 35%,var(--line))}
+.gd-step>summary{list-style:none;display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer}
+.gd-step>summary::-webkit-details-marker{display:none}
+.gd-step>summary:focus-visible{outline:2px solid var(--accent);border-radius:10px}
+.gd-n{flex:none;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:700;background:var(--accent-soft);color:var(--accent-ink)}
+.gd-ok .gd-n{background:var(--ok-soft);color:var(--ok)}
+.gd-t{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+.gd-body{padding:0 16px 16px 58px}
+.gd-body .lead{margin-top:0}
+.gd-list{margin:10px 0 0;padding-left:20px;display:flex;flex-direction:column;gap:8px;line-height:1.5}
+.gd-list code,.gd-err code{word-break:break-all}
+.gd-chk{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--muted);margin:6px 0 10px}
+.gd-chk .ok{color:var(--ok)}
+.gd-err{margin-top:12px;background:var(--sunken);border-radius:8px;padding:8px 12px}
+.gd-err summary{cursor:pointer;font-weight:600;font-size:13.5px}
+.gd-err ul{margin:8px 0 2px;padding-left:18px;display:flex;flex-direction:column;gap:6px;font-size:13.5px}
+@media (max-width:760px){.gd-body{padding:0 14px 14px}.gd-step>summary{padding:12px 14px}}
+@media print{.side,.nav,#gdAll,#gdPrint,[data-gvai],.toast{display:none!important}.gd-step{break-inside:avoid;border-color:#ccc}.gd-body{padding-left:16px}a.link::after{content:" (" attr(href) ")";font-size:11px;color:#555}}

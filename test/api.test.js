@@ -1512,6 +1512,18 @@ test('v2.11.5: verificar e registrar o número na Meta; salvar o WhatsApp autom�
   assert.ok(raw.pin_enc && !raw.pin_enc.includes(pin));
 });
 
+test('v2.12: guia Primeiros passos mostra a situação de cada etapa', async () => {
+  const r = await api('GET', '/api/guia');
+  assert.equal(r.status, 200);
+  assert.equal(r.body.etapas.conta, true);
+  assert.match(r.body.vitrine_url, /\/v\//);
+  for (const k of ['loja', 'logo', 'estoque', 'marketplace', 'meta', 'catalogo', 'instagram', 'wa_token', 'wa_registrado', 'bot_site', 'portais', 'ia']) assert.equal(typeof r.body.etapas[k], 'boolean', k);
+  assert.equal(r.body.etapas.wa_token, true); assert.equal(r.body.etapas.wa_registrado, true);
+  assert.equal(typeof r.body.plataforma.meta_app, 'boolean');
+  const html = await (await fetch(`${base}/guia.js`)).text();
+  assert.match(html, /Primeiros passos/);
+});
+
 test('v2.0: agenda de republicação, QR, folha A4, painel TV e fotos prontas', async () => {
   const sched = require('../src/schedule');
   const db = require('../src/db');

@@ -498,7 +498,8 @@
       head.querySelector('.btn.primary')?.insertAdjacentHTML('beforebegin', `<div class="btnrow" id="stockTools" style="gap:6px;flex-wrap:wrap">
         ${can('cadastrar') ? '<button class="btn" type="button" id="goImport">Importar planilha</button>' : ''}
         ${can('cadastrar') && isMobile() ? '<button class="btn" type="button" id="goQuick">Cadastro rápido</button>' : ''}
-        <a class="btn" href="/tv/${esc(S.me.store.slug)}" target="_blank" rel="noopener" title="Abra no computador ligado à TV ou monitor da loja">Painel TV</a></div>`);
+        <a class="btn" href="/tv/${esc(S.me.store.slug)}" target="_blank" rel="noopener" title="Abra no computador ligado à TV ou monitor da loja">Painel TV</a>
+        <a class="btn" id="goVitrine" href="${esc(S.me.vitrine_url || `/v/${S.me.store.slug}`)}" target="_blank" rel="noopener" title="Site público da loja com os carros disponíveis: é o link para mandar aos clientes">Vitrine da loja</a></div>`);
       $('#goImport') && ($('#goImport').onclick = () => X.go('importar'));
       $('#goQuick') && ($('#goQuick').onclick = () => X.go('rapido'));
       if (head.querySelector('#stockTools')) head.style.flexWrap = 'wrap';

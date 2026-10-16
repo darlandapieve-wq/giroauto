@@ -2,6 +2,12 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.12.0 — 16/10/2026
+
+- **Primeiros passos**: novo item no topo do menu, para o dono e para quem configura, com o guia completo de configuração de uma loja nova. Cobre o cadastro e o login, os dados da loja e o logo, a equipe, o estoque, o Marketplace (modo assistido ou com a extensão), Facebook e Instagram para campanhas, o catálogo, o Instagram, o WhatsApp oficial (12 passos, do portfólio ao modelo de mensagem), o assistente do site, os leads dos portais por e-mail e a configuração da plataforma pelo administrador. Cada etapa diz para que serve, o endereço exato de cada site, os botões a clicar e os erros comuns com a solução. A etapa marca "Concluído" sozinha quando fica pronta, e uma barra mostra o progresso. Tem os botões "Abrir tudo" e "Imprimir" e leva direto à aba certa de Configurações ou do CRM.
+- Atalho **📘 Guia de configuração** no topo de Configurações.
+- **Estoque**: botão **Vitrine da loja** ao lado de Importar planilha e Painel TV. Abre o site público da loja, o link para mandar aos clientes.
+
 ## v2.11.6 — 15/10/2026
 
 - Verificação do número do WhatsApp: quando a Meta recusa, a mensagem agora traz o detalhe e o código do erro enviados por ela, para saber o que corrigir.
