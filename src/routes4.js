@@ -21,6 +21,25 @@ function register(app) {
   /* ---------------- Guia "Primeiros passos" (v2.12) ---------------- */
   app.get('/api/guia', auth.requireUser, (req, res) => res.json(require('./guia').status(req.user.storeId)));
 
+  /* ---------------- Formulário de implantação para o dono da loja (v2.13.3) ---------------- */
+  const OB = require('./onboarding');
+  const obUpload = require('multer')({ storage: require('multer').memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 4 } }).any();
+  app.get('/api/onboarding', team.can('config'), (req, res) => res.json(OB.resumo(req.user.storeId)));
+  app.post('/api/onboarding/link', team.can('config'), (req, res) => res.json({ url: OB.gerarLink(req.user.storeId) }));
+  app.post('/api/onboarding/vendedores', team.requireOwner, (req, res) => res.json({ criados: OB.criarVendedores(req.user.storeId), ...OB.resumo(req.user.storeId) }));
+  app.get('/api/onboarding/docs/:i', team.can('config'), wrap(async (req, res) => { const d = await OB.documento(req.user.storeId, req.params.i); res.download(d.file, d.nome); }));
+  app.get('/implantacao/:token', (req, res) => {
+    const s = OB.lojaPorToken(req.params.token);
+    if (!s) return res.status(404).send('Link de implantação inválido ou expirado.');
+    res.set('X-Robots-Tag', 'noindex').send(OB.pagina(s));
+  });
+  app.post('/api/public/implantacao/:token', obUpload, wrap(async (req, res) => {
+    const s = OB.lojaPorToken(req.params.token);
+    if (!s) return res.status(404).json({ error: 'Link de implantação inválido.' });
+    await OB.receber(s, req.body || {}, req.files || []);
+    res.json({ ok: true });
+  }));
+
   /* ---------------- Pendências dos carros: multas, IPVA, licenciamento, restrições… (v2.13) ---------------- */
   const PD = require('./pendencias');
   const pend = team.canAny('vender', 'gestao');

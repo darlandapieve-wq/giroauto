@@ -1587,6 +1587,45 @@ test('v2.13: excluir contato, filtros da vitrine e pendências dos carros', asyn
   assert.equal(r.body.itens.find((x) => x.id === r.body.itens[0].id).veiculo.vendido, true);
 });
 
+test('v2.13.3: formulário de implantação — link público, dados aplicados, documentos privados e acessos dos vendedores', async () => {
+  let r = await api('GET', '/api/onboarding');
+  assert.equal(r.status, 200); assert.equal(r.body.url, '');
+  r = await api('POST', '/api/onboarding/link');
+  const url = r.body.url; assert.match(url, /\/implantacao\/[a-f0-9]{36}$/);
+  assert.equal((await api('POST', '/api/onboarding/link')).body.url, url, 'mesmo link');
+  const tok = url.split('/').pop();
+  assert.equal((await fetch(`${base}/implantacao/${'0'.repeat(36)}`)).status, 404);
+  const pg = await fetch(`${base}/implantacao/${tok}`); assert.equal(pg.status, 200);
+  assert.match(await pg.text(), /Razão social/);
+  const fd = new FormData();
+  for (const [k, v] of Object.entries({ razao_social: 'Autos Paraná LTDA', cnpj: '12.345.678/0001-90', representante: 'Darlan', cidade: 'Cascavel', uf: 'pr', endereco: 'Av. Brasil, 100',
+    horarios: 'Seg a sex 8h–18h', troca: 'Sim, avaliação na hora', financiamento: 'Entrada a partir de 20%' })) fd.append(k, v);
+  fd.append('vend_nome', 'Ana'); fd.append('vend_email', 'ana.implantacao@x.com'); fd.append('vend_nome', 'Sem email'); fd.append('vend_email', '');
+  fd.append('cartao_cnpj', new Blob([Buffer.from('%PDF-1.4 teste')], { type: 'application/pdf' }), 'cnpj.pdf');
+  const save = cookie; cookie = '';
+  r = await api('POST', `/api/public/implantacao/${tok}`, fd);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal((await api('GET', '/api/onboarding')).status, 401);
+  cookie = save;
+  r = await api('GET', '/api/onboarding');
+  assert.ok(r.body.enviado_em); assert.equal(r.body.vendedores.length, 1);
+  const g = (await api('GET', '/api/guia')).body;
+  assert.ok(g.etapas.contrato, 'dados jurídicos aplicados');
+  assert.equal((await api('GET', '/api/me')).body.store.state, 'PR');
+  assert.equal(r.body.docs[0].tipo, 'cartao_cnpj');
+  const dl = await fetch(`${base}/api/onboarding/docs/0`, { headers: { cookie } });
+  assert.equal(dl.status, 200); assert.match(Buffer.from(await dl.arrayBuffer()).toString(), /PDF/);
+  assert.equal((await fetch(`${base}/api/onboarding/docs/0`)).status, 401);
+  r = await api('POST', '/api/onboarding/vendedores');
+  assert.equal(r.body.criados.length, 1); assert.match(r.body.criados[0].senha, /^giro-/);
+  const senhaAna = r.body.criados[0].senha;
+  assert.equal((await api('POST', '/api/onboarding/vendedores')).body.criados.length, 0, 'não duplica');
+  const me = cookie; cookie = '';
+  r = await api('POST', '/api/auth/login', { email: 'ana.implantacao@x.com', senha: senhaAna });
+  assert.equal(r.status, 200, 'vendedora entra com a senha provisória');
+  cookie = me;
+});
+
 test('v2.0: agenda de republicação, QR, folha A4, painel TV e fotos prontas', async () => {
   const sched = require('../src/schedule');
   const db = require('../src/db');

@@ -304,6 +304,7 @@ addColumn('store_expenses', 'vehicle_id', 'INTEGER');
 addColumn('store_expenses', 'pago', 'INTEGER NOT NULL DEFAULT 1');
 addColumn('store_expenses', 'pago_em', 'TEXT');
 addColumn('stores', 'wa_cloud', "TEXT NOT NULL DEFAULT '{}'");
+addColumn('stores', 'onboarding', "TEXT NOT NULL DEFAULT '{}'");
 // v2.7: último acesso dos usuários e canal de sugestões/erros (visto pelo desenvolvedor).
 addColumn('users', 'last_seen', 'TEXT');
 db.exec(`CREATE TABLE IF NOT EXISTS feedback (

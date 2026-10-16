@@ -2,6 +2,12 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.13.3 — 16/10/2026
+
+- **Primeiros passos > Formulário para o dono da loja**: gere um link e mande por WhatsApp. O dono preenche pelo celular, sem login, os dados da empresa como no Cartão CNPJ, horários, regras de atendimento (troca, financiamento, garantia, laudo, entrega), vendedores, portais e redes, e envia o logo e os documentos. O GiroAuto aplica as respostas na loja, nos dados para contratos, no CRM e nas regras do assistente (sem apagar o que já foi escrito).
+- Os documentos enviados (Cartão CNPJ, comprovante de endereço, contrato social) ficam privados e servem para a verificação da empresa na Meta.
+- **Criar acessos** dos vendedores informados no formulário, com senha provisória mostrada uma vez.
+
 ## v2.13.2 — 16/10/2026
 
 - Vitrine: os carros fora do filtro agora somem da tela, não só da contagem.

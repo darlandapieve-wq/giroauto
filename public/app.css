@@ -751,3 +751,13 @@ main{gap:12px;padding-block:16px 40px;padding-inline:clamp(12px,2.2vw,28px)}
 .gd-err ul{margin:8px 0 2px;padding-left:18px;display:flex;flex-direction:column;gap:6px;font-size:13.5px}
 @media (max-width:760px){.gd-body{padding:0 14px 14px}.gd-step>summary{padding:12px 14px}}
 @media print{.side,.nav,#gdAll,#gdPrint,[data-gvai],.toast{display:none!important}.gd-step{break-inside:avoid;border-color:#ccc}.gd-body{padding-left:16px}a.link::after{content:" (" attr(href) ")";font-size:11px;color:#555}}
+
+/* Formulário de implantação no guia (v2.13.3) */
+.obpanel{margin:12px 0}
+.obpanel > summary{cursor:pointer;list-style:none;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.obpanel > summary::-webkit-details-marker{display:none}
+.obpanel[open] > summary{margin-bottom:8px}
+.obrow{display:flex;gap:6px}.obrow input{flex:1;min-width:0}
+.obkvs{display:flex;flex-direction:column}
+.obkv{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;border-top:1px solid var(--line);font-size:13px}
+.obkv:first-child{border-top:0}.obkv > span{color:var(--muted)}.obkv b{text-align:right;overflow-wrap:anywhere;white-space:pre-line}

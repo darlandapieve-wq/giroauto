@@ -240,9 +240,40 @@
   const ABA_CFG = { loja: 'loja', marketplace: 'publicacao', meta: 'publicacao', whatsapp: 'mensagens', plataforma: 'sistema' };
   const ABA_CRM = { bot: 'assistente', portais: 'portais' };
 
+  /* ---- Formulário para o dono da loja (v2.13.3) ---- */
+  const ROT = { razao_social: 'Razão social', nome: 'Nome fantasia', cnpj: 'CNPJ', endereco: 'Endereço', cidade: 'Cidade', uf: 'UF', cep: 'CEP', telefone: 'Telefone', whatsapp: 'WhatsApp', email: 'E-mail', site: 'Site',
+    representante: 'Representante legal', representante_cpf: 'CPF do representante', foro: 'Foro', horarios: 'Horários', troca: 'Troca', financiamento: 'Financiamento', garantia: 'Garantia', laudo: 'Laudo', entrega: 'Entrega', outras: 'Outras informações',
+    portais: 'Portais', email_leads: 'E-mail dos leads', instagram: 'Instagram', facebook: 'Facebook' };
+  const dataBr = (iso) => (iso ? new Date(iso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' }) : '');
+  function formHtml(f) {
+    if (!f) return '';
+    const msg = (u) => `https://wa.me/?text=${encodeURIComponent(`Olá! Para deixarmos o GiroAuto da loja pronto, preencha este formulário (leva uns 5 minutos): ${u}`)}`;
+    const resp = f.dados ? Object.entries(f.dados).filter(([, v]) => v).map(([k, v]) => `<div class="obkv"><span>${esc(ROT[k] || k)}</span><b>${esc(v)}</b></div>`).join('') : '';
+    return `<details class="panel obpanel" id="obForm" ${f.enviado_em ? '' : 'open'}><summary><b>📝 Formulário para o dono da loja</b> <span class="sub">${f.enviado_em ? `respondido em ${esc(dataBr(f.enviado_em))}` : f.url ? 'aguardando resposta' : 'adianta a configuração'}</span></summary>
+      <p class="lead">Mande um link para o dono preencher pelo celular, sem login: dados da empresa (como no Cartão CNPJ), horários, regras de atendimento (troca, financiamento, garantia…), vendedores, portais e redes, logo e documentos. O GiroAuto aplica as respostas na loja, nos contratos, no CRM e no assistente.</p>
+      ${f.url ? `<div class="obrow"><input readonly value="${esc(f.url)}" id="obUrl"><button class="btn sm" type="button" id="obCopy">Copiar</button></div>
+        <div class="btnrow" style="margin-top:8px"><a class="btn sm primary" target="_blank" rel="noopener" href="${msg(f.url)}">Enviar por WhatsApp</a><a class="btn sm" target="_blank" rel="noopener" href="${esc(f.url)}">Abrir formulário</a></div>`
+        : '<div class="btnrow"><button class="btn primary sm" type="button" id="obGen">Gerar link do formulário</button></div>'}
+      ${resp ? `<h4 style="margin:14px 0 4px">Respostas</h4><div class="obkvs">${resp}</div>` : ''}
+      ${f.docs.length ? `<h4 style="margin:14px 0 4px">Documentos (privados, para a verificação da empresa na Meta)</h4>${f.docs.map((x) => `<div class="obkv"><span>${esc(x.nome)} <span class="sub">${esc(dataBr(x.at))}</span></span><a class="btn sm" href="/api/onboarding/docs/${x.i}">Baixar</a></div>`).join('')}` : ''}
+      ${f.vendedores.length && owner() ? `<h4 style="margin:14px 0 4px">Vendedores informados</h4>${f.vendedores.map((v) => `<div class="obkv"><span>${esc(v.nome)}</span><b>${esc(v.email)}</b></div>`).join('')}
+        <div class="btnrow" style="margin-top:8px"><button class="btn sm primary" type="button" id="obVend">Criar acessos</button></div><p class="note">Cada um recebe uma senha provisória, mostrada uma vez aqui para você repassar. Quem já tem acesso é ignorado.</p><div id="obVendOut"></div>` : ''}
+    </details>`;
+  }
+  function formBind() {
+    if ($('#obGen')) $('#obGen').onclick = async () => { await api('POST', '/api/onboarding/link'); X.render(); };
+    if ($('#obCopy')) $('#obCopy').onclick = async () => { try { await navigator.clipboard.writeText($('#obUrl').value); toast('Link copiado'); } catch { $('#obUrl').select(); } };
+    if ($('#obVend')) $('#obVend').onclick = async () => {
+      const r = await api('POST', '/api/onboarding/vendedores');
+      $('#obVendOut').innerHTML = r.criados.length ? `<div class="okbox"><b>Acessos criados. Anote as senhas agora:</b>${r.criados.map((c) => `<div class="obkv"><span>${esc(c.nome)} · ${esc(c.email)}</span><b>${esc(c.senha)}</b></div>`).join('')}<span class="sub">Endereço para entrar: ${esc(location.origin)}</span></div>` : '<div class="warnbox">Nenhum acesso novo: todos os e-mails já têm usuário.</div>';
+      $('#obVend').disabled = true;
+    };
+  }
+
   X.views.guia = {
     async html() {
       G.dados = await api('GET', '/api/guia');
+      const form = can('config') ? await api('GET', '/api/onboarding').catch(() => null) : null;
       const lista = etapas(G.dados);
       const obrig = lista.filter((x) => !x.opcional && !x.info && x.k !== 'plataforma');
       const feitos = obrig.filter((x) => x.ok).length;
@@ -253,9 +284,11 @@
           <div class="btnrow"><button class="btn sm" type="button" id="gdAll">Abrir tudo</button><button class="btn sm" type="button" id="gdPrint">Imprimir</button></div></div>
         <div class="panel gd-top"><div class="gd-prog"><div style="width:${pct}%"></div></div>
           <p><b>${feitos} de ${obrig.length}</b> etapas principais concluídas${pct === 100 ? ' — tudo pronto! 🎉' : '.'} <span class="sub">Siga na ordem: cada etapa usa o que foi feito na anterior. As marcadas "Opcional" podem ficar para depois.</span></p></div>
+        ${formHtml(form)}
         <div class="gd-wrap">${cards}</div>`;
     },
     bind() {
+      formBind();
       $$('.gd-step').forEach((d) => d.addEventListener('toggle', () => { if (d.open) G.abertos.add(d.dataset.gk); else G.abertos.delete(d.dataset.gk); salvaAbertos(); }));
       $('#gdAll') && ($('#gdAll').onclick = () => { const abrir = $$('.gd-step').some((d) => !d.open); $$('.gd-step').forEach((d) => { d.open = abrir; }); $('#gdAll').textContent = abrir ? 'Fechar tudo' : 'Abrir tudo'; });
       $('#gdPrint') && ($('#gdPrint').onclick = () => { $$('.gd-step, .gd-err').forEach((d) => { d.open = true; }); setTimeout(() => window.print(), 50); });
