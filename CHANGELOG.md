@@ -2,6 +2,10 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.11.6 — 15/10/2026
+
+- Verificação do número do WhatsApp: quando a Meta recusa, a mensagem agora traz o detalhe e o código do erro enviados por ela, para saber o que corrigir.
+
 ## v2.11.5 — 15/10/2026
 
 - **WhatsApp: verificar o número sem sair do GiroAuto.** Em Configurações > WhatsApp aparece o quadro **Verificar o número na Meta** enquanto o número estiver "não verificado": **Pedir código** (SMS ou ligação), digitar o código e **Confirmar**. O GiroAuto confirma o código e registra o número na API da Meta sozinho, com um PIN de 6 dígitos guardado criptografado. Se o número já estiver verificado e só faltar o registro, aparece **Registrar número**.

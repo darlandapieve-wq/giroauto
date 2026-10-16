@@ -107,7 +107,11 @@ async function metaCall(c, path, { method = 'GET', body } = {}) {
     ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(20000),
   }).catch(() => null);
   const d = r ? await r.json().catch(() => ({})) : {};
-  if (!r || !r.ok || d.error) throw httpError(400, `A Meta recusou: ${d.error?.error_user_msg || d.error?.message || (r ? `HTTP ${r.status}` : 'sem resposta')}`);
+  if (!r || !r.ok || d.error) {
+    const e = d.error || {};
+    const det = [e.error_user_msg, e.error_data?.details].filter(Boolean).join(' — ');
+    throw httpError(400, `A Meta recusou: ${e.message || (r ? `HTTP ${r.status}` : 'sem resposta')}${det ? ` (${det})` : ''}${e.code ? ` [código ${e.code}${e.error_subcode ? `/${e.error_subcode}` : ''}]` : ''}`);
+  }
   return d;
 }
 function lojaWa(storeId) {
