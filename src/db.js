@@ -414,6 +414,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS lead_visits (
   created_by INTEGER,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 )`);
+addColumn('lead_visits', 'encerrada', 'INTEGER NOT NULL DEFAULT 0');
 db.exec(`CREATE TABLE IF NOT EXISTS lead_tasks (
   id INTEGER PRIMARY KEY,
   store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,

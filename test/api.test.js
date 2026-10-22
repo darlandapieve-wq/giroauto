@@ -778,13 +778,17 @@ test('v2.1: gestão no cadastro, custos previstos, venda completa, documentaçã
   r = await api('GET', '/api/docs');
   let doc = r.body.docs.find((x) => x.id === id);
   assert.equal(doc.status, 'preenchido'); assert.equal(doc.comprador, 'Ana Lima'); assert.match(doc.wa_url, /^https:\/\/wa\.me\/5544977776666/);
-  r = await api('PUT', `/api/vehicles/${id}/doc`, { status: 'vistoria', obs: 'Vistoria dia 10' });
+  r = await api('PUT', `/api/vehicles/${id}/doc`, { status: 'outro' });
+  assert.equal(r.status, 400, '"Outro" pede observação');
+  r = await api('PUT', `/api/vehicles/${id}/doc`, { status: 'outro', obs: 'Comprador vai transferir em SP' });
   assert.equal(r.status, 200);
   r = await api('PUT', `/api/vehicles/${id}/doc`, { status: 'entregue', entrega: '2026-10-12' });
   doc = r.body.docs.find((x) => x.id === id);
-  assert.equal(doc.done, true); assert.equal(doc.entrega, '2026-10-12');
+  assert.equal(doc.done, false, 'entregue ainda falta comunicação e transferência'); assert.equal(doc.entrega, '2026-10-12');
+  r = await api('PUT', `/api/vehicles/${id}/doc`, { status: 'transferido' });
+  assert.equal(r.body.docs.find((x) => x.id === id).done, true);
   r = await api('GET', `/api/vehicles/${id}/doc`);
-  assert.deepEqual(r.body.map((m) => m.status), ['entregue', 'vistoria', 'preenchido']);
+  assert.deepEqual(r.body.map((m) => m.status), ['transferido', 'entregue', 'outro', 'preenchido']);
   // Edição posterior da venda.
   r = await api('PUT', `/api/vehicles/${id}/sale`, { venda_valor: 68000 });
   assert.equal(D.get('SELECT venda_valor FROM vehicles WHERE id = ?', id).venda_valor, 68000);
@@ -838,8 +842,7 @@ test('v2.2: margem da loja, edição de custos, comunicação de venda, comissã
   await api('POST', `/api/vehicles/${id}/sold`, { venda_valor: 100000, venda_data: '2026-10-08', venda_vendedor_id: globalThis.__carlos });
   r = await api('GET', '/api/docs');
   const keys = Object.keys(r.body.status);
-  assert.equal(keys.indexOf('comunicacao'), keys.indexOf('transferencia') + 1);
-  assert.equal(keys.indexOf('transferido'), keys.indexOf('comunicacao') + 1);
+  assert.deepEqual(keys, ['outro', 'pendente', 'preenchido', 'assinado', 'entregue', 'comunicacao', 'transferido']);
   r = await api('PUT', `/api/vehicles/${id}/doc`, { status: 'comunicacao' });
   assert.equal(r.body.docs.find((x) => x.id === id).status_label, 'Comunicação de venda realizada');
   // Venda pode ser editada depois de vendida (veículo e venda).
@@ -1205,7 +1208,7 @@ test('v2.9: CRM — captação pública, rodízio, funil, histórico, visitas, t
   assert.equal(qr.vendidos, 1); assert.equal(qr.conversao, 100);
   assert.ok(r.body.motivos.some((m) => m.motivo === 'Preço / negociação'));
   r = await api('GET', '/api/crm/meta');
-  assert.ok(r.body.etapas.length === 8); assert.ok('novos' in r.body.resumo);
+  assert.ok(r.body.etapas.length === 9); assert.equal(r.body.etapas.at(-1)[0], 'arquivado'); assert.ok('novos' in r.body.resumo);
   // Configuração: distribuição manual → lead novo sem vendedor (quando vem do site).
   r = await api('PUT', '/api/crm/config', { distribuicao: 'manual', sla_min: 30, horarios: 'Seg a sáb' });
   assert.equal(r.body.sla_min, 30);
@@ -1843,6 +1846,31 @@ test('v2.15.2: voz — oferta e preço na hora (sem IA), conta pelo nome e Siri 
   assert.match(f.headers.get('content-type'), /text\/plain/); assert.match(await f.text(), /oferta de R\$ 50/);
   v = (await api('GET', '/api/vehicles')).body.find((y) => y.id === spin.id);
   assert.equal(v.preco_oferta, 50000);
+});
+
+test('v2.15.3: lead que passa da visita sai da agenda; Arquivado fora do funil', async () => {
+  let r = await api('POST', '/api/leads', { nome: 'Tonho Teste', telefone: '44988887777', origem: 'whatsapp' });
+  const lid = r.body.id || r.body.lead?.id;
+  const hoje = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+  await api('POST', '/api/crm/visits', { lead_id: lid, data_hora: `${hoje} 23:00`, tipo: 'visita' });
+  r = await api('GET', '/api/crm/visits');
+  assert.ok(r.body.some((x) => x.lead_id === lid));
+  await api('PUT', `/api/leads/${lid}`, { etapa: 'proposta' });
+  r = await api('GET', '/api/crm/visits');
+  assert.ok(!r.body.some((x) => x.lead_id === lid), 'saiu da agenda');
+  r = await api('GET', '/api/painel');
+  assert.ok(![...r.body.visitas.hoje, ...r.body.visitas.semana].some((x) => x.lead_id === lid), 'saiu do painel');
+  r = await api('GET', `/api/leads/${lid}`);
+  assert.ok(r.body.eventos?.some?.((e) => /saiu da agenda/.test(e.texto)) ?? true);
+  await api('PUT', `/api/leads/${lid}`, { etapa: 'arquivado' });
+  r = await api('GET', '/api/leads');
+  assert.ok(!r.body.some((l) => l.id === lid), 'arquivado fora do funil');
+  r = await api('GET', '/api/leads?arquivados=1');
+  assert.ok(r.body.some((l) => l.id === lid));
+  r = await api('GET', '/api/crm/meta');
+  assert.ok(r.body.resumo.arquivados >= 1);
+  r = await api('GET', '/api/painel');
+  assert.ok(!r.body.alertas.some((a) => /pós-venda/.test(a.texto)), 'sem alerta de pós-venda no painel');
 });
 
 test('v2.0: agenda de republicação, QR, folha A4, painel TV e fotos prontas', async () => {

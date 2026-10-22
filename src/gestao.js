@@ -16,18 +16,24 @@ const LOCAL = {
   patio: 'No pátio da loja', manutencao: 'Em manutenção', loja_parceira: 'Em loja parceira', cliente: 'Com cliente (test drive / avaliação)', outro: 'Outro local',
 };
 // Etapas da transferência do documento depois da venda (v2.1).
+// v2.15.3: sequência pedida pela loja; "Outro" pede uma observação.
 const DOC_STATUS = {
+  outro: 'Outro',
   pendente: 'Aguardando preenchimento',
-  preenchido: 'ATPV-e / recibo preenchido',
-  assinado: 'Assinado / firma reconhecida',
-  vistoria: 'Vistoria',
-  transferencia: 'Em transferência (Detran / despachante)',
+  preenchido: 'ATPV-e preenchido',
+  assinado: 'Assinado',
+  entregue: 'Entregue ao comprador',
   comunicacao: 'Comunicação de venda realizada',
-  transferido: 'Transferido (novo CRLV emitido)',
-  entregue: 'Documento entregue ao comprador',
-  nao_aplica: 'Não se aplica',
+  transferido: 'Transferência concluída',
 };
-const DOC_DONE = ['entregue', 'nao_aplica'];
+const DOC_DONE = ['transferido'];
+// Etapas antigas (antes da v2.15.3) passam para as novas.
+try {
+  const { run: r } = require('./db');
+  r("UPDATE vehicles SET doc_status = 'assinado' WHERE doc_status = 'vistoria'");
+  r("UPDATE vehicles SET doc_status = 'comunicacao' WHERE doc_status = 'transferencia'");
+  r("UPDATE vehicles SET doc_status = 'outro', doc_obs = CASE WHEN COALESCE(doc_obs, '') = '' THEN 'Não se aplica' ELSE doc_obs END WHERE doc_status = 'nao_aplica'");
+} catch { /* banco ainda não aberto */ }
 const PAGAMENTOS = ['À vista', 'PIX', 'Dinheiro', 'Cartão', 'Financiamento', 'Boleto', 'Consórcio', 'Troca + volta', 'Outro'];
 const EXP_CATS = {
   aluguel: 'Aluguel', salarios: 'Salários e pró-labore', energia: 'Energia', agua_internet: 'Água, telefone e internet',
@@ -296,6 +302,7 @@ function setDocStatus(storeId, vehicleId, body, userId) {
   if (v.status !== 'vendido') throw httpError(409, 'A transferência só é acompanhada depois da venda.');
   const status = DOC_STATUS[body.status] ? body.status : (v.doc_status || 'pendente');
   const obs = str(body.obs, 500);
+  if (status === 'outro' && !obs && !(v.doc_status === 'outro' && v.doc_obs)) throw httpError(400, 'Em "Outro", escreva a observação (o que está acontecendo com o documento).');
   const entrega = status === 'entregue' ? (date(body.entrega) || new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10)) : null;
   run(`UPDATE vehicles SET doc_status=?, doc_atualizado=datetime('now'), doc_obs=?, doc_entrega=? WHERE id=?`, status, obs || v.doc_obs || '', entrega, v.id);
   run('INSERT INTO doc_moves (vehicle_id, status, obs, user_id) VALUES (?, ?, ?, ?)', v.id, status, obs, userId);

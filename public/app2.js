@@ -614,7 +614,7 @@
   }
 
   /* ======================= Venda (v2.1) ======================= */
-  const DOC_INICIAL = [['pendente', 'Ainda não preenchido'], ['preenchido', 'Sim, ATPV-e / recibo preenchido'], ['assinado', 'Preenchido e assinado (firma reconhecida)'], ['nao_aplica', 'Não se aplica']];
+  const DOC_INICIAL = [['outro', 'Outro'], ['pendente', 'Aguardando preenchimento'], ['preenchido', 'ATPV-e preenchido'], ['assinado', 'Assinado']];
   function saleFieldsHtml(v, sellers, edit) {
     const val = (k, def = '') => esc(v[k] ?? def);
     const vend = v.venda_vendedor_id || S.me.user.id;
@@ -656,7 +656,8 @@
         <div class="f"><label for="s-ct">Telefone / WhatsApp</label><input id="s-ct" inputmode="tel" value="${edit ? val('comprador_tel') : ''}"></div>
       </div>
       ${edit ? '' : `<h4>Documento de transferência</h4>
-      <div class="fields"><div class="f w6"><label for="s-ds">O documento de transferência (ATPV-e / recibo) já foi preenchido? Em que etapa está?</label><select id="s-ds">${opt(Object.entries(S.me.options.doc_status || {}).length ? Object.entries(S.me.options.doc_status) : DOC_INICIAL, 'pendente')}</select><span class="hint">Escolha a etapa em que o documento está. Depois, acompanhe em Gestão &gt; Documentação.</span></div></div>`}
+      <div class="fields"><div class="f w6"><label for="s-ds">O documento de transferência (ATPV-e / recibo) já foi preenchido? Em que etapa está?</label><select id="s-ds">${opt(Object.entries(S.me.options.doc_status || {}).length ? Object.entries(S.me.options.doc_status) : DOC_INICIAL, 'pendente')}</select><span class="hint">Escolha a etapa em que o documento está. Depois, acompanhe em Gestão &gt; Documentação.</span></div>
+        <div class="f w6" id="s-dob" hidden><label for="s-do">Observação sobre o documento</label><input id="s-do" placeholder="Ex.: comprador vai transferir em outra cidade; documento com o despachante"></div></div>`}
       <div class="fields"><div class="f w6"><label for="s-ob">Observações da venda</label><textarea id="s-ob" rows="2" placeholder="Garantia combinada, itens entregues, pendências…">${edit ? val('venda_obs') : ''}</textarea></div></div>
       <div class="calc" id="s-calc"></div>`;
   }
@@ -672,6 +673,7 @@
     // Na venda nova, o preço do anúncio é só sugestão: a soma das partes substitui. Em venda antiga sem partes, vale o total digitado.
     let manual = v.status === 'vendido' && !!num($('#s-vv').value) && !(v.venda_entrada || v.venda_troca_valor || v.venda_financiado || v.venda_boleto_qtd);
     $('#s-vv').addEventListener('input', () => { manual = true; });
+    if ($('#s-ds') && $('#s-dob')) { const ds = () => { $('#s-dob').hidden = $('#s-ds').value !== 'outro'; }; $('#s-ds').addEventListener('change', ds); ds(); }
     const sync = () => {
       ['av', 'tr', 'fi', 'bo'].forEach((k) => { const box = $(`[data-pf="${k}"]`); if (box) box.hidden = !payOn(k); });
       if ($('.s-tnew')) $('.s-tnew').hidden = !payOn('tr') || !!$('#s-tid').value;
@@ -725,7 +727,8 @@
     bindSaleFields(v);
     $('#s-vv').focus();
     $('#s-ok').onclick = async () => {
-      const b = { ...saleBody(), doc_status: $('#s-ds').value };
+      const b = { ...saleBody(), doc_status: $('#s-ds').value, doc_obs: $('#s-do')?.value || '' };
+      if (b.doc_status === 'outro' && !b.doc_obs.trim()) { $('#s-err').textContent = 'Em "Outro", escreva a observação do documento.'; $('#s-err').hidden = false; $('#s-do')?.focus(); return; }
       if (!b.venda_valor) { $('#s-err').textContent = 'Informe o valor da venda.'; $('#s-err').hidden = false; return; }
       $('#s-ok').disabled = true; $('#s-ok').textContent = 'Salvando…';
       try { closeModal(); await sold(b); }
@@ -793,22 +796,29 @@
       <div class="fields">
         <div class="f w3"><label for="dc-s">Etapa</label><select id="dc-s">${opt(st, item.status)}</select></div>
         <div class="f" id="dc-eb"><label for="dc-e">Entregue em</label><input id="dc-e" type="date" value="${esc(item.entrega || today())}"></div>
-        <div class="f w6"><label for="dc-o">Observação</label><input id="dc-o" placeholder="Ex.: vistoria marcada dia 20, aguardando assinatura do comprador"></div>
+        <div class="f w6"><label for="dc-o" id="dc-ol">Observação</label><input id="dc-o" value="${item.status === 'outro' ? esc(item.obs || '') : ''}" placeholder="Ex.: aguardando assinatura do comprador"></div>
       </div>
       <h4>Histórico</h4>
       <div class="timeline">${hist.length ? hist.map((h) => `<div><b>${esc(h.status_label)}</b> <span class="sub">${fmtDate(h.created_at)}${h.user_name ? ' · ' + esc(h.user_name) : ''}</span>${h.obs ? `<br>${esc(h.obs)}` : ''}</div>`).join('') : '<p class="sub">Sem registros.</p>'}</div>
       <div class="err" id="dc-err" hidden></div>
       <div class="modal-foot">${item.wa_url ? `<a class="btn" href="${esc(item.wa_url)}" target="_blank" rel="noopener">Avisar comprador (WhatsApp)</a>` : ''}<button class="btn" data-close type="button">Cancelar</button><button class="btn primary" id="dc-ok" type="button">Atualizar</button></div>`, true);
-    const sync = () => { $('#dc-eb').hidden = $('#dc-s').value !== 'entregue'; };
+    const sync = () => {
+      $('#dc-eb').hidden = $('#dc-s').value !== 'entregue';
+      const outro = $('#dc-s').value === 'outro';
+      $('#dc-ol').textContent = outro ? 'Observação (obrigatória em "Outro")' : 'Observação';
+      $('#dc-o').placeholder = outro ? 'Descreva a situação do documento' : 'Ex.: aguardando assinatura do comprador';
+      if (outro) $('#dc-o').focus();
+    };
     $('#dc-s').onchange = sync; sync();
     $('#dc-ok').onclick = async () => {
+      if ($('#dc-s').value === 'outro' && !$('#dc-o').value.trim()) { $('#dc-err').textContent = 'Em "Outro", escreva a observação.'; $('#dc-err').hidden = false; $('#dc-o').focus(); return; }
       try { await api('PUT', `/api/vehicles/${item.id}/doc`, { status: $('#dc-s').value, obs: $('#dc-o').value, entrega: $('#dc-e').value }); closeModal(); toast('Documento atualizado'); refresh(); }
       catch (e) { $('#dc-err').textContent = e.message; $('#dc-err').hidden = false; }
     };
   }
   function docSteps(i) {
-    const keys = Object.keys(S.me.options.doc_status || {}).filter((k) => k !== 'nao_aplica');
-    if (i.status === 'nao_aplica') return '<span class="pill p-muted">Não se aplica</span>';
+    const keys = Object.keys(S.me.options.doc_status || {}).filter((k) => k !== 'outro');
+    if (i.status === 'outro') return `<span class="pill p-muted" title="${esc(i.obs || '')}">Outro</span>${i.obs ? `<br><span class="sub">${esc(i.obs)}</span>` : ''}`;
     const at = keys.indexOf(i.status);
     return `<div class="dsteps" title="${esc(i.status_label)}">${keys.map((k, n) => `<i class="${n <= at ? 'on' : ''}"></i>`).join('')}</div><span class="sub">${esc(i.status_label)}</span>`;
   }
@@ -1134,7 +1144,7 @@
             <td>${docSteps(i)}${i.obs ? `<br><span class="sub">${esc(i.obs)}</span>` : ''}</td>
             <td>${fmtDate(i.atualizado)}</td>
             <td><div class="btnrow" style="gap:4px;flex-wrap:nowrap">${i.wa_url ? `<a class="btn sm" href="${esc(i.wa_url)}" target="_blank" rel="noopener" title="Avisar o comprador">WhatsApp</a>` : ''}<button class="btn sm primary" type="button" data-doc="${i.id}">Atualizar</button></div></td></tr>`).join('') || '<tr><td colspan="6" class="sub">Nada por aqui. Ao marcar um carro como vendido, a transferência do documento aparece nesta lista.</td></tr>'}</tbody></table></div>
-          <p class="note">Etapas: ${Object.values(S.me.options.doc_status || {}).filter((x) => x !== 'Não se aplica').join(' → ')}.</p>
+          <p class="note">Etapas: ${Object.values(S.me.options.doc_status || {}).join(' → ')}. Em "Outro", escreva a observação.</p>
           <div class="infobox conn-row" style="margin-top:10px"><span><b>Multas, IPVA, licenciamento, restrição judicial ou gravame?</b> Registre e acompanhe na aba <b>Pendências</b>, para carros em estoque ou já vendidos.</span><button class="btn sm" type="button" data-gt="pend">Abrir Pendências</button></div>`;
         X._docs = D.docs;
       }
@@ -1975,7 +1985,6 @@
           ${box('Republicação e anúncios', 'republicacao', `<div class="pchips"><span><b>${d.publicacao.publicados}</b> publicados</span><span><b>${d.publicacao.prontos_republicar}</b> para republicar</span><span><b>${d.publicacao.fila}</b> na fila</span>${d.publicacao.falhas ? `<span class="neg"><b>${d.publicacao.falhas}</b> com erro</span>` : ''}</div><p class="sub">${d.publicacao.agenda ? `Agenda: ${esc(d.publicacao.agenda)}` : 'Republicação agendada desligada.'}</p>`)}
           ${box('Campanhas pagas', 'campanhas', `<div class="pchips"><span><b>${d.campanhas.ativas}</b> ativas</span>${fin ? `<span><b>${brl(d.campanhas.verba_dia)}</b>/dia</span>` : ''}</div>${d.campanhas.lista.map((c) => `<div class="pr"><span>${esc(c.nome)}</span><span class="prr sub">${esc(c.status)}</span></div>`).join('')}`)}
           ${fin ? box('Contas a pagar (15 dias)', 'gestao:desp', d.financeiro.contas.map((c) => `<div class="pr"><span>${esc(c.descricao)}</span><span class="prr ${c.vencida ? 'neg' : ''}">${fmtDate(c.data)} · ${brl(c.valor)} <button class="btn sm" type="button" data-pay2="${c.id}">Pago</button></span></div>`).join('') + `<p class="sub">Despesas no período: ${brl(d.financeiro.despesas)}${d.financeiro.comissoes ? ` · comissões ${brl(d.financeiro.comissoes)}` : ''}</p>`) : ''}
-          ${box(`Pós-venda hoje (${d.posvenda.length})`, 'gestao:contatos', d.posvenda.map((p) => `<div class="pr"><span>${esc(p.comprador || '')} <span class="sub">${esc(p.titulo)} · ${p.dias}d</span></span><span class="prr"><a class="linkbtn" href="${esc(p.wa)}" target="_blank" rel="noopener">💬 enviar</a></span></div>`).join('') || `<p class="sub">Nenhum pós-venda (7, 30 ou 90 dias) para hoje. ${d.contatos} contato(s) na base.</p>`)}
         </div>
       </div>`;
     },
@@ -2265,6 +2274,7 @@
     const vis = L.filter((l) => !q || [l.nome, l.telefone, l.email, l.veiculo?.titulo, l.veiculo?.placa, l.interesse].join(' ').toLowerCase().includes(q));
     const col = ([k, label]) => {
       const ls = vis.filter((l) => l.etapa === k);
+      if (k === 'arquivado') return `<div class="kcol karq" data-col="arquivado" title="Arraste um lead para cá para arquivar. Clique para ver os arquivados."><button class="karqbtn" type="button" id="crArq"><span aria-hidden="true">🗄</span><b>Arquivado</b><em>${M.resumo?.arquivados ?? ''}</em></button></div>`;
       return `<div class="kcol" data-col="${k}"><div class="kcol-h"><b>${label}</b><span>${ls.length}</span></div><div class="kcol-b">${ls.map(card).join('') || '<p class="sub kvazio">—</p>'}</div></div>`;
     };
     const card = (l) => `<div class="kcard ${l.atrasado ? 'late' : ''}" draggable="true" data-lead="${l.id}" data-drag="${l.id}">
@@ -2284,12 +2294,13 @@
         return hj.length ? `<div class="crhoje"><b>📅 Visitas de hoje</b>${hj.map((l) => `<button class="chip" type="button" data-lead="${l.id}" title="Abrir o lead">${String(l.proxima_visita).slice(11, 16)} · ${esc(l.nome || l.telefone || 'Lead')} <span class="sub">${esc((M.etapas.find(([k]) => k === l.etapa) || [])[1] || '')}</span></button>`).join('')}</div>` : '';
       })()}
       <p class="note" style="margin:6px 0">Arraste o card para mudar de etapa. Clique para abrir o lead. Vendidos e perdidos aparecem por 60 dias.</p>
-      <div class="kanban" style="--ncol:${M.etapas.length}">${M.etapas.map(col).join('')}</div>`;
+      <div class="kanban" style="--cols:repeat(${M.etapas.length - 1},minmax(0,1fr)) 74px">${M.etapas.map(col).join('')}</div>`;
   }
   function crFunilBind() {
     const q = $('#crQ');
     if (q) q.oninput = () => { CR.q = q.value; clearTimeout(CR.tq); CR.tq = setTimeout(async () => { await X.render(); const i = $('#crQ'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }, 350); };
     if ($('#crO')) $('#crO').onchange = () => { CR.origem = $('#crO').value; X.render(); };
+    if ($('#crArq')) $('#crArq').onclick = () => arquivadosModal();
     if ($('#crV')) $('#crV').onchange = () => { CR.vend = $('#crV').value; X.render(); };
     if ($('#crM')) $('#crM').onchange = () => { CR.meus = $('#crM').checked; X.render(); };
     $$('[data-wal]').forEach((a) => { a.addEventListener('click', () => { api('POST', `/api/leads/${a.dataset.wal}/notes`, { tipo: 'whatsapp' }).catch(() => {}); }); });
@@ -2302,10 +2313,21 @@
         const id = Number(e.dataTransfer.getData('text/plain')); const etapa = col.dataset.col;
         const l = CR.leads.find((x) => x.id === id); if (!l || l.etapa === etapa) return;
         if (etapa === 'perdido') return perdidoModal(id);
+        if (etapa === 'arquivado') { try { await api('PUT', `/api/leads/${id}`, { etapa }); toast(`${l.nome || 'Lead'} arquivado`); await crMeta(true); X.render(); } catch (err) { toast(err.message); } return; }
         if (etapa === 'visita') return visitaModal({ lead_id: id, vehicle_id: l.vehicle_id });
         try { await api('PUT', `/api/leads/${id}`, { etapa }); X.render(); } catch (err) { toast(err.message); }
       };
     });
+  }
+
+  // Arquivados: não aparecem no funil; abrem numa lista ao clicar no ícone.
+  async function arquivadosModal() {
+    const L = await api('GET', '/api/leads?arquivados=1');
+    modal(`<h3>🗄 Leads arquivados (${L.length})</h3>
+      ${L.length ? `<div class="rglist">${L.map((l) => `<div class="rgrow"><span><button class="vlink" type="button" data-arqopen="${l.id}">${esc(l.nome || l.telefone || 'Lead')}</button><br><span class="sub">${[l.veiculo?.titulo || l.interesse || '', l.vendedor_nome || '', `arquivado em ${fmtDate(l.etapa_em || l.updated_at)}`].filter(Boolean).map(esc).join(' · ')}</span></span><span></span><button class="btn sm" type="button" data-arqback="${l.id}">Voltar para o funil</button></div>`).join('')}</div>` : '<p class="sub">Nenhum lead arquivado. Arraste um card para o ícone 🗄 para arquivar.</p>'}
+      <div class="modal-foot"><button class="btn" data-close type="button">Fechar</button></div>`, true);
+    $$('[data-arqopen]').forEach((b) => { b.onclick = () => { closeModal(); leadModal(Number(b.dataset.arqopen)); }; });
+    $$('[data-arqback]').forEach((b) => { b.onclick = async () => { await api('PUT', `/api/leads/${b.dataset.arqback}`, { etapa: 'atendimento' }); toast('Lead voltou para Em atendimento'); await crMeta(true); X.render(); arquivadosModal(); }; });
   }
 
   function perdidoModal(id, after) {

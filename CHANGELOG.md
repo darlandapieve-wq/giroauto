@@ -2,6 +2,13 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.15.3 — 22/10/2026
+
+- **Painel**: saíram o aviso de pós-venda em "Onde atuar agora" e o quadro "Pós-venda hoje" (os contatos de pós-venda continuam em Gestão > Contatos).
+- **Documentação**: nova sequência — Outro → Aguardando preenchimento → ATPV-e preenchido → Assinado → Entregue ao comprador → Comunicação de venda realizada → Transferência concluída. Em "Outro" aparece o campo de observação (obrigatório). A documentação só conta como concluída em "Transferência concluída". Etapas antigas foram convertidas (Vistoria → Assinado, Em transferência → Comunicação de venda, Não se aplica → Outro com a observação "Não se aplica").
+- **CRM**: quando o lead passa da etapa "Visita agendada" (Visitou, Proposta, Vendido, Perdido ou Arquivado), as visitas que estavam marcadas saem da Agenda e do Painel sozinhas (visita até hoje conta como feita; futura é cancelada), com registro no histórico do lead.
+- **CRM: etapa Arquivado** no fim do funil, só como ícone 🗄 com a contagem. Arraste o card para lá e ele sai da tela; clique no ícone para ver a lista dos arquivados e, se quiser, devolver um lead ao funil.
+
 ## v2.15.2 — 22/10/2026
 
 - **Voz: oferta e preço.** "Ajuste uma oferta no valor de 34500 para a Ecosport", "tira a oferta do Jetta", "muda o preço do Gol para 45 mil". Respeita a permissão de preços e não deixa a oferta ficar maior que o preço.

@@ -5,7 +5,7 @@ const V = require('./vehicles');
 
 const ETAPAS = [
   ['novo', 'Novo'], ['atendimento', 'Em atendimento'], ['qualificado', 'Qualificado'], ['visita', 'Visita agendada'],
-  ['visitou', 'Visitou'], ['proposta', 'Proposta'], ['vendido', 'Vendido'], ['perdido', 'Perdido'],
+  ['visitou', 'Visitou'], ['proposta', 'Proposta'], ['vendido', 'Vendido'], ['perdido', 'Perdido'], ['arquivado', 'Arquivado'],
 ];
 const ETAPA = Object.fromEntries(ETAPAS);
 const ABERTAS = ['novo', 'atendimento', 'qualificado', 'visita', 'visitou', 'proposta'];
@@ -157,8 +157,12 @@ function list(user, q = {}) {
   if (!user.perms.has('gestao') || q.meus === '1') { conds.push('(l.vendedor_id = ? OR l.vendedor_id IS NULL)'); p.push(user.id); }
   if (q.vendedor_id) { conds.push('l.vendedor_id = ?'); p.push(Number(q.vendedor_id)); }
   if (q.origem && ORIGENS[q.origem]) { conds.push('l.origem = ?'); p.push(q.origem); }
-  // Fechados (vendido/perdido) só dos últimos 60 dias, para o funil não pesar.
-  conds.push(`(l.etapa IN (${ABERTAS.map(() => '?').join(',')}) OR l.updated_at >= datetime('now','-60 days'))`); p.push(...ABERTAS);
+  if (q.arquivados === '1') conds.push("l.etapa = 'arquivado'");
+  else {
+    // Fechados (vendido/perdido) só dos últimos 60 dias, para o funil não pesar. Arquivados ficam fora (abrem pelo ícone).
+    conds.push("l.etapa != 'arquivado'");
+    conds.push(`(l.etapa IN (${ABERTAS.map(() => '?').join(',')}) OR l.updated_at >= datetime('now','-60 days'))`); p.push(...ABERTAS);
+  }
   const rows = all(`SELECT l.*, u.name AS vendedor_nome, v.marca, v.modelo, v.versao, v.ano_modelo, v.placa, v.status AS v_status,
       (SELECT filename FROM photos f WHERE f.vehicle_id = l.vehicle_id ORDER BY position, id LIMIT 1) AS foto,
       (SELECT MIN(data_hora) FROM lead_visits x WHERE x.lead_id = l.id AND x.status IN ('agendada','confirmada') AND x.data_hora >= datetime('now','-3 hours')) AS proxima_visita,
@@ -228,15 +232,26 @@ function update(user, id, b) {
   }
   if (!sets.length) return;
   run(`UPDATE leads SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = ?`, ...vals, l.id);
-  if (['perdido', 'vendido'].includes(b.etapa) && b.etapa !== l.etapa) cancelaVisitas(l.id, b.etapa, user.id);
+  if (APOS_VISITA.includes(b.etapa) && b.etapa !== l.etapa) cancelaVisitas(l.id, b.etapa, user.id);
 }
 
-// Lead perdido ou vendido: as visitas que ainda estavam marcadas saem da agenda (com registro no histórico).
+// Lead que passou da etapa "Visita agendada" (visitou, proposta, vendido, perdido, arquivado): as visitas que ainda
+// estavam marcadas saem da agenda e do painel. Visita até hoje conta como feita; futura (ou de lead perdido/arquivado) é cancelada.
+const APOS_VISITA = ['visitou', 'proposta', 'vendido', 'perdido', 'arquivado'];
+// Uma vez (v2.15.3): visitas abertas de leads que já passaram da etapa de visita saem da agenda.
+try {
+  run(`UPDATE lead_visits SET encerrada = 1, status = CASE WHEN (SELECT etapa FROM leads l WHERE l.id = lead_visits.lead_id) IN ('visitou','proposta','vendido')
+      AND substr(data_hora, 1, 10) <= date('now', '-3 hours') THEN 'realizada' ELSE 'cancelada' END
+    WHERE status IN ('agendada','confirmada') AND COALESCE(encerrada, 0) = 0
+      AND (SELECT etapa FROM leads l WHERE l.id = lead_visits.lead_id) IN ('visitou','proposta','vendido','perdido','arquivado')`);
+} catch (e) { console.error('crm visitas', e.message); }
 function cancelaVisitas(leadId, etapa, userId) {
-  const abertas = all(`SELECT * FROM lead_visits WHERE lead_id = ? AND status IN ('agendada','confirmada') AND data_hora >= datetime('now','-3 hours')`, leadId);
+  const abertas = all(`SELECT * FROM lead_visits WHERE lead_id = ? AND status IN ('agendada','confirmada') AND COALESCE(encerrada, 0) = 0`, leadId);
+  const agora = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 16).replace('T', ' ');
   for (const x of abertas) {
-    run("UPDATE lead_visits SET status = 'cancelada' WHERE id = ?", x.id);
-    addEvent(leadId, 'visita', `${VISITA_TIPOS[x.tipo] || 'Visita'} de ${fmt(x.data_hora)} cancelada (lead ${etapa === 'vendido' ? 'vendido' : 'perdido'})`, userId || null);
+    const feita = ['visitou', 'proposta', 'vendido'].includes(etapa) && x.data_hora <= agora.slice(0, 10) + ' 23:59';
+    run('UPDATE lead_visits SET status = ?, encerrada = 1 WHERE id = ?', feita ? 'realizada' : 'cancelada', x.id);
+    addEvent(leadId, 'visita', `${VISITA_TIPOS[x.tipo] || 'Visita'} de ${fmt(x.data_hora)} saiu da agenda (lead em ${ETAPA[etapa]})`, userId || null);
   }
 }
 
@@ -329,7 +344,7 @@ function visits(user, q = {}) {
   const meus = !user.perms.has('gestao') || q.meus === '1';
   return all(`SELECT x.*, l.nome AS lead_nome, l.telefone AS lead_tel, u.name AS vendedor_nome, v.marca, v.modelo, v.ano_modelo, v.placa
     FROM lead_visits x LEFT JOIN leads l ON l.id = x.lead_id LEFT JOIN users u ON u.id = x.vendedor_id LEFT JOIN vehicles v ON v.id = x.vehicle_id
-    WHERE x.store_id = ? AND substr(x.data_hora,1,10) BETWEEN ? AND ? ${meus ? 'AND (x.vendedor_id = ? OR x.vendedor_id IS NULL)' : ''} ORDER BY x.data_hora`,
+    WHERE x.store_id = ? AND COALESCE(x.encerrada, 0) = 0 AND substr(x.data_hora,1,10) BETWEEN ? AND ? ${meus ? 'AND (x.vendedor_id = ? OR x.vendedor_id IS NULL)' : ''} ORDER BY x.data_hora`,
   ...(meus ? [user.storeId, from, to, user.id] : [user.storeId, from, to])).map((x) => ({ ...visitOut(x), veiculo: x.marca ? `${x.marca} ${x.modelo}${x.ano_modelo ? ' ' + x.ano_modelo : ''}` : '' }));
 }
 
@@ -406,6 +421,7 @@ function resumo(user) {
   return {
     novos: get(`SELECT COUNT(*) n FROM leads WHERE store_id = ? AND etapa = 'novo' ${f}`, sid, ...pv).n,
     atrasados: get(`SELECT COUNT(*) n FROM leads WHERE store_id = ? AND primeira_resposta_em IS NULL AND etapa IN (${ABERTAS.map(() => '?').join(',')}) AND created_at <= datetime('now', ?) ${f}`, sid, ...ABERTAS, `-${cfg.sla_min} minutes`, ...pv).n,
+    arquivados: get(`SELECT COUNT(*) n FROM leads WHERE store_id = ? AND etapa = 'arquivado' ${f}`, sid, ...pv).n,
     visitas_hoje: get(`SELECT COUNT(*) n FROM lead_visits WHERE store_id = ? AND substr(data_hora,1,10) = ? AND status IN ('agendada','confirmada') ${f}`, sid, hoje, ...pv).n,
     tarefas_vencidas: get(`SELECT COUNT(*) n FROM lead_tasks WHERE store_id = ? AND feita_em IS NULL AND substr(vence_em,1,10) <= ? ${meus ? 'AND vendedor_id = ?' : ''}`, sid, hoje, ...pv).n,
   };
