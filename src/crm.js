@@ -228,6 +228,16 @@ function update(user, id, b) {
   }
   if (!sets.length) return;
   run(`UPDATE leads SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = ?`, ...vals, l.id);
+  if (['perdido', 'vendido'].includes(b.etapa) && b.etapa !== l.etapa) cancelaVisitas(l.id, b.etapa, user.id);
+}
+
+// Lead perdido ou vendido: as visitas que ainda estavam marcadas saem da agenda (com registro no histórico).
+function cancelaVisitas(leadId, etapa, userId) {
+  const abertas = all(`SELECT * FROM lead_visits WHERE lead_id = ? AND status IN ('agendada','confirmada') AND data_hora >= datetime('now','-3 hours')`, leadId);
+  for (const x of abertas) {
+    run("UPDATE lead_visits SET status = 'cancelada' WHERE id = ?", x.id);
+    addEvent(leadId, 'visita', `${VISITA_TIPOS[x.tipo] || 'Visita'} de ${fmt(x.data_hora)} cancelada (lead ${etapa === 'vendido' ? 'vendido' : 'perdido'})`, userId || null);
+  }
 }
 
 const NOTA = { nota: '📝 Anotação', whatsapp: '💬 WhatsApp', ligacao: '📞 Ligação', email: '✉️ E-mail', visita: '🏪 Visita', proposta: '💰 Proposta' };
@@ -410,6 +420,7 @@ function onSold(storeId, vehicleId, userId) {
   if (!l) return;
   run(`UPDATE leads SET etapa = 'vendido', etapa_em = datetime('now'), updated_at = datetime('now'), vehicle_id = COALESCE(vehicle_id, ?) WHERE id = ?`, v.id, l.id);
   addEvent(l.id, 'etapa', `${ETAPA[l.etapa]} → Vendido (${V.title(v)})`, userId || null);
+  cancelaVisitas(l.id, 'vendido', userId);
 }
 
 /* ---------------- Captação pública (site e QR) ---------------- */

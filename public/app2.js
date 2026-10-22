@@ -1956,7 +1956,7 @@
         <div class="pgrid">
           ${box('Onde atuar agora', '', d.alertas.length ? d.alertas.map((a) => `<button class="palert ${a.nivel}" type="button" data-go2="${a.alvo}"><span>${esc(a.texto)}</span><b>${esc(a.acao)} ›</b></button>`).join('') : '<p class="sub">Tudo em dia. 👍</p>', 'span2')}
           ${d.visitas ? box(`Visitas · hoje ${d.visitas.qtd_hoje} · 7d ${d.visitas.qtd_semana}`, 'agenda', (() => {
-            const linha = (x) => `<div class="pr"><span><b class="mono">${x.hoje ? '' : `${x.data_hora.slice(8, 10)}/${x.data_hora.slice(5, 7)} `}${x.data_hora.slice(11, 16)}</b> ${x.lead_id ? `<button class="vlink" type="button" data-lead="${x.lead_id}">${esc(x.lead_nome || x.lead_tel || 'Lead')}</button>` : esc(x.lead_nome || 'Visita')} <span class="sub">${esc(x.tipo_label)}${x.veiculo ? ' · ' + esc(x.veiculo) : ''}${x.vendedor_nome ? ' · ' + esc(x.vendedor_nome) : ''}</span></span><span class="prr">${x.status === 'confirmada' ? '<span class="pill p-info">confirmada</span>' : x.status === 'realizada' ? '<span class="pill p-ok">veio</span>' : x.status === 'faltou' ? '<span class="pill p-bad">faltou</span>' : ''}</span></div>`;
+            const linha = (x) => `<div class="pr"><span><b class="mono">${x.hoje ? '' : `${x.data_hora.slice(8, 10)}/${x.data_hora.slice(5, 7)} `}${x.data_hora.slice(11, 16)}</b> ${x.lead_id ? `<button class="vlink" type="button" data-lead="${x.lead_id}">${esc(x.lead_nome || x.lead_tel || 'Lead')}</button>` : esc(x.lead_nome || 'Visita')} <span class="sub">${esc(x.tipo_label)}${x.veiculo ? ' · ' + esc(x.veiculo) : ''}${x.vendedor_nome ? ' · ' + esc(x.vendedor_nome) : ''}</span>${x.etapa_label ? ` <span class="pill p-muted" title="Etapa do lead no funil do CRM">${esc(x.etapa_label)}</span>` : ''}</span><span class="prr">${x.status === 'confirmada' ? '<span class="pill p-info">confirmada</span>' : x.status === 'realizada' ? '<span class="pill p-ok">veio</span>' : x.status === 'faltou' ? '<span class="pill p-bad">faltou</span>' : ''}</span></div>`;
             return `<div class="sub" style="margin:2px 0 4px"><b>Hoje</b></div>${d.visitas.hoje.map(linha).join('') || '<p class="sub">Nenhuma visita hoje.</p>'}
               ${d.visitas.semana.length ? `<div class="sub" style="margin:8px 0 4px"><b>Próximos dias</b></div>${d.visitas.semana.map(linha).join('')}` : ''}`;
           })()) : ''}
@@ -2196,6 +2196,7 @@
     if (min < 1) return 'agora'; if (min < 60) return `${min} min`; if (min < 1440) return `${Math.floor(min / 60)} h`; return `${Math.floor(min / 1440)} d`;
   };
   const dh = (s) => { const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/); return m ? `${m[3]}/${m[2]} ${m[4]}:${m[5]}` : fmtDate(s); };
+  const hojeBr = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
   // Datas gravadas pelo servidor (UTC) mostradas no horário local; data_hora de visitas/tarefas já é local.
   const dhu = (s) => { if (!s) return ''; const d = new Date(String(s).replace(' ', 'T') + (/[zZ]|[+-]\d\d:?\d\d$/.test(String(s)) ? '' : 'Z')); return isNaN(d) ? String(s) : `${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`; };
   const primeiroNome = (n) => String(n || '').trim().split(/\s+/)[0] || '';
@@ -2270,7 +2271,7 @@
         <div class="kc-top"><b><span>${esc(l.nome || l.telefone || l.email || 'Sem nome')}</span>${l.telefone ? `<a class="wa-ic" data-noopen data-wal="${l.id}" href="${esc(waLead(l, l.veiculo?.titulo))}" target="_blank" rel="noopener" title="Abrir conversa no WhatsApp">${WA_SVG}</a>` : ''}</b><span class="sub">${quandoCurto(l.ultimo_contato || l.created_at)}</span></div>
         ${l.veiculo ? `<div class="kc-v" title="${esc(l.veiculo.titulo)}">${l.veiculo.foto ? `<img src="${esc(l.veiculo.foto)}" alt="">` : ''}<span>${esc(l.veiculo.titulo)}${l.veiculo.status === 'vendido' ? ' <span class="pill p-muted">vendido</span>' : ''}</span></div>` : l.interesse ? `<div class="sub">${esc(l.interesse)}</div>` : ''}
         <div class="kc-tags"><span class="pill p-info">${esc(l.origem_label)}</span>${l.temperatura ? `<span title="${esc(l.temperatura_label)}">${tempIco[l.temperatura] || ''}</span>` : ''}${l.precisa_humano ? '<span class="pill p-warn">pediu atendente</span>' : ''}${l.atrasado ? `<span class="pill p-bad">sem resposta ${quandoCurto(l.created_at)}</span>` : ''}
-          ${l.proxima_visita ? `<span class="pill p-ok">📅 ${dh(l.proxima_visita)}</span>` : ''}${l.proxima_tarefa ? `<span class="pill p-muted">✓ ${dh(l.proxima_tarefa)}</span>` : ''}</div>
+          ${l.proxima_visita ? `<span class="pill ${String(l.proxima_visita).slice(0, 10) === hojeBr() ? 'p-hoje' : 'p-ok'}" title="Visita marcada (o lead pode estar em qualquer etapa)">📅 ${String(l.proxima_visita).slice(0, 10) === hojeBr() ? `hoje ${String(l.proxima_visita).slice(11, 16)}` : dh(l.proxima_visita)}</span>` : ''}${l.proxima_tarefa ? `<span class="pill p-muted">✓ ${dh(l.proxima_tarefa)}</span>` : ''}</div>
         <div class="kc-foot"><span class="sub" title="Vendedor">👤 ${esc(l.vendedor_nome || 'sem vendedor')}</span><span class="sub kc-t2">${quandoCurto(l.ultimo_contato || l.created_at)}</span></div></div>`;
     return `<div class="crbar">
         <input id="crQ" placeholder="Buscar nome, telefone, carro…" value="${esc(CR.q)}">
@@ -2278,6 +2279,10 @@
         ${can('gestao') ? `<select id="crV"><option value="">Todos os vendedores</option>${M.usuarios.map((u) => `<option value="${u.id}" ${String(u.id) === String(CR.vend) ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select>
         <label class="chip"><input type="checkbox" id="crM" ${CR.meus ? 'checked' : ''}> Só os meus</label>` : ''}
       </div>
+      ${(() => {
+        const hj = vis.filter((l) => l.proxima_visita && String(l.proxima_visita).slice(0, 10) === hojeBr()).sort((a, b) => String(a.proxima_visita).localeCompare(String(b.proxima_visita)));
+        return hj.length ? `<div class="crhoje"><b>📅 Visitas de hoje</b>${hj.map((l) => `<button class="chip" type="button" data-lead="${l.id}" title="Abrir o lead">${String(l.proxima_visita).slice(11, 16)} · ${esc(l.nome || l.telefone || 'Lead')} <span class="sub">${esc((M.etapas.find(([k]) => k === l.etapa) || [])[1] || '')}</span></button>`).join('')}</div>` : '';
+      })()}
       <p class="note" style="margin:6px 0">Arraste o card para mudar de etapa. Clique para abrir o lead. Vendidos e perdidos aparecem por 60 dias.</p>
       <div class="kanban" style="--ncol:${M.etapas.length}">${M.etapas.map(col).join('')}</div>`;
   }
@@ -3025,15 +3030,27 @@
       <p class="sub" style="margin:0 0 10px">Fale do jeito que contaria para alguém da loja. Ex.: <i>"o Jetta 2013 preto ficou pronto na oficina e está no pátio"</i>, <i>"inclua na Ecosport 2009 alinhamento e balanceamento"</i>, <i>"a conta de energia foi paga"</i>.</p>
       <div class="vozmic"><button class="vozbtn" id="vz-mic" type="button" aria-label="Falar">🎤</button><span id="vz-st" class="sub">Toque no microfone e fale. Toque de novo para parar.</span></div>
       <textarea id="vz-t" rows="2" placeholder="…ou digite o comando aqui"></textarea>
-      <div class="btnrow" style="margin-top:6px"><button class="btn primary" id="vz-go" type="button">Entender</button></div>
+      <div class="btnrow" style="margin-top:6px;align-items:center"><button class="btn primary" id="vz-go" type="button">Entender</button>
+        <label class="chip" title="Para usar com as mãos ocupadas: executa sem pedir confirmação e responde falando"><input type="checkbox" id="vz-auto" ${vozPref('auto') ? 'checked' : ''}> Fazer direto</label>
+        <label class="chip"><input type="checkbox" id="vz-fala" ${vozPref('fala', true) ? 'checked' : ''}> Responder falando</label></div>
       <div id="vz-out"></div>
       <div class="modal-foot"><button class="btn" data-close type="button">Fechar</button></div></div>`, true);
     $('#vz-mic').onclick = () => (VZ.ativo ? vozParar() : vozOuvir());
+    $('#vz-auto').onchange = () => vozPref('auto', $('#vz-auto').checked);
+    $('#vz-fala').onchange = () => { vozPref('fala', $('#vz-fala').checked); if (!$('#vz-fala').checked) try { speechSynthesis.cancel(); } catch { /* sem voz */ } };
     $('#vz-go').onclick = () => vozEnviar({ texto: $('#vz-t').value });
     $('#vz-t').onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#vz-go').click(); } };
     setTimeout(() => vozOuvir(), 150);
   }
   const vzSt = (t) => { if ($('#vz-st')) $('#vz-st').textContent = t; };
+  function vozPref(k, v) {
+    try { if (typeof v === 'boolean') localStorage.setItem(`giro_voz_${k}`, v ? '1' : '0'); const x = localStorage.getItem(`giro_voz_${k}`); return x === null ? false : x === '1'; } catch { return false; }
+  }
+  const vozFalaOn = () => { try { const x = localStorage.getItem('giro_voz_fala'); return x === null ? true : x === '1'; } catch { return true; } };
+  function falar(t) {
+    if (!t || !vozFalaOn() || !window.speechSynthesis) return;
+    try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(String(t).replace(/R\$\s?/g, '').replace(/\(([A-Z]{3}\d\w\d{2})\)/g, '')); u.lang = 'pt-BR'; u.rate = 1.05; speechSynthesis.speak(u); } catch { /* sem voz */ }
+  }
   function vozOuvir() {
     if (SR) {
       const rec = new SR(); VZ.rec = rec; VZ.ativo = true; VZ.final = '';
@@ -3064,7 +3081,10 @@
       if (audio) { const fd = new FormData(); fd.append('audio', audio, 'comando.webm'); r = await api('POST', '/api/voz/interpretar', fd); }
       else r = await api('POST', '/api/voz/interpretar', { texto });
       VZ.r = r; if (r.transcricao && $('#vz-t')) $('#vz-t').value = r.transcricao;
-      vozMostrar(r); vzSt('Confira e confirme.');
+      const ok = r.acoes.filter((a) => a.ok);
+      if (vozPref('auto') && ok.length && !r.duvida) { vzSt('Fazendo…'); await vozExecutar(ok); return; }
+      vozMostrar(r); vzSt(ok.length ? 'Confira e confirme.' : '');
+      falar(r.duvida || (ok.length ? `${ok.map((a) => a.texto).join('. ')}. Confirma?` : r.resposta || 'Não entendi o que fazer.'));
     } catch (e) { vzSt(e.message); }
     VZ.enviando = false; if ($('#vz-go')) $('#vz-go').disabled = false;
   }
@@ -3077,23 +3097,44 @@
       const sel = $$('[data-vza]').filter((c) => c.checked).map((c) => r.acoes[Number(c.dataset.vza)]);
       if (!sel.length) return;
       $('#vz-ok').disabled = true;
-      try {
-        const x = await api('POST', '/api/voz/executar', { acoes: sel });
-        toast(x.fala, 7000); closeModal(); await X.loadVehicles(); X.render();
-      } catch (e) { toast(e.message); $('#vz-ok').disabled = false; }
+      try { await vozExecutar(sel); } catch (e) { toast(e.message); if ($('#vz-ok')) $('#vz-ok').disabled = false; }
     };
+  }
+  async function vozExecutar(acoes) {
+    const x = await api('POST', '/api/voz/executar', { acoes });
+    falar(x.fala); toast(x.fala, 7000);
+    if ($('#vz-out')) { $('#vz-out').innerHTML = `<div class="okbox" style="margin-top:10px">${esc(x.fala)}</div>`; vzSt('Pronto. Toque no microfone para outro comando.'); }
+    await X.loadVehicles(); if (S.view !== 'novo') X.render();
   }
   // Configurações > Minha conta: chaves para a Siri (Atalhos do iPhone) e para a Alexa, uma por aparelho.
   async function vozConfigPanel() {
     const col = $('#cfgV2'); if (!col || $('#cfgVoz')) return;
     const st = await api('GET', '/api/voz/chave').catch(() => null); if (!st || $('#cfgVoz')) return;
     const copiar = (id) => async () => { const el = $(id); try { await navigator.clipboard.writeText(el.value); toast('Copiado'); } catch { el.select(); } };
-    const passosSiri = (chave) => `<ol class="note vzpassos">
-        <li>No iPhone, abra o app <b>Atalhos</b> e toque em <b>+</b>. Dê o nome <b>GiroAuto</b>.</li>
-        <li>Adicione a ação <b>Ditar Texto</b> (idioma Português).</li>
-        <li>Adicione <b>Obter Conteúdo do URL</b>: URL <code>${esc(st.url)}</code>, Método <b>POST</b>, Cabeçalho <code>Authorization</code> = <code>Bearer ${esc(chave || 'SUA-CHAVE')}</code>, Corpo <b>JSON</b> com o campo <code>texto</code> = <i>Texto Ditado</i>.</li>
-        <li>Adicione <b>Obter Valor do Dicionário</b> com a chave <code>fala</code> e depois <b>Falar Texto</b>.</li>
-        <li>Pronto: diga <b>"E aí Siri, GiroAuto"</b> e fale o comando. Ela responde o que foi feito.</li></ol>`;
+    const passosSiri = (chave) => {
+      const link = `${st.url}?chave=${chave}&formato=texto`;
+      return `<div class="f" style="margin-top:10px"><label for="vz-link">Seu link da Siri (use no passo 4)</label><div class="obrow"><input readonly id="vz-link" value="${esc(link)}"><button class="btn sm" type="button" id="vz-linkc">Copiar link</button></div></div>
+      <ol class="note vzpassos">
+        <li>No iPhone, abra o app <b>Atalhos</b> (ícone azul e rosa; se não tiver, baixe na App Store). Na aba <b>Atalhos</b>, toque no <b>+</b> no canto de cima.</li>
+        <li>Toque no nome lá em cima (<i>Novo Atalho</i>) &gt; <b>Renomear</b> e escreva <b>GiroAuto</b>. É o nome que você vai falar para a Siri.</li>
+        <li>Toque em <b>Adicionar Ação</b>, pesquise <b>Ditar Texto</b> e toque nela. Se aparecer a opção de idioma, deixe <b>Português (Brasil)</b>.</li>
+        <li>Na barra de pesquisa de baixo, pesquise <b>Obter Conteúdo do URL</b> e toque nela. Toque no campo azul <i>URL</i>, apague e <b>cole o seu link</b> (copiado acima).</li>
+        <li>Ainda nessa ação, toque na setinha <b>&gt;</b> (Mostrar Mais): mude <b>Método</b> para <b>POST</b>; em <b>Corpo da Solicitação</b> escolha <b>Formulário</b>; toque em <b>Adicionar novo campo</b> &gt; <b>Texto</b>; em <i>Chave</i> escreva <code>texto</code> e em <i>Texto</i> toque e escolha a variável <b>Texto Ditado</b>.</li>
+        <li>Pesquise <b>Falar Texto</b> e toque nela (ela fala o <i>Conteúdo do URL</i>, que é a resposta do GiroAuto). Toque em <b>OK</b>.</li>
+        <li>Teste tocando no atalho. Na primeira vez o iPhone pede permissão para acessar <i>giroauto.onrender.com</i>: toque em <b>Permitir Sempre</b>.</li>
+        <li>Pronto: diga <b>"E aí Siri, GiroAuto"</b>, espere o sinal e fale o comando (ex.: <i>"o Jetta preto está no pátio"</i>). A Siri responde o que foi feito.</li>
+      </ol>
+      <div class="f"><label for="vz-tst">Testar a chave (sem o iPhone)</label><div class="obrow"><input id="vz-tst" placeholder="Ex.: a conta de energia foi paga"><button class="btn sm" type="button" id="vz-tstb">Testar</button></div><span class="hint" id="vz-tstr"></span></div>
+      <p class="note">Atenção: o teste executa o comando de verdade.</p>`;
+    };
+    const bindSiri = () => {
+      if ($('#vz-linkc')) $('#vz-linkc').onclick = copiar('#vz-link');
+      if ($('#vz-tstb')) $('#vz-tstb').onclick = async () => {
+        const t = $('#vz-tst').value.trim(); if (!t) return;
+        $('#vz-tstr').textContent = 'Enviando…';
+        try { const r = await fetch($('#vz-link').value, { method: 'POST', body: new URLSearchParams({ texto: t }) }); $('#vz-tstr').textContent = `A Siri falaria: "${await r.text()}"`; } catch (e) { $('#vz-tstr').textContent = e.message; }
+      };
+    };
     col.insertAdjacentHTML('beforeend', `<div class="panel" id="cfgVoz"><h2>Comandos de voz</h2>
       <p class="lead">Use o botão 🎤 (no menu ou no canto da tela do celular) para falar o que aconteceu; o GiroAuto atualiza depois de você confirmar. Para usar pela <b>Siri</b> ou pela <b>Alexa</b>, gere uma chave para cada aparelho: ela age com as permissões do seu usuário e pode ser desativada quando quiser.</p>
       ${st.chaves.length ? `<div class="cfields">${st.chaves.map((k) => `<div class="cf"><span class="k">${esc(k.nome)}<br><span class="sub">criada em ${fmtDate(k.created_at)}${k.usado_em ? ` · usada em ${fmtDate(k.usado_em)}` : ' · ainda não usada'}</span></span><span></span><span><button class="btn sm ghost danger" type="button" data-vzdel="${k.id}">Desativar</button></span></div>`).join('')}</div>` : ''}
@@ -3101,8 +3142,8 @@
       <div class="btnrow" style="margin-top:8px"><button class="btn" type="button" id="vz-gen">Configurar a Siri (iPhone)</button><button class="btn" type="button" id="vz-alexa">Configurar a Alexa</button></div></div>`);
     $('#vz-gen').onclick = async () => {
       const r = await api('POST', '/api/voz/chave', { nome: 'Siri' });
-      $('#vz-cfg').innerHTML = `<div class="okbox" style="margin-top:10px">Sua chave para a Siri (copie agora, ela não aparece de novo):<div class="obrow" style="margin-top:6px"><input readonly value="${esc(r.chave)}" id="vz-k"><button class="btn sm" type="button" id="vz-cp">Copiar</button></div></div>${passosSiri(r.chave)}`;
-      $('#vz-cp').onclick = copiar('#vz-k');
+      $('#vz-cfg').innerHTML = `<div class="okbox" style="margin-top:10px">Chave da Siri criada. O link abaixo já tem a chave: ele só aparece agora, então monte o atalho em seguida (ou gere outro depois).</div>${passosSiri(r.chave)}`;
+      bindSiri();
     };
     $('#vz-alexa').onclick = async () => {
       const r = await api('POST', '/api/voz/alexa', {});

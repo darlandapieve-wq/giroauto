@@ -21,17 +21,19 @@ const TIPOS = {
   preparacao_feito: 'Marcar preparação como feita',
   conta_paga: 'Marcar conta como paga',
   despesa_add: 'Lançar despesa da loja',
+  oferta: 'Oferta do carro',
+  preco: 'Preço do carro',
 };
-const PERM = { local: 'parceiros', preparacao_add: ['cadastrar', 'gestao', 'vender'], preparacao_feito: ['cadastrar', 'gestao', 'vender'], conta_paga: 'financeiro', despesa_add: 'financeiro' };
+const PERM = { local: 'parceiros', preparacao_add: ['cadastrar', 'gestao', 'vender'], preparacao_feito: ['cadastrar', 'gestao', 'vender'], conta_paga: 'financeiro', despesa_add: 'financeiro', oferta: 'precos', preco: 'precos' };
 const pode = (user, tipo) => [].concat(PERM[tipo] || []).some((p) => user.perms?.has(p));
 
 function contexto(storeId) {
-  const carros = all(`SELECT * FROM vehicles WHERE store_id = ? AND status != 'vendido' ORDER BY updated_at DESC LIMIT 150`, storeId).map((v) => {
+  const carros = all(`SELECT * FROM vehicles WHERE store_id = ? AND status != 'vendido' ORDER BY updated_at DESC LIMIT 100`, storeId).map((v) => {
     const p = PR.doVeiculo(v.id);
     return {
       id: v.id, carro: [v.marca, v.modelo, v.versao, v.ano_fab && v.ano_modelo ? `${v.ano_fab}/${v.ano_modelo}` : v.ano_modelo].filter(Boolean).join(' '), cor: v.cor || '', placa: v.placa || '',
-      situacao: v.status === 'avaliacao' ? 'em avaliação' : 'estoque', onde: G.LOCAL[v.local_status || 'patio'],
-      parceiro_id: v.local_parceiro_id || null, preparacao_aberta: p.itens.filter((i) => !i.feito).map((i) => ({ id: i.id, descricao: i.descricao })),
+      preco: v.preco || 0, oferta: v.preco_oferta || 0, ...(v.status === 'avaliacao' ? { avaliacao: true } : {}), ...(v.local_status && v.local_status !== 'patio' ? { fora: G.LOCAL[v.local_status] } : {}),
+      preparacao_aberta: p.itens.filter((i) => !i.feito).map((i) => ({ id: i.id, descricao: i.descricao })),
     };
   });
   const parceiros = all('SELECT id, nome, tipo FROM partners WHERE store_id = ? ORDER BY nome', storeId).map((p) => ({ id: p.id, nome: p.nome, tipo: G.PARTNER_TYPES[p.tipo] || p.tipo }));
@@ -50,6 +52,8 @@ Ações possíveis (campo "tipo"):
 - "preparacao_add": incluir itens de preparação/serviço no carro. Campos: vehicle_id, itens: [{descricao, status ("pendente" ou "feito"), custo (número em reais, se falar valor)}]. Separe cada serviço em um item (ex.: "alinhamento e balanceamento" pode ser um item só).
 - "preparacao_feito": marcar como feitos itens de preparação já abertos do carro. Campos: vehicle_id, item_ids (ids da lista preparacao_aberta), custo (se falar quanto custou e for um item só).
 - "conta_paga": conta da loja foi paga. Campos: expense_id (da lista de contas em aberto).
+- "oferta": colocar, mudar ou tirar a oferta (preço promocional) do carro. Campos: vehicle_id, valor (número em reais) ou remover: true para tirar a oferta.
+- "preco": mudar o preço de venda (normal) do carro. Campos: vehicle_id, valor.
 - "despesa_add": lançar despesa/conta da loja que não está na lista. Campos: descricao, valor, categoria (${Object.keys(G.EXP_CATS).join(', ')}), data (AAAA-MM-DD), pago (true/false).
 
 Regras:
@@ -66,7 +70,7 @@ ${JSON.stringify(ctx)}`;
 }
 
 // Mesmos modelos do assistente (com as versões "latest", que não somem), tentando o próximo quando um falha.
-const MODELOS = () => [...new Set([require('./settings').chatAi().model, 'gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest'].filter((m) => m && !/image|imagen|banana/i.test(m)))];
+const MODELOS = () => [...new Set(['gemini-2.5-flash-lite', 'gemini-flash-lite-latest', require('./settings').chatAi().model, 'gemini-2.5-flash', 'gemini-flash-latest'].filter((m) => m && !/image|imagen|banana/i.test(m)))];
 async function gemini(partes, { prazoMs = 60000 } = {}) {
   const inicio = Date.now();
   const key = require('./settings').chatAi().key;
@@ -137,6 +141,14 @@ function validar(user, acoes) {
       else if (e.pago) { item.ok = false; item.erro = 'Essa conta já está paga.'; }
       Object.assign(item, { expense_id: e?.id, texto: e ? `Conta paga: ${e.descricao || G.EXP_CATS[e.categoria]} de ${brl(e.valor)} (vencimento ${e.data.split('-').reverse().join('/')})` : 'Conta paga' });
     }
+    if ((tipo === 'oferta' || tipo === 'preco') && !v) { item.ok = false; item.erro = 'Carro não encontrado.'; }
+    if ((tipo === 'oferta' || tipo === 'preco') && v) {
+      const valor = int(a.valor); const remover = tipo === 'oferta' && (a.remover === true || a.remover === 'true') && !valor;
+      if (!valor && !remover) { item.ok = false; item.erro = 'Faltou o valor.'; }
+      if (tipo === 'oferta' && valor && v.preco && valor >= v.preco) { item.ok = false; item.erro = `A oferta precisa ser menor que o preço (${brl(v.preco)}).`; }
+      Object.assign(item, { vehicle_id: v.id, valor, remover,
+        texto: remover ? `${nomeV}: tirar a oferta (volta a ${brl(v.preco)})` : tipo === 'oferta' ? `${nomeV}: oferta de ${brl(valor)}${v.preco ? ` (de ${brl(v.preco)})` : ''}` : `${nomeV}: preço ${brl(valor)}${v.preco ? ` (era ${brl(v.preco)})` : ''}` });
+    }
     if (tipo === 'despesa_add') {
       const valor = int(a.valor);
       if (!valor) { item.ok = false; item.erro = 'Faltou o valor da despesa.'; }
@@ -157,6 +169,14 @@ async function interpretar(user, { texto, audio }, { prazoMs } = {}) {
   const t = str(texto, 1000);
   if (!t && !audio?.buffer?.length) throw httpError(400, 'Fale ou digite o que quer fazer.');
   const ctx = contexto(user.storeId);
+  // Rápido: os comandos mais comuns são entendidos na hora pelas regras; a IA só entra quando a frase é diferente.
+  if (t) {
+    const r0 = regras(t, ctx);
+    if (r0.acoes.length && !r0.duvida) {
+      const acoes0 = validar(user, r0.acoes);
+      if (acoes0.every((a) => a.ok)) return { transcricao: t, resposta: '', duvida: '', acoes: acoes0, fonte: 'regras' };
+    }
+  }
   const partes = [{ text: prompt(ctx) }];
   if (audio?.buffer?.length) partes.push({ text: 'O comando está no áudio a seguir (português do Brasil). Coloque em "transcricao" o que foi falado.' }, { inline_data: { mime_type: String(audio.mimetype || 'audio/webm').split(';')[0], data: Buffer.from(audio.buffer).toString('base64') } });
   else partes.push({ text: `Comando: ${t}` });
@@ -210,14 +230,32 @@ function regras(texto, ctx) {
   }
   const { carro, duvida } = acharCarro(texto, ctx.carros);
   if (!carro) { out.duvida = duvida || 'Não identifiquei o carro. Fale o modelo e o ano (ou a placa).'; return out; }
+  // Oferta / preço: "oferta de 34500 na Ecosport", "tira a oferta do Jetta", "preço do Gol para 45 mil"
+  const valorFalado = (() => {
+    const m = T.match(/(\d{1,3}(?:[.\s]\d{3})+|\d{4,7})(?:,\d{2})?\s*(mil)?/) || T.match(/(\d{1,3})\s*mil(?:\s*e\s*(\d{1,3}))?/);
+    if (!m) return 0;
+    if (/mil/.test(m[0]) && !/\d{4}/.test(m[1].replace(/\D/g, ''))) return Number(m[1]) * 1000 + (Number(m[2]) || 0);
+    return Number(String(m[1]).replace(/\D/g, ''));
+  })();
+  const anos = (String(carro.carro).match(/\b(19|20)\d{2}\b/g) || []).map(Number);
+  const valor = anos.includes(valorFalado) ? 0 : valorFalado;
+  if (/(oferta|promocao|promocional)/.test(T)) {
+    if (/(tira|tirar|remov|cancel|sem oferta|acabou)/.test(T)) out.acoes.push({ tipo: 'oferta', vehicle_id: carro.id, remover: true });
+    else if (valor) out.acoes.push({ tipo: 'oferta', vehicle_id: carro.id, valor });
+    else out.duvida = 'Qual o valor da oferta?';
+    return out;
+  }
+  if (/(preco|valor de venda)/.test(T) && /(muda|mudar|altera|alterar|ajusta|ajustar|coloca|colocar|para|pra)/.test(T) && valor) {
+    out.acoes.push({ tipo: 'preco', vehicle_id: carro.id, valor });
+    return out;
+  }
   // Incluir preparação
-  const inc = T.match(/(?:inclu\w*|adicion\w*|anot\w*|coloc\w*|lanc\w*)\b.*?(?:pendencia\w*|preparacao|servico|item)?\s*(?:de|para|pra)?\s*(?:realizar|fazer|trocar)?\s*(.*)$/);
   if (/(inclu|adicion|anot|precisa|pendencia)/.test(T)) {
     // o serviço é o que vem depois de "realizar/fazer/de" (ou depois do nome do carro)
     const orig = String(texto);
     const m = orig.match(/(?:de realizar|realizar|de fazer|fazer|precisa(?: de)?|pendência de preparação de|pendencia de preparacao de)\s+(.+)$/i)
       || orig.match(/\b(?:19|20)\d{2}\b\s*(?:de\s+)?(.+)$/);
-    const desc = (m ? m[1] : (inc && inc[1]) || '').replace(/^(de|da|do|a|o)\s+/i, '').trim();
+    const desc = (m ? m[1] : '').replace(/^(de|da|do|a|o)\s+/i, '').trim();
     if (desc.length >= 3) { out.acoes.push({ tipo: 'preparacao_add', vehicle_id: carro.id, itens: [{ descricao: desc.charAt(0).toUpperCase() + desc.slice(1), status: 'pendente' }] }); return out; }
   }
   // Onde está o carro
@@ -248,6 +286,13 @@ function executar(user, acoes) {
       if (a.tipo === 'preparacao_add') PR.add(user.storeId, a.vehicle_id, { itens: a.itens }, user.id);
       if (a.tipo === 'preparacao_feito') a.item_ids.forEach((id) => PR.update(user.storeId, id, { status: 'feito', ...(a.custo ? { custo: a.custo } : {}) }, user.id));
       if (a.tipo === 'conta_paga') G.payExpense(user.storeId, a.expense_id, true);
+      if (a.tipo === 'oferta' || a.tipo === 'preco') {
+        const v = get('SELECT * FROM vehicles WHERE id = ? AND store_id = ?', a.vehicle_id, user.storeId);
+        if (a.tipo === 'preco') run("UPDATE vehicles SET preco = ?, updated_at = datetime('now') WHERE id = ?", a.valor, v.id);
+        else if (a.remover) run("UPDATE vehicles SET preco_oferta = 0, oferta_desde = NULL, updated_at = datetime('now') WHERE id = ?", v.id);
+        else run("UPDATE vehicles SET preco_oferta = ?, oferta_desde = datetime('now'), updated_at = datetime('now') WHERE id = ?", a.valor, v.id);
+        try { require('./arts').schedule(v.id); } catch { /* artes são refeitas depois */ }
+      }
       if (a.tipo === 'despesa_add') G.addExpense(user.storeId, { descricao: a.descricao, valor: a.valor, categoria: a.categoria, data: a.data, pago: a.pago });
       feitas.push({ ...a, feito: true });
     } catch (e) { feitas.push({ ...a, feito: false, erro: e.message }); }

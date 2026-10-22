@@ -1752,7 +1752,7 @@ test('v2.15: comandos de voz — interpreta, confere e executa (app, Siri/Alexa 
   // contexto mandado para a IA tem o carro, o item aberto e a conta
   mock.state.chatReplies = [{ transcricao: 'o Jetta 2013 preto ficou pronto na oficina e está no pátio', resposta: 'Vou colocar o Jetta no pátio.',
     acoes: [{ tipo: 'local', vehicle_id: jetta.id, status: 'patio' }, { tipo: 'preparacao_feito', vehicle_id: jetta.id, item_ids: [item.id], custo: 380 }, { tipo: 'local', vehicle_id: 999999, status: 'patio' }] }];
-  r = await api('POST', '/api/voz/interpretar', { texto: 'o Jetta 2013 preto ficou pronto na oficina e está no pátio' });
+  r = await api('POST', '/api/voz/interpretar', { texto: 'aquele sedã escuro já voltou do Zé, o freio custou 380' });
   assert.equal(r.status, 200, JSON.stringify(r.body));
   const pedido = JSON.stringify(mock.state.geminiCalls.at(-1).body);
   assert.match(pedido, /Jetta/); assert.match(pedido, /trocar pastilhas/); assert.match(pedido, /Conta de energia/);
@@ -1819,6 +1819,30 @@ test('v2.15.1: voz sem IA (regras), chaves por aparelho e pacote da Alexa', asyn
   x = await fetch(`${base}/api/voz/comando`, { method: 'POST', headers: { Authorization: `Bearer ${siri}`, 'Content-Type': 'text/plain' }, body: 'oi' });
   assert.equal(x.status, 200, 'a da Siri continua');
   delete process.env.GEMINI_API_KEY; delete process.env.GEMINI_URL;
+});
+
+test('v2.15.2: voz — oferta e preço na hora (sem IA), conta pelo nome e Siri por link (GET)', async () => {
+  let r = await api('POST', '/api/vehicles', { marca: 'Chevrolet', modelo: 'Spin', ano_modelo: 2016, cor: 'Branco', preco: 52900 });
+  const spin = r.body;
+  const antes = mock.state.geminiCalls.length;
+  r = await api('POST', '/api/voz/interpretar', { texto: 'ajuste uma oferta no valor de 49900 para a Spin' });
+  assert.equal(r.body.fonte, 'regras'); assert.equal(mock.state.geminiCalls.length, antes, 'não chamou a IA');
+  assert.equal(r.body.acoes[0].tipo, 'oferta'); assert.equal(r.body.acoes[0].valor, 49900);
+  await api('POST', '/api/voz/executar', { acoes: r.body.acoes });
+  let v = (await api('GET', '/api/vehicles')).body.find((x) => x.id === spin.id);
+  assert.equal(v.preco_oferta, 49900); assert.equal(v.oferta_ativa, true);
+  r = await api('POST', '/api/voz/interpretar', { texto: 'oferta de 60 mil na spin' });
+  assert.equal(r.body.acoes[0].ok, false, 'oferta maior que o preço é recusada');
+  // Siri pelo link: GET com chave e texto, resposta em texto puro
+  const chave = (await api('POST', '/api/voz/chave', { nome: 'Siri' })).body.chave;
+  const x = await fetch(`${base}/api/voz/comando?chave=${chave}&texto=${encodeURIComponent('tira a oferta da Spin')}`);
+  assert.match(x.headers.get('content-type'), /text\/plain/);
+  assert.match(await x.text(), /Pronto: .*Spin.*tirar a oferta/);
+  // atalho da Siri: POST com formulário (campo texto) e resposta em texto puro
+  const f = await fetch(`${base}/api/voz/comando?chave=${chave}&formato=texto`, { method: 'POST', body: new URLSearchParams({ texto: 'oferta de 50 mil na spin' }) });
+  assert.match(f.headers.get('content-type'), /text\/plain/); assert.match(await f.text(), /oferta de R\$ 50/);
+  v = (await api('GET', '/api/vehicles')).body.find((y) => y.id === spin.id);
+  assert.equal(v.preco_oferta, 50000);
 });
 
 test('v2.0: agenda de republicação, QR, folha A4, painel TV e fotos prontas', async () => {

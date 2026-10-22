@@ -2,6 +2,14 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.15.2 — 22/10/2026
+
+- **Voz: oferta e preço.** "Ajuste uma oferta no valor de 34500 para a Ecosport", "tira a oferta do Jetta", "muda o preço do Gol para 45 mil". Respeita a permissão de preços e não deixa a oferta ficar maior que o preço.
+- **Voz mais rápida.** Os comandos comuns (pátio/oficina, serviço pronto, incluir preparação, conta paga, oferta e preço) são entendidos na hora, sem esperar a IA; ela só entra nas frases diferentes, começando pelo modelo mais rápido.
+- **Resposta falada e "Fazer direto".** O GiroAuto fala o que entendeu e o que fez. Marque **Fazer direto** na janela do microfone para executar sem o toque de confirmação (para usar com as mãos ocupadas).
+- **CRM e Painel com a mesma visita.** A visita é um compromisso, e a etapa mostra até onde a negociação chegou: o lead continua num card só, na sua etapa. No funil aparece a faixa **Visitas de hoje** (horário, nome e etapa) e o selo do card fica em destaque ("📅 hoje 16:30"); no Painel, cada visita mostra a etapa do lead. Lead marcado como perdido ou vendido tem as visitas futuras canceladas automaticamente, com registro no histórico.
+- **Siri mais fácil.** O atalho agora tem 3 ações (Ditar Texto, Obter Conteúdo do URL com o link pronto, Falar Texto), sem cabeçalhos nem JSON, e o painel tem um campo para testar a chave sem o iPhone.
+
 ## v2.15.1 — 22/10/2026
 
 - **Correção do comando de voz**: quando a IA do Google não respondia, aparecia "Erro interno no servidor". Agora o GiroAuto tenta todos os modelos disponíveis e, se a IA estiver fora do ar ou lenta, entende sozinho os comandos mais comuns (carro no pátio ou na oficina/parceiro, serviço pronto, incluir preparação, conta paga), identificando o carro por modelo, ano, cor ou placa. Se houver dois carros parecidos, ele pergunta qual. Quando não dá para entender, mostra uma mensagem clara em vez do erro.

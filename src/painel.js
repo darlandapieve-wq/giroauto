@@ -66,10 +66,10 @@ function painel(storeId, q = {}, fin = true) {
 
   // Visitas agendadas (CRM): hoje e próximos 7 dias.
   const ate = new Date(Date.now() - 3 * 3600e3 + 6 * 864e5).toISOString().slice(0, 10);
-  const visitas = all(`SELECT x.id, x.lead_id, x.data_hora, x.tipo, x.status, l.nome AS lead_nome, l.telefone AS lead_tel, u.name AS vendedor_nome, v.marca, v.modelo, v.ano_modelo
+  const visitas = all(`SELECT x.id, x.lead_id, x.data_hora, x.tipo, x.status, l.etapa AS lead_etapa, l.nome AS lead_nome, l.telefone AS lead_tel, u.name AS vendedor_nome, v.marca, v.modelo, v.ano_modelo
     FROM lead_visits x LEFT JOIN leads l ON l.id = x.lead_id LEFT JOIN users u ON u.id = x.vendedor_id LEFT JOIN vehicles v ON v.id = x.vehicle_id
     WHERE x.store_id = ? AND substr(x.data_hora,1,10) BETWEEN ? AND ? AND x.status IN ('agendada','confirmada','realizada','faltou') ORDER BY x.data_hora`, storeId, hoje, ate)
-    .map((x) => ({ ...x, veiculo: x.marca ? `${x.marca} ${x.modelo}${x.ano_modelo ? ' ' + x.ano_modelo : ''}` : '', hoje: x.data_hora.slice(0, 10) === hoje,
+    .map((x) => ({ ...x, veiculo: x.marca ? `${x.marca} ${x.modelo}${x.ano_modelo ? ' ' + x.ano_modelo : ''}` : '', hoje: x.data_hora.slice(0, 10) === hoje, etapa_label: x.lead_etapa ? (Object.fromEntries(require('./crm').ETAPAS)[x.lead_etapa] || '') : '',
       tipo_label: { visita: 'Visita', test_drive: 'Test-drive', avaliacao: 'Avaliação', entrega: 'Entrega' }[x.tipo] || 'Visita' }));
   const visitasHoje = visitas.filter((x) => x.hoje && ['agendada', 'confirmada'].includes(x.status));
 

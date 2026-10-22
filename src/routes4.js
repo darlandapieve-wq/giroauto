@@ -68,18 +68,26 @@ function register(app) {
   });
   // Siri (Atalhos do iPhone), Alexa ou outro assistente: manda o texto já transcrito e recebe a frase para falar.
   // Executa direto quando o comando é claro; com dúvida, só responde a pergunta.
-  app.post('/api/voz/comando', require('express').text({ type: 'text/*', limit: '20kb' }), wrap(async (req, res) => {
+  // GET (link com ?chave=…&texto=…) responde em texto puro: é o jeito mais simples de montar o atalho da Siri.
+  const vozComando = wrap(async (req, res) => {
+    const texto0 = req.method === 'GET' ? '' : null;
     const tok = String(req.get('authorization') || '').replace(/^Bearer\s+/i, '') || String(req.query.chave || req.body?.chave || '');
-    const user = VZ.usuarioDaChave(tok);
-    if (!user) return res.status(401).json({ fala: 'Chave do GiroAuto inválida. Gere uma nova em Configurações, Minha conta.' });
-    const texto = typeof req.body === 'string' ? req.body : (req.body?.texto || req.body?.text || req.query.texto || '');
+    const user = VZ.usuarioDaChave(tok.trim());
+    const responder = (status, fala, extra = {}) => (req.method === 'GET' || req.query.formato === 'texto'
+      ? res.status(status).type('text/plain; charset=utf-8').send(fala)
+      : res.status(status).json({ fala, ...extra }));
+    if (!user) return responder(401, 'Chave do GiroAuto inválida. Gere uma nova em Configurações, Minha conta.');
+    const texto = texto0 === '' ? String(req.query.texto || '') : typeof req.body === 'string' ? req.body : (req.body?.texto || req.body?.text || req.query.texto || '');
+    if (!String(texto).trim()) return responder(200, 'Não ouvi o comando. Tente de novo.');
     // A Alexa espera a resposta em poucos segundos: usa um prazo menor para a IA (e as regras se ela demorar).
     const prazoMs = /alexa/i.test(String(req.body?.origem || req.query.origem || '')) ? 5500 : 25000;
     let r;
-    try { r = await VZ.interpretar(user, { texto }, { prazoMs }); } catch (e) { return res.json({ fala: e.message }); }
+    try { r = await VZ.interpretar(user, { texto }, { prazoMs }); } catch (e) { return responder(200, e.message); }
     const feitas = r.duvida ? [] : VZ.executar(user, r.acoes.filter((a) => a.ok));
-    res.json({ fala: VZ.fala(r, feitas), transcricao: r.transcricao, feitas });
-  }));
+    responder(200, VZ.fala(r, feitas), { transcricao: r.transcricao, feitas });
+  });
+  app.post('/api/voz/comando', require('express').text({ type: 'text/*', limit: '20kb' }), require('express').urlencoded({ extended: false, limit: '20kb' }), vozComando);
+  app.get('/api/voz/comando', vozComando);
 
   /* ---------------- Preparação dos carros (v2.14) ---------------- */
   const PR = require('./preparacao');
