@@ -50,6 +50,29 @@ function register(app) {
   }));
 
   /* ---------------- Pendências dos carros: multas, IPVA, licenciamento, restrições… (v2.13) ---------------- */
+  /* ---------------- Comandos de voz (v2.15): microfone no app, Siri (Atalhos) e Alexa ---------------- */
+  const VZ = require('./voz');
+  const vozAudio = require('multer')({ storage: require('multer').memoryStorage(), limits: { fileSize: 12 * 1024 * 1024, files: 1 } }).single('audio');
+  app.post('/api/voz/interpretar', auth.requireUser, vozAudio, wrap(async (req, res) => {
+    res.json(await VZ.interpretar(req.user, { texto: req.body?.texto, audio: req.file }));
+  }));
+  app.post('/api/voz/executar', auth.requireUser, (req, res) => { const feitas = VZ.executar(req.user, req.body?.acoes || []); res.json({ feitas, fala: VZ.fala({}, feitas) }); });
+  app.get('/api/voz/chave', auth.requireUser, (req, res) => res.json({ ativa: VZ.temChave(req.user.id), url: `${require('./config').publicUrl}/api/voz/comando` }));
+  app.post('/api/voz/chave', auth.requireUser, (req, res) => res.json({ chave: VZ.gerarChave(req.user.id), url: `${require('./config').publicUrl}/api/voz/comando` }));
+  app.delete('/api/voz/chave', auth.requireUser, (req, res) => { VZ.removerChave(req.user.id); res.json({ ok: true }); });
+  // Siri (Atalhos do iPhone), Alexa ou outro assistente: manda o texto já transcrito e recebe a frase para falar.
+  // Executa direto quando o comando é claro; com dúvida, só responde a pergunta.
+  app.post('/api/voz/comando', require('express').text({ type: 'text/*', limit: '20kb' }), wrap(async (req, res) => {
+    const tok = String(req.get('authorization') || '').replace(/^Bearer\s+/i, '') || String(req.query.chave || req.body?.chave || '');
+    const user = VZ.usuarioDaChave(tok);
+    if (!user) return res.status(401).json({ fala: 'Chave do GiroAuto inválida. Gere uma nova em Configurações, Minha conta.' });
+    const texto = typeof req.body === 'string' ? req.body : (req.body?.texto || req.body?.text || req.query.texto || '');
+    let r;
+    try { r = await VZ.interpretar(user, { texto }); } catch (e) { return res.json({ fala: e.message }); }
+    const feitas = r.duvida ? [] : VZ.executar(user, r.acoes.filter((a) => a.ok));
+    res.json({ fala: VZ.fala(r, feitas), transcricao: r.transcricao, feitas });
+  }));
+
   /* ---------------- Preparação dos carros (v2.14) ---------------- */
   const PR = require('./preparacao');
   const prep = team.canAny('cadastrar', 'gestao', 'vender');

@@ -4,8 +4,8 @@ const { get, all, run, logEvent } = require('./db');
 const V = require('./vehicles');
 
 const COST_CATS = {
-  mecanica: 'Mecânica', eletrica: 'Elétrica', funilaria: 'Funilaria e pintura', estetica: 'Estética / polimento', lavagem: 'Lavagem',
-  pneus: 'Pneus', pecas: 'Peças', documentacao: 'Documentação / transferência', despachante: 'Despachante', vistoria: 'Vistoria / laudo',
+  funilaria: 'Funilaria e pintura', mecanica: 'Mecânica', eletrica: 'Elétrica e lâmpadas', interior: 'Bancos e interior', vidros: 'Vidros e faróis',
+  estetica: 'Estética / polimento', lavagem: 'Lavagem', pneus: 'Pneus e rodas', pecas: 'Peças', documentacao: 'Documentação / transferência', despachante: 'Despachante', vistoria: 'Vistoria / laudo',
   frete: 'Frete / guincho', anuncio: 'Anúncios', comissao: 'Comissão de compra', ipva: 'IPVA / multas', outros: 'Outros',
 };
 const PARTNER_TYPES = {

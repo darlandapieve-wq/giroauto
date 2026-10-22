@@ -1710,6 +1710,80 @@ test('v2.14: carro em avaliação e preparação (itens, custo previsto, feito, 
   assert.ok(r.body.itens.every((i) => !i.feito));
 });
 
+test('v2.15: preparação e custos numa lista só (custos antigos migrados, rotas de custo usam a lista)', async () => {
+  let r = await api('POST', '/api/vehicles', { marca: 'VW', modelo: 'Jetta', ano_modelo: 2013, preco: 59900 });
+  const id = r.body.id;
+  // custo lançado pela rota antiga vira item da lista
+  r = await api('POST', `/api/vehicles/${id}/costs`, { status: 'realizado', categoria: 'mecanica', descricao: 'troca de óleo', valor: 300 });
+  assert.equal(r.status, 201);
+  let v = (await api('GET', '/api/vehicles')).body.find((x) => x.id === id);
+  assert.equal(v.preparacao.feitos, 1); assert.equal(v.preparacao.custo_feito, 300);
+  // custo antigo, sem item (antes da v2.15), é migrado
+  const { run, get } = require('../src/db');
+  const cid = run("INSERT INTO vehicle_costs (vehicle_id, categoria, descricao, valor, data, status) VALUES (?, 'pneus', '', 800, '2026-10-01', 'previsto')", id).lastInsertRowid;
+  assert.equal(require('../src/preparacao').migrar(), 1);
+  assert.equal(require('../src/preparacao').migrar(), 0, 'migra uma vez só');
+  v = (await api('GET', '/api/vehicles')).body.find((x) => x.id === id);
+  const pneu = v.preparacao.itens.find((i) => i.cost_id === Number(cid));
+  assert.equal(pneu.status, 'pendente'); assert.equal(pneu.custo, 800); assert.equal(pneu.descricao, 'Pneus e rodas');
+  // item feito pela lista: custo vira realizado; editar valor muda o custo
+  r = await api('PUT', `/api/preparacao/${pneu.id}`, { status: 'feito', custo: 750 });
+  assert.equal(get('SELECT status, valor FROM vehicle_costs WHERE id = ?', cid).status, 'realizado');
+  assert.equal(get('SELECT valor FROM vehicle_costs WHERE id = ?', cid).valor, 750);
+  // item "já feito" com valor criado direto na lista
+  r = await api('POST', `/api/vehicles/${id}/preparacao`, { itens: [{ descricao: 'transferência', status: 'feito', custo: 450 }] });
+  assert.equal(r.body.custo_feito, 300 + 750 + 450);
+  // excluir item apaga o custo (lista única)
+  r = await api('DELETE', `/api/preparacao/${pneu.id}`);
+  assert.equal(get('SELECT COUNT(*) n FROM vehicle_costs WHERE id = ?', cid).n, 0);
+  const F = (await api('GET', `/api/vehicles/${id}/finance`)).body;
+  assert.equal(F.costs.reduce((s, c) => s + c.valor, 0), 750, 'finance usa os mesmos lançamentos');
+});
+
+test('v2.15: comandos de voz — interpreta, confere e executa (app, Siri/Alexa com chave)', async () => {
+  process.env.GEMINI_URL = process.env.META_GRAPH_URL; process.env.GEMINI_API_KEY = 'AIzaTESTKEY1234567890123456789012345';
+  let r = await api('POST', '/api/vehicles', { marca: 'VW', modelo: 'Jetta', ano_modelo: 2013, cor: 'Preto', preco: 59900, preparacao: ['trocar pastilhas de freio'] });
+  const jetta = r.body; const item = jetta.preparacao.itens[0];
+  r = await api('POST', '/api/partners', { nome: 'Oficina do Zé', tipo: 'oficina' });
+  const ze = (r.body.partners || []).find((p) => p.nome === 'Oficina do Zé');
+  await api('PUT', `/api/vehicles/${jetta.id}/location`, { status: 'manutencao', parceiro_id: ze.id });
+  await api('POST', '/api/expenses', { descricao: 'Conta de energia', valor: 420, categoria: 'energia', data: '2026-10-25', pago: false });
+  const conta = require('../src/db').get("SELECT id FROM store_expenses WHERE descricao = 'Conta de energia'");
+  // contexto mandado para a IA tem o carro, o item aberto e a conta
+  mock.state.chatReplies = [{ transcricao: 'o Jetta 2013 preto ficou pronto na oficina e está no pátio', resposta: 'Vou colocar o Jetta no pátio.',
+    acoes: [{ tipo: 'local', vehicle_id: jetta.id, status: 'patio' }, { tipo: 'preparacao_feito', vehicle_id: jetta.id, item_ids: [item.id], custo: 380 }, { tipo: 'local', vehicle_id: 999999, status: 'patio' }] }];
+  r = await api('POST', '/api/voz/interpretar', { texto: 'o Jetta 2013 preto ficou pronto na oficina e está no pátio' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const pedido = JSON.stringify(mock.state.geminiCalls.at(-1).body);
+  assert.match(pedido, /Jetta/); assert.match(pedido, /trocar pastilhas/); assert.match(pedido, /Conta de energia/);
+  assert.equal(r.body.acoes.length, 3);
+  assert.equal(r.body.acoes[2].ok, false, 'carro de outra loja/inexistente é recusado');
+  assert.match(r.body.acoes[0].texto, /Jetta 2013 preto: no pátio/);
+  r = await api('POST', '/api/voz/executar', { acoes: r.body.acoes.filter((a) => a.ok) });
+  assert.ok(r.body.feitas.every((a) => a.feito), JSON.stringify(r.body));
+  const v = (await api('GET', '/api/vehicles')).body.find((x) => x.id === jetta.id);
+  assert.equal(v.local_status, 'patio');
+  assert.equal(v.preparacao.abertos, 0); assert.equal(v.preparacao.custo_feito, 380);
+  // Siri/Alexa: chave pessoal, texto puro, executa direto e devolve a frase
+  const chave = (await api('POST', '/api/voz/chave')).body.chave;
+  assert.match(chave, /^gv_/);
+  mock.state.chatReplies = [{ transcricao: 'a conta de energia foi paga', resposta: 'Conta paga.', acoes: [{ tipo: 'conta_paga', expense_id: conta.id }] }];
+  let x = await fetch(`${base}/api/voz/comando`, { method: 'POST', headers: { Authorization: `Bearer ${chave}`, 'Content-Type': 'text/plain' }, body: 'a conta de energia foi paga' });
+  let j = await x.json();
+  assert.match(j.fala, /Pronto: Conta paga/);
+  assert.equal(require('../src/db').get('SELECT pago FROM store_expenses WHERE id = ?', conta.id).pago, 1);
+  // dúvida: não executa, só pergunta
+  mock.state.chatReplies = [{ transcricao: 'o Gol ficou pronto', acoes: [], duvida: 'Qual Gol: o 2015 prata ou o 2018 branco?' }];
+  x = await fetch(`${base}/api/voz/comando`, { method: 'POST', headers: { Authorization: `Bearer ${chave}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ texto: 'o Gol ficou pronto' }) });
+  j = await x.json(); assert.match(j.fala, /Qual Gol/);
+  x = await fetch(`${base}/api/voz/comando`, { method: 'POST', headers: { Authorization: 'Bearer gv_errada' }, body: 'oi' });
+  assert.equal(x.status, 401);
+  await api('DELETE', '/api/voz/chave');
+  x = await fetch(`${base}/api/voz/comando`, { method: 'POST', headers: { Authorization: `Bearer ${chave}`, 'Content-Type': 'text/plain' }, body: 'oi' });
+  assert.equal(x.status, 401, 'chave removida');
+  delete process.env.GEMINI_API_KEY; delete process.env.GEMINI_URL;
+});
+
 test('v2.0: agenda de republicação, QR, folha A4, painel TV e fotos prontas', async () => {
   const sched = require('../src/schedule');
   const db = require('../src/db');

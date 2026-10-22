@@ -1,13 +1,9 @@
-// Preparação dos carros (v2.14): o que falta arrumar antes de vender (repintar para-choque, trocar lâmpada, costurar banco…).
-// Cada item pode ter custo previsto: ele entra nos custos do carro como "previsto" e vira "realizado" quando o item é feito.
+// Preparação e custos dos carros (v2.14/v2.15): o que falta arrumar antes de vender e o que já foi feito, com o custo.
 const { get, all, run, tx, logEvent } = require('./db');
 
-const CATS = {
-  funilaria: 'Funilaria e pintura', mecanica: 'Mecânica', eletrica: 'Elétrica e lâmpadas', interior: 'Bancos e interior',
-  estetica: 'Estética e limpeza', pneus: 'Pneus e rodas', vidros: 'Vidros e faróis', outro: 'Outro',
-};
-// Categoria equivalente nos custos do carro (Gestão).
-const CUSTO_CAT = { funilaria: 'funilaria', mecanica: 'mecanica', eletrica: 'eletrica', interior: 'outros', estetica: 'estetica', pneus: 'pneus', vidros: 'outros', outro: 'outros' };
+// v2.15: uma lista só por carro — serviços a fazer (preparação) e o que já foi feito, com o custo. As categorias são as
+// mesmas dos custos do carro, e cada item com valor é o próprio lançamento de custo (previsto enquanto a fazer, realizado quando feito).
+const CATS = require('./gestao').COST_CATS;
 const STATUS = { pendente: 'A fazer', andamento: 'Em andamento', feito: 'Feito' };
 
 // Palavras que indicam a categoria, para não precisar escolher.
@@ -16,11 +12,19 @@ const PISTAS = [
   ['eletrica', /l[aâ]mpada|bateria|el[eé]tric|vidro el[eé]tric|trava|alarme|som|r[aá]dio|central|luz|seta|buzina|chicote|sensor|c[aâ]mera/i],
   ['interior', /banco|rasg|forro|tape[cç]|carpete|volante|painel|tapete|cinto|costur|teto/i],
   ['vidros', /vidro|para-?brisa|parabrisa|farol|far[oó]is|lanterna|retrovisor|insulfilm|pel[ií]cula/i],
-  ['pneus', /pneu|roda|calota|alinha|balance|estepe/i],
-  ['estetica', /lav|polimento|higieniz|cristaliz|limpeza|odor|cheiro|enceramento|vitrifica|detalh/i],
+  ['pneus', /pneu|roda|calota|alinha|balance|estepe|borrach/i],
+  ['documentacao', /transfer[eê]ncia|documento|crlv|crv|dut|licenciamento|vistoria cautelar|laudo/i],
+  ['despachante', /despachante/i],
+  ['frete', /frete|guincho|reboque|transporte/i],
+  ['comissao', /comiss[aã]o/i],
+  ['ipva', /ipva|multa/i],
+  ['anuncio', /an[uú]ncio|webmotors|olx|impulsion/i],
+  ['pecas', /pe[cç]a|compra de/i],
+  ['lavagem', /^lava|lavagem|lavar/i],
+  ['estetica', /polimento|higieniz|cristaliz|limpeza|odor|cheiro|enceramento|vitrifica|detalh/i],
   ['mecanica', /[oó]leo|freio|pastilha|motor|embreagem|suspens|amortecedor|correia|vela|filtro|revis|ar[- ]condicionado|escapamento|radiador|c[aâ]mbio|vazamento|barulho|ru[ií]do/i],
 ];
-function categoriaDe(texto) { return (PISTAS.find(([, re]) => re.test(String(texto || ''))) || ['outro'])[0]; }
+function categoriaDe(texto) { return (PISTAS.find(([, re]) => re.test(String(texto || ''))) || ['outros'])[0]; }
 
 const str = (x, max = 200) => String(x ?? '').trim().slice(0, max);
 const int = (x) => { const n = Math.round(Number(String(x ?? '').replace(/[^\d,.-]/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.')) || 0); return Math.max(0, n); };
@@ -47,9 +51,12 @@ function out(p) {
 
 // Resumo usado no card do carro (estoque, gestão, painel).
 function doVeiculo(vehicleId) {
-  const itens = all("SELECT * FROM preparacao WHERE vehicle_id = ? ORDER BY CASE status WHEN 'feito' THEN 1 ELSE 0 END, id", vehicleId).map(out);
+  const itens = all("SELECT p.*, pa.nome AS parceiro_nome FROM preparacao p LEFT JOIN partners pa ON pa.id = p.parceiro_id WHERE p.vehicle_id = ? ORDER BY CASE p.status WHEN 'feito' THEN 1 ELSE 0 END, CASE WHEN p.status = 'feito' THEN COALESCE(p.feito_em, '') END DESC, p.id", vehicleId).map(out);
   const abertos = itens.filter((i) => !i.feito);
-  return { total: itens.length, abertos: abertos.length, feitos: itens.length - abertos.length, atrasados: abertos.filter((i) => i.atrasado).length, custo_aberto: abertos.reduce((s, i) => s + (i.custo || 0), 0), itens };
+  return {
+    total: itens.length, abertos: abertos.length, feitos: itens.length - abertos.length, atrasados: abertos.filter((i) => i.atrasado).length,
+    custo_aberto: abertos.reduce((s, i) => s + (i.custo || 0), 0), custo_feito: itens.filter((i) => i.feito).reduce((s, i) => s + (i.custo || 0), 0), itens,
+  };
 }
 
 function list(storeId, { vehicleId, abertos } = {}) {
@@ -72,7 +79,7 @@ function syncCusto(storeId, p, userId) {
     if (c) run('UPDATE preparacao SET cost_id = NULL WHERE id = ?', p.id);
     return;
   }
-  const corpo = { valor: p.custo, categoria: CUSTO_CAT[p.categoria] || 'outros', descricao: `Preparação: ${p.descricao}`, status, parceiro_id: p.parceiro_id || null };
+  const corpo = { valor: p.custo, categoria: CATS[p.categoria] ? p.categoria : 'outros', descricao: p.descricao, status, parceiro_id: p.parceiro_id || null, data: p.status === 'feito' ? p.feito_em : (p.prazo || null) };
   if (c) G.updateCost(storeId, p.vehicle_id, c.id, corpo);
   else run('UPDATE preparacao SET cost_id = ? WHERE id = ?', Number(G.addCost(storeId, p.vehicle_id, corpo, userId)), p.id);
 }
@@ -87,8 +94,9 @@ function add(storeId, vehicleId, b, userId) {
   const ids = tx(() => lista.slice(0, 40).map((x) => {
     const categoria = CATS[x.categoria] ? x.categoria : categoriaDe(x.descricao);
     const parceiro = x.parceiro_id ? get('SELECT id FROM partners WHERE id = ? AND store_id = ?', Number(x.parceiro_id), storeId)?.id || null : null;
-    const id = Number(run(`INSERT INTO preparacao (store_id, vehicle_id, descricao, categoria, status, custo, prazo, parceiro_id, obs, created_by) VALUES (?, ?, ?, ?, 'pendente', ?, ?, ?, ?, ?)`,
-      storeId, v.id, x.descricao, categoria, int(x.custo), data(x.prazo), parceiro, str(x.obs, 500), userId || null).lastInsertRowid);
+    const status = STATUS[x.status] ? x.status : 'pendente';
+    const id = Number(run(`INSERT INTO preparacao (store_id, vehicle_id, descricao, categoria, status, custo, prazo, parceiro_id, obs, feito_em, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      storeId, v.id, x.descricao, categoria, status, int(x.custo ?? x.valor), data(x.prazo), parceiro, str(x.obs, 500), status === 'feito' ? (data(x.data) || hoje()) : null, userId || null).lastInsertRowid);
     syncCusto(storeId, find(storeId, id), userId);
     return id;
   }));
@@ -102,7 +110,7 @@ function update(storeId, id, b, userId) {
     descricao: b.descricao !== undefined ? str(b.descricao) || p.descricao : p.descricao,
     categoria: CATS[b.categoria] ? b.categoria : p.categoria,
     status: STATUS[b.status] ? b.status : p.status,
-    custo: b.custo !== undefined ? int(b.custo) : p.custo,
+    custo: b.custo !== undefined ? int(b.custo) : b.valor !== undefined ? int(b.valor) : p.custo,
     prazo: b.prazo !== undefined ? data(b.prazo) : p.prazo,
     parceiro_id: b.parceiro_id !== undefined ? (b.parceiro_id ? get('SELECT id FROM partners WHERE id = ? AND store_id = ?', Number(b.parceiro_id), storeId)?.id || null : null) : p.parceiro_id,
     obs: b.obs !== undefined ? str(b.obs, 500) : p.obs,
@@ -110,7 +118,7 @@ function update(storeId, id, b, userId) {
   const ficouPronto = d.status === 'feito' && p.status !== 'feito';
   tx(() => {
     run(`UPDATE preparacao SET descricao=?, categoria=?, status=?, custo=?, prazo=?, parceiro_id=?, obs=?, feito_em=?, updated_at=datetime('now') WHERE id=?`,
-      d.descricao, d.categoria, d.status, d.custo, d.prazo, d.parceiro_id, d.obs, d.status === 'feito' ? (p.feito_em || hoje()) : null, p.id);
+      d.descricao, d.categoria, d.status, d.custo, d.prazo, d.parceiro_id, d.obs, d.status === 'feito' ? (data(b.data) || p.feito_em || hoje()) : null, p.id);
     syncCusto(storeId, find(storeId, p.id), userId);
   });
   if (ficouPronto) {
@@ -124,7 +132,7 @@ function update(storeId, id, b, userId) {
 function remove(storeId, id) {
   const p = find(storeId, id);
   tx(() => {
-    if (p.cost_id) run("DELETE FROM vehicle_costs WHERE id = ? AND status = 'previsto'", p.cost_id);
+    if (p.cost_id) run('DELETE FROM vehicle_costs WHERE id = ? AND vehicle_id = ?', p.cost_id, p.vehicle_id);
     run('DELETE FROM preparacao WHERE id = ?', p.id);
   });
 }
@@ -138,4 +146,45 @@ function painel(storeId) {
   return { itens: itens.length, carros: carros.length, atrasados: itens.filter((i) => i.atrasado).length, custo: itens.reduce((s, i) => s + (i.custo || 0), 0), lista: carros.slice(0, 12) };
 }
 
-module.exports = { CATS, STATUS, categoriaDe, doVeiculo, list, add, update, remove, painel };
+// Compatibilidade com as rotas antigas de custos (/api/vehicles/:id/costs): tudo passa pela lista única.
+function custoParaItem(b) {
+  return { descricao: str(b.descricao) || CATS[b.categoria] || 'Custo', categoria: CATS[b.categoria] ? b.categoria : 'outros', custo: b.valor, parceiro_id: b.parceiro_id, data: b.data,
+    status: b.status === 'previsto' ? 'pendente' : 'feito' };
+}
+function addCusto(storeId, vehicleId, b, userId) {
+  if (!int(b.valor)) throw httpError(400, 'Informe o valor do custo.');
+  return add(storeId, vehicleId, custoParaItem(b), userId)[0];
+}
+function itemDoCusto(storeId, vehicleId, costId) {
+  return get('SELECT * FROM preparacao WHERE store_id = ? AND vehicle_id = ? AND cost_id = ?', storeId, Number(vehicleId), Number(costId));
+}
+function updateCusto(storeId, vehicleId, costId, b, userId) {
+  const p = itemDoCusto(storeId, vehicleId, costId);
+  if (!p) return require('./gestao').updateCost(storeId, vehicleId, costId, b);
+  const up = {};
+  if (b.status) up.status = b.status === 'previsto' ? (p.status === 'feito' ? 'pendente' : p.status) : 'feito';
+  if (b.valor !== undefined) up.custo = b.valor;
+  for (const k of ['descricao', 'categoria', 'parceiro_id', 'data']) if (b[k] !== undefined) up[k] = b[k];
+  return update(storeId, p.id, up, userId);
+}
+function removeCusto(storeId, vehicleId, costId) {
+  const p = itemDoCusto(storeId, vehicleId, costId);
+  if (p) return remove(storeId, p.id);
+  require('./gestao').deleteCost(storeId, vehicleId, costId);
+}
+
+// Uma vez: custos lançados antes da v2.15 viram itens da lista (feitos ou a fazer), e "outro" vira "outros".
+function migrar() {
+  run("UPDATE preparacao SET categoria = 'outros' WHERE categoria = 'outro'");
+  run("UPDATE vehicle_costs SET descricao = substr(descricao, 13) WHERE descricao LIKE 'Preparação: %'");
+  const soltos = all(`SELECT c.*, v.store_id FROM vehicle_costs c JOIN vehicles v ON v.id = c.vehicle_id
+    WHERE NOT EXISTS (SELECT 1 FROM preparacao p WHERE p.cost_id = c.id)`);
+  if (!soltos.length) return 0;
+  tx(() => soltos.forEach((c) => run(`INSERT INTO preparacao (store_id, vehicle_id, descricao, categoria, status, custo, parceiro_id, cost_id, feito_em, created_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`, c.store_id, c.vehicle_id, str(c.descricao).replace(/^Preparação:\s*/, '') || CATS[c.categoria] || 'Custo',
+  CATS[c.categoria] ? c.categoria : 'outros', c.status === 'previsto' ? 'pendente' : 'feito', c.valor || 0, c.parceiro_id || null, c.id, c.status === 'previsto' ? null : (c.data || null), c.created_by || null, c.created_at)));
+  return soltos.length;
+}
+try { migrar(); } catch (e) { console.error('preparacao migrar', e.message); }
+
+module.exports = { migrar, addCusto, updateCusto, removeCusto, CATS, STATUS, categoriaDe, doVeiculo, list, add, update, remove, painel };

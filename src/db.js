@@ -307,6 +307,7 @@ addColumn('stores', 'wa_cloud', "TEXT NOT NULL DEFAULT '{}'");
 addColumn('stores', 'onboarding', "TEXT NOT NULL DEFAULT '{}'");
 // v2.7: último acesso dos usuários e canal de sugestões/erros (visto pelo desenvolvedor).
 addColumn('users', 'last_seen', 'TEXT');
+addColumn('users', 'voz_token', "TEXT NOT NULL DEFAULT ''");
 db.exec(`CREATE TABLE IF NOT EXISTS feedback (
   id INTEGER PRIMARY KEY,
   store_id INTEGER REFERENCES stores(id) ON DELETE SET NULL,

@@ -137,15 +137,15 @@ function register(app) {
     res.json({ ok: true });
   });
   app.post('/api/vehicles/:id/costs', team.can('financeiro'), (req, res) => {
-    G.addCost(req.user.storeId, own(req).id, req.body || {}, req.user.id);
+    require('./preparacao').addCusto(req.user.storeId, own(req).id, req.body || {}, req.user.id);
     res.status(201).json({ ok: true });
   });
   app.put('/api/vehicles/:id/costs/:cid', team.can('financeiro'), (req, res) => {
-    G.updateCost(req.user.storeId, own(req).id, req.params.cid, req.body || {});
+    require('./preparacao').updateCusto(req.user.storeId, own(req).id, req.params.cid, req.body || {}, req.user.id);
     res.json({ ok: true });
   });
   app.delete('/api/vehicles/:id/costs/:cid', team.can('financeiro'), (req, res) => {
-    G.deleteCost(req.user.storeId, own(req).id, req.params.cid);
+    require('./preparacao').removeCusto(req.user.storeId, own(req).id, req.params.cid);
     res.json({ ok: true });
   });
 

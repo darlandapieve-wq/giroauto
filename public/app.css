@@ -823,3 +823,29 @@ main{gap:12px;padding-block:16px 40px;padding-inline:clamp(12px,2.2vw,28px)}
 .pbox .prepcar.sm:first-of-type{border-top:0}
 @media (max-width:600px){.entradas{grid-template-columns:1fr}}
 .pbox.tall{max-height:380px}
+/* Lista única de preparação e custos (v2.15) */
+.prepv{font-family:var(--f-mono);font-size:12.5px;font-weight:600;white-space:nowrap}
+.prepv.prev{color:var(--warn)}
+.prepsum{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin:2px 0 6px}
+.prepsum b{color:var(--ink)}
+.prepedit{display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid var(--accent);border-radius:8px;margin:4px 0;background:var(--surface)}
+.prepedit > input{border:1px solid var(--line);border-radius:8px;padding:7px 8px;background:var(--bg);color:var(--ink);font:inherit}
+.prepaddf select#pp-st{flex:0 0 auto}
+/* Comandos de voz (v2.15) */
+#vozFab{position:fixed;right:18px;bottom:18px;z-index:40;width:52px;height:52px;border-radius:50%;border:0;background:var(--accent);color:#1b1400;box-shadow:0 6px 18px rgba(0,0,0,.22);display:grid;place-items:center;cursor:pointer}
+#vozFab svg{width:24px;height:24px}
+#vozFab:hover{filter:brightness(1.05);transform:translateY(-1px)}
+body:has(.form-foot) #vozFab{bottom:86px}
+.vozmic{display:flex;align-items:center;gap:12px;margin:4px 0 10px}
+.vozbtn{width:64px;height:64px;border-radius:50%;border:2px solid var(--accent);background:var(--accent-soft);font-size:28px;cursor:pointer;flex:none}
+.vozbtn.on{background:var(--bad);border-color:var(--bad);animation:vzp 1.2s infinite}
+@keyframes vzp{0%{box-shadow:0 0 0 0 rgba(176,53,42,.45)}70%{box-shadow:0 0 0 14px rgba(176,53,42,0)}100%{box-shadow:0 0 0 0 rgba(176,53,42,0)}}
+#vz-t{width:100%;font:inherit;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--bg);color:var(--ink);resize:vertical}
+.vzacoes{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.vza{display:flex;gap:8px;align-items:flex-start;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--bg);font-size:13.5px}
+.vza.bad{opacity:.75}.vza input{margin-top:3px}
+@media print{#vozFab{display:none}}
+#vozSide{margin:0 0 8px;width:100%;justify-content:flex-start}
+@media (min-width:900px){#vozFab{display:none}}
+.prepaddf select{flex:1 1 150px}.prepaddf #pp-st,.prepaddf #pe-st{flex:0 0 auto}
+.prepaddf input[type=date]{flex:0 1 150px}

@@ -2,6 +2,12 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.15.0 — 22/10/2026
+
+- **Preparação e custos numa lista só.** O quadro **Entrada, preparação e custos** do cadastro do carro substitui as listas "Manutenções e custos já feitos" e "Custos previstos" da Gestão do veículo. Cada item tem descrição, categoria, situação (a fazer, em andamento ou feito), valor, prazo/data e parceiro. Item a fazer com valor é custo previsto; ao marcar ✓ vira custo realizado. O lucro previsto da Gestão do veículo usa essa lista. A mesma lista aparece em Gestão > Estoque e margem (Abrir), no selo 🔧 do Estoque, em Gestão > Acompanhamento e no quadro Preparação do Painel, com editar, iniciar, marcar como feito e excluir. Os custos lançados antes desta versão foram trazidos para a lista automaticamente.
+- **Comandos de voz.** Botão 🎤 (no menu lateral no computador e no canto da tela no celular): fale o que aconteceu, por exemplo "o Jetta 2013 preto ficou pronto na oficina e está no pátio", "inclua na Ecosport 2009 alinhamento e balanceamento" ou "a conta de energia foi paga". A IA entende, o GiroAuto confere o carro, o item e a conta, mostra o que vai fazer e executa com um toque em Confirmar. Também dá para digitar.
+- **Siri (Atalhos do iPhone) e outros assistentes:** em Configurações > Minha conta > Comandos de voz, gere a chave pessoal e siga o passo a passo para o atalho "GiroAuto". Pela Siri o comando é executado direto, e ela fala o que foi feito (ou pergunta quando houver dúvida, como dois carros parecidos).
+
 ## v2.14.0 — 22/10/2026
 
 - **Cartão CNPJ lido sozinho**: no formulário de implantação, o dono anexa o Cartão CNPJ (PDF do site da Receita ou foto) logo no item "1. Empresa" e os campos se preenchem na hora (razão social, nome fantasia, CNPJ, endereço, cidade, UF, CEP, telefone, e-mail e representante legal pelo quadro de sócios). O GiroAuto lê o texto do PDF, usa a IA para fotos e completa com a base pública da Receita. Ao enviar, só o que ficou em branco é preenchido na loja, nos dados para contratos e nas respostas. No guia Primeiros passos aparece a situação na Receita, os sócios e o botão **Ler o Cartão CNPJ de novo**. Cartões já enviados (como o da Garage45) são lidos sozinhos.

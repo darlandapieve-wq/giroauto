@@ -264,7 +264,6 @@
   async function gestaoPanel(d) {
     const g = d._g || (d._g = { costs: [], novos: [] });
     try {
-      if (d.id && !g.loaded) { const F = await api('GET', `/api/vehicles/${d.id}/finance`); g.costs = F.costs; g.loaded = true; }
       await loadPartners();
     } catch (e) { $('#gestaoPanel').innerHTML = `<div class="err">${esc(e.message)}</div>`; return; }
     const O = S.me.options;
@@ -273,7 +272,7 @@
     const consig = consigOf();
     const base = fin.base ?? (consig ? (d.consig_repasse || '') : (d.compra_valor || ''));
     $('#gestaoPanel').innerHTML = `<h2>Gestão do veículo</h2>
-      <p class="lead">Compra, manutenções e custos previstos. O lucro previsto é calculado na hora. Não aparece nos anúncios.</p>
+      <p class="lead">Compra e lucro previsto, calculado na hora. Não aparece nos anúncios.</p>
       <div class="fields">
         <div class="f"><label for="g-cv" id="g-cv-l">${consig ? 'Repasse ao dono (R$)' : 'Valor de compra (R$)'}</label><input id="g-cv" inputmode="numeric" value="${esc(base || '')}" placeholder="${consig ? 'ou a comissão % acima' : 'ex.: 52000'}"></div>
         <div class="f"><label for="g-cd">Data da compra</label><input id="g-cd" type="date" value="${esc(dataCompra || '')}"></div>
@@ -282,85 +281,10 @@
         <div class="f"><label for="g-ct">WhatsApp de quem vendeu</label><input id="g-ct" inputmode="tel" value="${esc(fin.compra_de_tel ?? (d.compra_de_tel || ''))}" placeholder="(44) 99999-0000">${(fin.compra_de_tel ?? d.compra_de_tel) ? `<span class="hint"><a class="link" href="${esc(waLink(fin.compra_de_tel ?? d.compra_de_tel))}" target="_blank" rel="noopener">abrir WhatsApp</a></span>` : ''}</div>
         ${d.troca_de_id ? `<div class="f w6"><span class="pill p-info">🔁 Entrou na troca de <button class="vlink" type="button" data-vp="${d.troca_de_id}">outro veículo</button></span></div>` : ''}
       </div>
-      <div class="grid2 gcost" style="margin-top:12px">
-        <div><h3 class="dest-h">Manutenções e custos já feitos</h3><div id="g-real"></div></div>
-        <div><h3 class="dest-h">Custos previstos</h3><div id="g-prev"></div></div>
-      </div>
-      <div class="fields addcost">
-        <div class="f"><label for="gc-s">Tipo</label><select id="gc-s"><option value="realizado">Já feito</option><option value="previsto">Previsto</option></select></div>
-        <div class="f"><label for="gc-c">Categoria</label><select id="gc-c">${opt(Object.entries(O.custos || {}), 'mecanica')}</select></div>
-        <div class="f w3"><label for="gc-d">Descrição</label><input id="gc-d" placeholder="Ex.: troca de pastilhas, polimento"></div>
-        <div class="f"><label for="gc-v">Valor (R$)</label><input id="gc-v" inputmode="numeric"></div>
-        <div class="f w3"><label for="gc-p">Parceiro (opcional)</label><select id="gc-p"><option value="">—</option>${PARTNERS.partners.map((p) => `<option value="${p.id}">${esc(p.nome)}</option>`).join('')}</select><span class="hint"><button class="linkbtn" type="button" id="gc-pn">+ Cadastrar parceiro</button></span></div>
-        <div class="f" style="align-self:end"><button class="btn" type="button" id="gc-add">Adicionar custo</button></div>
-      </div>
-      <div id="gc-pbox"></div>
+      <p class="note" style="margin:10px 0 0">Manutenções, preparação e outros gastos do carro ficam no quadro <b>Entrada, preparação e custos</b> (a fazer = previsto, feito = realizado).</p>
       <div class="calc" id="g-calc"></div>`;
-    renderCosts(d);
-    ['#g-cv', '#v-preco', '#v-preco_oferta', '#v-margem_valor'].forEach((s) => { const el = $(s); if (el) el.addEventListener('input', gestaoSync); });
-    $('#gc-pn').onclick = () => partnerInline($('#gc-p'), $('#gc-pbox'), $('#gc-c').value);
-    $('#gc-add').onclick = async () => {
-      const c = { status: $('#gc-s').value, categoria: $('#gc-c').value, descricao: $('#gc-d').value.trim(), valor: num($('#gc-v').value), parceiro_id: $('#gc-p').value, data: today() };
-      if (!c.valor) { toast('Informe o valor do custo.'); $('#gc-v').focus(); return; }
-      if (d.id) {
-        try { await api('POST', `/api/vehicles/${d.id}/costs`, c); g.costs = (await api('GET', `/api/vehicles/${d.id}/finance`)).costs; }
-        catch (e) { return toast(e.message, 6000); }
-      } else g.novos.push({ ...c, tmp: Date.now() });
-      $('#gc-d').value = ''; $('#gc-v').value = '';
-      renderCosts(d);
-    };
-  }
-  function costRow(c, d) {
-    const cat = S.me.options.custos?.[c.categoria] || c.categoria;
-    const parc = c.parceiro_nome || PARTNERS?.partners.find((p) => String(p.id) === String(c.parceiro_id))?.nome || '';
-    const key = c.id ? `id:${c.id}` : `tmp:${c.tmp}`;
-    return `<div class="cf"><span class="k">${esc(cat)}${c.id ? '' : ' <span class="pill p-muted">a salvar</span>'}<br><span class="sub">${esc(c.descricao || '')}${parc ? ' · ' + esc(parc) : ''}</span></span><span class="v">${brl(c.valor)}</span>
-      <span class="btnrow" style="gap:4px">${c.status === 'previsto' ? `<button class="btn sm" type="button" data-cdone="${key}" title="Marcar como feito">Feito</button>` : ''}<button class="btn sm ghost" type="button" data-cedit="${key}" title="Editar descrição e valor">Editar</button><button class="btn sm ghost danger" type="button" data-cdel="${key}" aria-label="Excluir custo">×</button></span></div>`;
-  }
-  function renderCosts(d) {
-    const g = d._g; const all_ = [...g.costs, ...g.novos];
-    const real = all_.filter((c) => c.status !== 'previsto'); const prev = all_.filter((c) => c.status === 'previsto');
-    const empty = (t) => `<div class="cfields"><div class="cf"><span class="v sub">${t}</span></div></div>`;
-    $('#g-real').innerHTML = real.length ? `<div class="cfields">${real.map((c) => costRow(c, d)).join('')}</div>` : empty('Nenhuma manutenção lançada.');
-    $('#g-prev').innerHTML = prev.length ? `<div class="cfields">${prev.map((c) => costRow(c, d)).join('')}</div>` : empty('Nada previsto. Lance o que ainda vai gastar (pneus, polimento…) para a previsão ficar certa.');
-    const find = (key) => { const [t, v] = key.split(':'); return t === 'id' ? { c: g.costs.find((x) => String(x.id) === v), saved: true } : { c: g.novos.find((x) => String(x.tmp) === v), saved: false }; };
-    $$('[data-cdel]').forEach((b) => { b.onclick = async () => {
-      const { c, saved } = find(b.dataset.cdel); if (!c) return;
-      if (saved) { try { await api('DELETE', `/api/vehicles/${d.id}/costs/${c.id}`); g.costs = g.costs.filter((x) => x !== c); } catch (e) { return toast(e.message); } }
-      else g.novos = g.novos.filter((x) => x !== c);
-      renderCosts(d);
-    }; });
-    $$('[data-cedit]').forEach((b) => { b.onclick = () => {
-      const { c, saved } = find(b.dataset.cedit); if (!c) return;
-      const row = b.closest('.cf');
-      row.outerHTML = costEditHtml(c, 'ce');
-      $('#ce-x').onclick = () => renderCosts(d);
-      $('#ce-ok').onclick = async () => {
-        const upd = { descricao: $('#ce-d').value.trim(), valor: num($('#ce-v').value), categoria: $('#ce-c').value, status: $('#ce-s').value };
-        if (!upd.valor) return toast('Informe o valor.');
-        if (saved) { try { await api('PUT', `/api/vehicles/${d.id}/costs/${c.id}`, upd); g.costs = (await api('GET', `/api/vehicles/${d.id}/finance`)).costs; } catch (e) { return toast(e.message); } }
-        else Object.assign(c, upd);
-        renderCosts(d);
-      };
-      $('#ce-v').focus();
-    }; });
-    $$('[data-cdone]').forEach((b) => { b.onclick = async () => {
-      const { c, saved } = find(b.dataset.cdone); if (!c) return;
-      if (saved) { try { await api('PUT', `/api/vehicles/${d.id}/costs/${c.id}`, { status: 'realizado' }); } catch (e) { return toast(e.message); } }
-      c.status = 'realizado'; c.previsto = false;
-      renderCosts(d);
-    }; });
     gestaoSync();
-  }
-  // Linha de custo em modo de edição (cadastro e modal de custos).
-  function costEditHtml(c, px) {
-    return `<div class="cf cedit"><div class="fields" style="grid-column:1/-1">
-      <div class="f"><label for="${px}-s">Tipo</label><select id="${px}-s"><option value="realizado" ${c.status !== 'previsto' ? 'selected' : ''}>Já feito</option><option value="previsto" ${c.status === 'previsto' ? 'selected' : ''}>Previsto</option></select></div>
-      <div class="f"><label for="${px}-c">Categoria</label><select id="${px}-c">${opt(Object.entries(S.me.options.custos || {}), c.categoria)}</select></div>
-      <div class="f w3"><label for="${px}-d">Descrição</label><input id="${px}-d" value="${esc(c.descricao || '')}"></div>
-      <div class="f"><label for="${px}-v">Valor (R$)</label><input id="${px}-v" inputmode="numeric" value="${esc(c.valor || '')}"></div>
-      <div class="f" style="align-self:end;flex-direction:row;gap:6px"><button class="btn sm" type="button" id="${px}-x">Cancelar</button><button class="btn sm primary" type="button" id="${px}-ok">Salvar</button></div>
-    </div></div>`;
+    ['#g-cv', '#v-preco', '#v-preco_oferta', '#v-margem_valor'].forEach((s) => { const el = $(s); if (el) el.addEventListener('input', gestaoSync); });
   }
   // Recalcula a previsão de lucro com o que está na tela.
   function gestaoSync() {
@@ -368,9 +292,7 @@
     const consig = consigOf();
     if ($('#g-cv-l')) { $('#g-cv-l').textContent = consig ? 'Repasse fixo ao dono (R$, opcional)' : 'Valor de compra (R$)'; $('#g-cv').placeholder = consig ? 'se não usar a margem' : 'ex.: 52000'; }
     const preco = num($('#v-preco_oferta')?.value) || num($('#v-preco')?.value);
-    const all_ = [...d._g.costs, ...d._g.novos];
-    const feitos = all_.filter((c) => c.status !== 'previsto').reduce((s, c) => s + num(c.valor), 0);
-    const prev = all_.filter((c) => c.status === 'previsto').reduce((s, c) => s + num(c.valor), 0);
+    const { feitos, prev } = prepTotais(d);
     const mt = $('#v-margem_tipo')?.value || d.margem_tipo || 'pct';
     const mv = $('#v-margem_valor') ? (mt === 'valor' ? num($('#v-margem_valor').value) : decimal($('#v-margem_valor').value)) : (mt === 'valor' ? d.margem_fixa : d.consig_comissao_pct);
     const base = preco || num($('#g-cv').value) ? baseCalc({ tipo: tipoAtual(), repasse: consig ? num($('#g-cv').value) : 0, compra: consig ? 0 : num($('#g-cv').value), margemTipo: mt, margemValor: mv }, preco) : 0;
@@ -383,11 +305,11 @@
       ${line(`Preço do anúncio${num($('#v-preco_oferta')?.value) ? ' (oferta)' : ''}`, preco ? brl(preco) : '—')}
       ${consig && preco && base ? line('Margem da loja', brl(preco - base)) : ''}
       ${line(consig ? '− Repasse ao dono' : '− Valor de compra', base ? brl(base) : '—')}
-      ${line('− Manutenções feitas', brl(feitos))}
-      ${line('− Custos previstos', brl(prev))}
+      ${line('− Custos feitos', brl(feitos))}
+      ${line('− Custos a fazer (previstos)', brl(prev))}
       ${impPct ? line(`− Impostos (${pct(impPct)}%)`, brl(imp)) : ''}
       ${preco && base ? line('= Lucro previsto', `${brl(lucro)} <small>${pct(margem)}% de margem</small>`, `tot ${lucro < 0 ? 'neg' : 'pos'}`) : `<p class="note">Informe o preço e ${consig ? 'a margem da loja (em Proprietário) ou o repasse ao dono' : 'o valor de compra'} para ver o lucro previsto.</p>`}
-      ${consig ? '' : `<p class="note">Investimento total: <b>${brl(base + feitos + prev)}</b> (compra + manutenções + previstos).</p>`}`;
+      ${consig ? '' : `<p class="note">Investimento total: <b>${brl(base + feitos + prev)}</b> (compra + custos feitos + a fazer).</p>`}`;
   }
   function readGestao(d) {
     if (!$('#gestaoPanel') || !$('#g-cv')) return;
@@ -833,7 +755,7 @@
     const consig = TERC.includes(v.proprietario_tipo);
     const lucro = (x, label) => (x ? `<div class="kpi"><span>${label}</span><b class="${x.liquido < 0 ? 'neg' : ''}">${brl(x.liquido)}</b><em>bruto ${brl(x.bruto)} · ${pct(x.margem_pct)}% de margem</em></div>` : '');
     const row = (c) => `<div class="cf"><span class="k">${esc(c.categoria_label)}${c.previsto ? ' <span class="pill p-warn">previsto</span>' : ''}<br><span class="sub">${fmtDate(c.data)}${c.parceiro_nome ? ' · ' + esc(c.parceiro_nome) : ''}</span></span><span class="v">${esc(c.descricao || '')}<br><b>${brl(c.valor)}</b></span><span class="btnrow" style="gap:4px">${c.previsto ? `<button class="btn sm" type="button" data-cf="${c.id}">Feito</button>` : ''}<button class="btn sm ghost" type="button" data-ce="${c.id}">Editar</button><button class="btn sm ghost danger" type="button" data-dc="${c.id}">Excluir</button></span></div>`;
-    modal(`<h3>Custos e margem: ${esc(v.marca)} ${esc(v.modelo)}</h3>
+    modal(`<span id="finModal" hidden></span><h3>Custos e margem: ${esc(v.marca)} ${esc(v.modelo)}</h3>
       <div class="kpis">${f.falta_base ? `<div class="kpi"><span>Lucro previsto</span><b class="warn">—</b><em>Informe ${consig ? 'a margem da loja (no cadastro) ou o repasse ao dono' : 'o valor de compra'} para calcular.</em></div>` : ''}${v.status !== 'vendido' ? lucro(f.previsto, `Lucro previsto (anúncio ${brl(v.preco_anuncio)})`) : ''}${lucro(f.real, `Lucro real (venda ${brl(f.real?.venda)})`)}<div class="kpi"><span>Custos</span><b>${brl(f.custos_total)}</b><em>${brl(f.custos_realizados)} feitos · ${brl(f.custos_previstos)} previstos</em></div></div>
       <h4>${consig ? 'Consignação' : 'Compra'}</h4>
       <div class="fields">
@@ -845,18 +767,9 @@
         <div class="f" style="align-self:end"><button class="btn" type="button" id="fn-save">Salvar</button></div>
       </div>
       ${v.status === 'vendido' && can('vender') ? `<div class="btnrow" style="margin-top:8px"><button class="btn" type="button" id="fn-sale">Editar dados da venda</button></div>` : ''}
-      <h4>Custos (manutenção, preparação, documentação…)</h4>
-      <div class="cfields">${F.costs.length ? F.costs.map(row).join('') : '<div class="cf"><span class="v sub">Nenhum custo lançado.</span></div>'}</div>
-      <div class="fields" style="margin-top:8px">
-        <div class="f"><label for="ct-s">Tipo</label><select id="ct-s"><option value="realizado">Já feito</option><option value="previsto">Previsto</option></select></div>
-        <div class="f"><label for="ct-c">Categoria</label><select id="ct-c">${opt(Object.entries(F.categorias), 'mecanica')}</select></div>
-        <div class="f w3"><label for="ct-d">Descrição</label><input id="ct-d" placeholder="Ex.: troca de pastilhas"></div>
-        <div class="f"><label for="ct-v">Valor (R$)</label><input id="ct-v" inputmode="numeric"></div>
-        <div class="f w3"><label for="ct-p">Parceiro (opcional)</label><select id="ct-p"><option value="">—</option>${PARTNERS.partners.map((p) => `<option value="${p.id}" ${p.id === v.local_parceiro?.id ? 'selected' : ''}>${esc(p.nome)}</option>`).join('')}</select><span class="hint"><button class="linkbtn" type="button" id="ct-pn">+ Cadastrar parceiro</button></span></div>
-        <div class="f"><label for="ct-dt">Data</label><input id="ct-dt" type="date" value="${today()}"></div>
-        <div class="f" style="align-self:end"><button class="btn primary" type="button" id="ct-add">Lançar custo</button></div>
-      </div>
-      <div id="ct-new"></div>
+      <h4>Preparação e custos (manutenção, documentação…)</h4>
+      <div data-prepvid="${v.id}">${prepResumo(v.preparacao, true)}<div class="preplist">${(v.preparacao?.itens || []).map((i) => prepItemHtml(i, true)).join('') || '<p class="sub">Nenhum item lançado.</p>'}</div>
+      ${prepAddHtml(true)}</div>
       ${F.impostos_pct ? `<p class="note">O lucro líquido desconta ${pct(F.impostos_pct)}% de impostos sobre a venda e a comissão do vendedor (ajuste em Configurações &gt; Gestão).</p>` : '<p class="note">Para descontar impostos sobre a venda no lucro líquido, informe o percentual em Configurações &gt; Gestão.</p>'}
       <div class="err" id="fn-err" hidden></div>
       <div class="modal-foot"><button class="btn primary" type="button" id="fn-close">Fechar</button></div>`, true);
@@ -868,22 +781,7 @@
       try { await api('PUT', `/api/vehicles/${id}/finance`, b); await X.loadVehicles(); toast('Valores salvos'); financeModal(id); } catch (e) { err(e.message); }
     };
     if ($('#fn-sale')) $('#fn-sale').onclick = () => saleEditModal(id);
-    $('#ct-pn').onclick = () => partnerInline($('#ct-p'), $('#ct-new'), $('#ct-c').value);
-    $('#ct-add').onclick = async () => {
-      try { await api('POST', `/api/vehicles/${id}/costs`, { status: $('#ct-s').value, categoria: $('#ct-c').value, descricao: $('#ct-d').value, valor: $('#ct-v').value, parceiro_id: $('#ct-p').value, data: $('#ct-dt').value }); await X.loadVehicles(); financeModal(id); }
-      catch (e) { err(e.message); }
-    };
-    $$('[data-dc]').forEach((b) => { b.onclick = async () => { await api('DELETE', `/api/vehicles/${id}/costs/${b.dataset.dc}`); await X.loadVehicles(); financeModal(id); }; });
-    $$('[data-cf]').forEach((b) => { b.onclick = async () => { await api('PUT', `/api/vehicles/${id}/costs/${b.dataset.cf}`, { status: 'realizado' }); await X.loadVehicles(); financeModal(id); }; });
-    $$('[data-ce]').forEach((b) => { b.onclick = () => {
-      const c = F.costs.find((x) => x.id === Number(b.dataset.ce)); if (!c) return;
-      b.closest('.cf').outerHTML = costEditHtml(c, 'fe');
-      $('#fe-x').onclick = () => financeModal(id);
-      $('#fe-ok').onclick = async () => {
-        try { await api('PUT', `/api/vehicles/${id}/costs/${c.id}`, { descricao: $('#fe-d').value, valor: num($('#fe-v').value), categoria: $('#fe-c').value, status: $('#fe-s').value }); await X.loadVehicles(); financeModal(id); }
-        catch (e) { err(e.message); }
-      };
-    }; });
+    prepAddBind(id);
   }
 
   /* ======================= Documentação de transferência ======================= */
@@ -915,101 +813,149 @@
     return `<div class="dsteps" title="${esc(i.status_label)}">${keys.map((k, n) => `<i class="${n <= at ? 'on' : ''}"></i>`).join('')}</div><span class="sub">${esc(i.status_label)}</span>`;
   }
 
-  /* ======================= Preparação dos carros e carros em avaliação (v2.14) ======================= */
-  const PREP_CATS = { funilaria: 'Funilaria e pintura', mecanica: 'Mecânica', eletrica: 'Elétrica e lâmpadas', interior: 'Bancos e interior', estetica: 'Estética e limpeza', pneus: 'Pneus e rodas', vidros: 'Vidros e faróis', outro: 'Outro' };
+  /* ======================= Preparação e custos do carro (v2.14/v2.15) e carros em avaliação ======================= */
+  // Uma lista só por carro: o que falta fazer (preparação) e o que já foi feito, cada item com seu valor.
+  // O valor de um item a fazer é custo previsto; quando o item fica feito, vira custo realizado (lucro previsto e resultados).
+  const PREP_CATS = () => S.me.options.custos || {};
   const prepAbertos = (v) => (v?.preparacao?.itens || []).filter((i) => !i.feito);
-  // Selo no card do carro: "🔧 3 a preparar" (abre a lista) ou "✓ preparado".
-  function prepPill(v, curto) {
-    const p = v?.preparacao; if (!p || !p.total) return '';
-    if (!p.abertos) return '<span class="pill p-ok" title="Todos os itens de preparação feitos">✓ preparado</span>';
+  // Selo no card do carro: "🔧 3 a preparar" (abre a lista).
+  function prepPill(v) {
+    const p = v?.preparacao; if (!p || !p.abertos) return '';
     const lista = prepAbertos(v).map((i) => i.descricao).join(' · ');
-    return `<button class="pill ${p.atrasados ? 'p-bad' : 'p-warn'} badge-btn" type="button" data-prepv="${v.id}" title="${esc(lista)}">🔧 ${p.abertos} ${curto ? '' : p.abertos === 1 ? 'a preparar' : 'a preparar'}</button>`;
+    return `<button class="pill ${p.atrasados ? 'p-bad' : 'p-warn'} badge-btn" type="button" data-prepv="${v.id}" title="${esc(lista)}">🔧 ${p.abertos} a preparar</button>`;
   }
-  const prepItemHtml = (i, fin) => `<div class="prepi ${i.feito ? 'ok' : ''} ${i.atrasado ? 'late' : ''}">
-      <button class="prepck" type="button" data-prepok="${i.id}" data-feito="${i.feito ? 1 : 0}" title="${i.feito ? 'Desfazer' : 'Marcar como feito'}" aria-label="${i.feito ? 'Desfazer' : 'Marcar como feito'}">${i.feito ? '✓' : ''}</button>
-      <div class="prept"><b>${esc(i.descricao)}</b><span class="sub">${esc(i.categoria_label)}${i.status === 'andamento' ? ' · <span class="pill p-info">em andamento</span>' : ''}${i.prazo ? ` · ${i.atrasado ? '<span class="neg">' : ''}até ${fmtDate(i.prazo)}${i.atrasado ? '</span>' : ''}` : ''}${fin && i.custo ? ` · ${brl(i.custo)}` : ''}${i.feito && i.feito_em ? ` · feito em ${fmtDate(i.feito_em)}` : ''}</span></div>
-      <div class="prepa">${!i.feito ? `<button class="linkbtn" type="button" data-prepand="${i.id}" data-st="${i.status === 'andamento' ? 'pendente' : 'andamento'}">${i.status === 'andamento' ? 'parar' : 'iniciar'}</button>` : ''}<button class="linkbtn danger" type="button" data-prepdel="${i.id}" title="Excluir">✕</button></div></div>`;
+  const prepItemHtml = (i, fin) => `<div class="prepi ${i.feito ? 'ok' : ''} ${i.atrasado ? 'late' : ''}" data-prepid="${i.id}">
+      <button class="prepck" type="button" data-prepok="${i.id}" data-feito="${i.feito ? 1 : 0}" title="${i.feito ? 'Voltar para a fazer' : 'Marcar como feito'}" aria-label="${i.feito ? 'Voltar para a fazer' : 'Marcar como feito'}">${i.feito ? '✓' : ''}</button>
+      <div class="prept"><b>${esc(i.descricao)}</b><span class="sub">${esc(i.categoria_label)}${i.parceiro_nome ? ` · ${esc(i.parceiro_nome)}` : ''}${i.status === 'andamento' ? ' · <span class="pill p-info">em andamento</span>' : ''}${!i.feito && i.prazo ? ` · ${i.atrasado ? '<span class="neg">' : ''}até ${fmtDate(i.prazo)}${i.atrasado ? '</span>' : ''}` : ''}${i.feito && i.feito_em ? ` · feito em ${fmtDate(i.feito_em)}` : ''}</span></div>
+      <div class="prepa">${fin && i.custo ? `<span class="prepv ${i.feito ? '' : 'prev'}" title="${i.feito ? 'Custo realizado' : 'Custo previsto'}">${brl(i.custo)}</span>` : ''}${!i.feito ? `<button class="linkbtn" type="button" data-prepand="${i.id}" data-st="${i.status === 'andamento' ? 'pendente' : 'andamento'}">${i.status === 'andamento' ? 'parar' : 'iniciar'}</button>` : ''}<button class="linkbtn" type="button" data-prepedit="${i.id}" title="Editar">editar</button><button class="linkbtn danger" type="button" data-prepdel="${i.id}" title="Excluir">✕</button></div></div>`;
+  const parceiroSel = (id, val) => (PARTNERS?.partners?.length ? `<select id="${id}" aria-label="Parceiro"><option value="">Parceiro (opcional)</option>${PARTNERS.partners.map((p) => `<option value="${p.id}" ${String(p.id) === String(val || '') ? 'selected' : ''}>${esc(p.nome)}</option>`).join('')}</select>` : '');
   const prepAddHtml = (fin) => `<div class="prepadd">
-      <textarea id="pp-txt" rows="3" placeholder="O que precisa arrumar? Um item por linha. Ex.: repintar para-choque traseiro&#10;trocar lâmpada do farol esquerdo&#10;costurar rasgo do banco do motorista"></textarea>
-      <div class="prepaddf"><select id="pp-cat" aria-label="Categoria"><option value="">Categoria automática</option>${opt(Object.entries(PREP_CATS), '')}</select>
-      ${fin ? '<input id="pp-custo" inputmode="numeric" placeholder="Custo previsto (R$)" aria-label="Custo previsto">' : ''}<input id="pp-prazo" type="date" aria-label="Prazo" title="Prazo (opcional)">
+      <textarea id="pp-txt" rows="3" placeholder="O que precisa fazer ou o que já foi feito? Um item por linha. Ex.: repintar para-choque traseiro&#10;trocar lâmpada do farol esquerdo&#10;costurar rasgo do banco do motorista"></textarea>
+      <div class="prepaddf"><select id="pp-st" aria-label="Situação"><option value="pendente">A fazer</option><option value="feito">Já feito</option></select>
+      <select id="pp-cat" aria-label="Categoria"><option value="">Categoria automática</option>${opt(Object.entries(PREP_CATS()), '')}</select>
+      ${fin ? '<input id="pp-custo" inputmode="numeric" placeholder="Valor (R$)" aria-label="Valor">' : ''}<input id="pp-prazo" type="date" aria-label="Prazo ou data" title="Prazo (a fazer) ou data (já feito)">${parceiroSel('pp-p')}
       <button class="btn primary sm" type="button" id="pp-add">Adicionar</button></div></div>`;
-  const prepLer = () => ({ itens: ($('#pp-txt')?.value || '').split('\n').map((s) => s.trim()).filter(Boolean).map((descricao) => ({ descricao, categoria: $('#pp-cat')?.value || '', custo: $('#pp-custo')?.value || '', prazo: $('#pp-prazo')?.value || '' })) });
+  const prepLer = () => {
+    const st = $('#pp-st')?.value || 'pendente'; const dt = $('#pp-prazo')?.value || '';
+    return { itens: ($('#pp-txt')?.value || '').split('\n').map((s) => s.trim()).filter(Boolean).map((descricao) => ({ descricao, status: st, categoria: $('#pp-cat')?.value || '', custo: $('#pp-custo')?.value || '', prazo: st === 'feito' ? '' : dt, data: st === 'feito' ? dt : '', parceiro_id: $('#pp-p')?.value || '' })) };
+  };
+  const prepResumo = (p, fin) => {
+    if (!p?.total) return '';
+    return `<div class="prepsum"><span><b>${p.abertos}</b> a fazer${fin && p.custo_aberto ? ` · previsto <b>${brl(p.custo_aberto)}</b>` : ''}</span><span><b>${p.feitos}</b> feito(s)${fin && p.custo_feito ? ` · gasto <b>${brl(p.custo_feito)}</b>` : ''}</span></div>`;
+  };
 
   async function prepRefresh() {
     await X.loadVehicles();
-    if (S.view === 'novo') { const d = S.draft; const v = d?.id && S.vehicles.find((x) => x.id === d.id); if (v) { d.preparacao = v.preparacao; prepFormPanel(true); } }
+    if (S.view === 'novo') { const d = S.draft; const v = d?.id && S.vehicles.find((x) => x.id === d.id); if (v) { d.preparacao = v.preparacao; prepFormPanel(true); gestaoSync(); } }
     else if (!$('#scrim') || $('#prepModal')) X.render();
   }
   // Ações nos itens (valem em qualquer tela: modal, formulário, gestão e painel).
   document.addEventListener('click', async (e) => {
-    const b = e.target.closest('[data-prepv],[data-prepok],[data-prepand],[data-prepdel],[data-prepest]'); if (!b) return;
+    const b = e.target.closest('[data-prepv],[data-prepok],[data-prepand],[data-prepdel],[data-prepest],[data-prepedit]'); if (!b) return;
     e.preventDefault(); e.stopPropagation();
+    const vid = () => Number(b.closest('[data-prepvid]')?.dataset.prepvid || 0);
+    const reabrir = async () => { await prepRefresh(); if ($('#prepModal') && vid()) prepModal(vid()); else if ($('#finModal') && vid()) financeModal(vid()); };
     try {
       if (b.dataset.prepv) return prepModal(Number(b.dataset.prepv));
       if (b.dataset.prepest) {
         const v = await api('POST', `/api/vehicles/${b.dataset.prepest}/estoque`);
         toast(`${v.marca} ${v.modelo} entrou no estoque${v.status === 'rascunho' ? ' (complete o cadastro para publicar)' : ''}`, 5000);
-        if (S.view === 'novo' && S.draft?.id === v.id) { S.draft.status = v.status; }
         await X.loadVehicles(); if (S.view === 'novo') X.go('estoque'); else X.render();
         return;
+      }
+      if (b.dataset.prepedit) return prepEdit(b.closest('.prepi'), Number(b.dataset.prepedit), reabrir);
+      if (b.dataset.prepdel) {
+        const row = b.closest('.prepi');
+        return confirmBox('Excluir este item?', `"${esc(row?.querySelector('b')?.textContent || '')}" sai da lista do carro${can('financeiro') ? ' e o valor dele sai dos custos' : ''}.`, 'Excluir', async () => {
+          await api('DELETE', `/api/preparacao/${b.dataset.prepdel}`); toast('Item excluído'); await reabrir();
+        }, true);
       }
       b.disabled = true;
       if (b.dataset.prepok) await api('PUT', `/api/preparacao/${b.dataset.prepok}`, { status: b.dataset.feito === '1' ? 'pendente' : 'feito' });
       if (b.dataset.prepand) await api('PUT', `/api/preparacao/${b.dataset.prepand}`, { status: b.dataset.st });
-      if (b.dataset.prepdel) await api('DELETE', `/api/preparacao/${b.dataset.prepdel}`);
-      const vid = Number(b.closest('[data-prepvid]')?.dataset.prepvid || 0);
-      await prepRefresh();
-      if ($('#prepModal') && vid) prepModal(vid);
+      await reabrir();
     } catch (err) { toast(err.message); b.disabled = false; }
   }, true);
 
+  // Edição do item na própria linha.
+  function prepEdit(row, id, done) {
+    const v = S.vehicles.find((x) => (x.preparacao?.itens || []).some((i) => i.id === id));
+    const i = v?.preparacao.itens.find((x) => x.id === id); if (!row || !i) return;
+    const fin = can('financeiro');
+    row.outerHTML = `<div class="prepedit" id="pe-row"><input id="pe-d" value="${esc(i.descricao)}" aria-label="Descrição">
+      <div class="prepaddf"><select id="pe-st" aria-label="Situação">${Object.entries({ pendente: 'A fazer', andamento: 'Em andamento', feito: 'Feito' }).map(([k, l]) => `<option value="${k}" ${k === i.status ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <select id="pe-c" aria-label="Categoria">${opt(Object.entries(PREP_CATS()), i.categoria)}</select>
+      ${fin ? `<input id="pe-v" inputmode="numeric" placeholder="Valor (R$)" value="${i.custo || ''}" aria-label="Valor">` : ''}<input id="pe-dt" type="date" value="${esc((i.feito ? i.feito_em : i.prazo) || '')}" title="Prazo (a fazer) ou data (feito)" aria-label="Data">${parceiroSel('pe-p', i.parceiro_id)}
+      <button class="btn sm" type="button" id="pe-x">Cancelar</button><button class="btn sm primary" type="button" id="pe-ok">Salvar</button></div></div>`;
+    $('#pe-d').focus();
+    $('#pe-x').onclick = () => done();
+    $('#pe-ok').onclick = async () => {
+      const st = $('#pe-st').value; const dt = $('#pe-dt').value;
+      const body = { descricao: $('#pe-d').value, status: st, categoria: $('#pe-c').value, prazo: st === 'feito' ? i.prazo : dt, data: st === 'feito' ? dt : undefined };
+      if ($('#pe-v')) body.custo = $('#pe-v').value;
+      if ($('#pe-p')) body.parceiro_id = $('#pe-p').value;
+      try { await api('PUT', `/api/preparacao/${id}`, body); toast('Item atualizado'); await done(); } catch (err) { toast(err.message); }
+    };
+  }
+  function prepAddBind(vehicleId, onLocal) {
+    $('#pp-add').onclick = async () => {
+      const b = prepLer(); if (!b.itens.length) { $('#pp-txt').focus(); return; }
+      if (!vehicleId) return onLocal(b.itens);
+      try {
+        await api('POST', `/api/vehicles/${vehicleId}/preparacao`, b);
+        toast(b.itens.length === 1 ? 'Item adicionado' : `${b.itens.length} itens adicionados`);
+        await prepRefresh(); if ($('#prepModal')) prepModal(vehicleId); else if ($('#finModal')) financeModal(vehicleId);
+      } catch (err) { toast(err.message, 6000); }
+    };
+    if ($('#pp-st')) $('#pp-st').onchange = () => { $('#pp-prazo').title = $('#pp-st').value === 'feito' ? 'Data em que foi feito' : 'Prazo (opcional)'; };
+  }
+
   async function prepModal(vid) {
-    await X.loadVehicles();
+    await Promise.all([X.loadVehicles(), loadPartners().catch(() => null)]);
     const v = S.vehicles.find((x) => x.id === vid); if (!v) return;
     const fin = can('financeiro');
     const it = v.preparacao?.itens || [];
-    modal(`<div id="prepModal" data-prepvid="${v.id}"><h3>Preparação · ${esc(v.marca)} ${esc(v.modelo)} <span class="sub">${esc(v.placa || '')}</span></h3>
-      <p class="sub" style="margin:0 0 8px">${v.preparacao?.abertos ? `${v.preparacao.abertos} item(ns) a fazer` : it.length ? 'Tudo pronto ✓' : 'Nada anotado ainda.'}${fin && v.preparacao?.custo_aberto ? ` · custo previsto ${brl(v.preparacao.custo_aberto)} (já entra no lucro previsto do carro)` : ''}</p>
+    modal(`<div id="prepModal" data-prepvid="${v.id}"><h3>Preparação e custos · ${esc(v.marca)} ${esc(v.modelo)} <span class="sub">${esc(v.placa || '')}</span></h3>
+      ${prepResumo(v.preparacao, fin) || '<p class="sub" style="margin:0 0 8px">Nada anotado ainda.</p>'}
       <div class="preplist">${it.map((i) => prepItemHtml(i, fin)).join('')}</div>
       ${prepAddHtml(fin)}
-      <div class="err" id="pp-err" hidden></div>
       <div class="modal-foot">${v.status === 'avaliacao' && can('cadastrar') ? `<button class="btn" type="button" data-prepest="${v.id}">Passar para o estoque</button>` : ''}<button class="btn" data-close type="button">Fechar</button></div></div>`, true);
-    $('#pp-add').onclick = async () => {
-      const b = prepLer(); if (!b.itens.length) { $('#pp-txt').focus(); return; }
-      try { await api('POST', `/api/vehicles/${v.id}/preparacao`, b); await prepRefresh(); prepModal(v.id); toast(b.itens.length === 1 ? 'Item adicionado' : `${b.itens.length} itens adicionados`); }
-      catch (err) { $('#pp-err').textContent = err.message; $('#pp-err').hidden = false; }
-    };
+    prepAddBind(v.id);
     setTimeout(() => $('#pp-txt')?.focus(), 30);
   }
 
-  // Formulário do carro: entrada (estoque ou avaliação) e a lista de preparação.
+  // Formulário do carro: entrada (estoque ou avaliação) e a lista única de preparação e custos.
   function prepFormPanel(atualizar) {
     const d = S.draft; if (!d) return;
     const fin = can('financeiro');
     if (!d.id && X._novoAval) { d.avaliacao = true; X._novoAval = false; }
     const aval = d.id ? d.status === 'avaliacao' : !!d.avaliacao;
-    const novos = d._prepNovos || [];
+    const novos = d._prepNovos || (d._prepNovos = []);
     const itens = d.id ? (d.preparacao?.itens || []) : [];
-    const html = `<div class="panel" id="prepPanel" data-prepvid="${d.id || ''}"><h2>Entrada e preparação</h2>
+    const html = `<div class="panel" id="prepPanel" data-prepvid="${d.id || ''}"><h2>Entrada, preparação e custos</h2>
       ${!d.id ? `<div class="entradas" role="radiogroup" aria-label="Este carro entra como">
           <label class="ent"><input type="radio" name="v-entrada" value="estoque" ${aval ? '' : 'checked'}><span><b>Estoque</b><em>Já é da loja: entra no estoque e pode ser publicado.</em></span></label>
           <label class="ent"><input type="radio" name="v-entrada" value="avaliacao" ${aval ? 'checked' : ''}><span><b>Em avaliação</b><em>Ainda avaliando a compra/troca. Fica na lista marcado, fora da vitrine e das publicações.</em></span></label></div>`
         : aval ? `<div class="warnbox conn-row"><span><b>Carro em avaliação.</b> Não aparece na vitrine nem pode ser publicado.</span>${can('cadastrar') ? `<button class="btn primary sm" type="button" data-prepest="${d.id}">Passar para o estoque</button>` : ''}</div>` : ''}
-      <p class="lead" style="margin-top:10px">Pendências de preparação: o que precisa arrumar antes de vender. ${d.id ? 'Marque como feito quando ficar pronto.' : 'Ficam salvas junto com o carro.'}</p>
-      <div class="preplist">${itens.map((i) => prepItemHtml(i, fin)).join('')}${novos.map((n, k) => `<div class="prepi"><span class="prepck" aria-hidden="true"></span><div class="prept"><b>${esc(n.descricao)}</b><span class="sub">${n.categoria ? esc(PREP_CATS[n.categoria]) : 'categoria automática'}${fin && n.custo ? ` · R$ ${esc(n.custo)}` : ''}${n.prazo ? ` · até ${fmtDate(n.prazo)}` : ''}</span></div><div class="prepa"><button class="linkbtn danger" type="button" data-prepnovo="${k}">✕</button></div></div>`).join('')}</div>
+      <p class="lead" style="margin-top:10px">Tudo o que o carro precisa ou já recebeu: o que falta arrumar antes de vender e as manutenções e gastos já feitos.${fin ? ' O valor de cada item entra no lucro previsto: a fazer = previsto, feito = realizado.' : ''} Marque ✓ quando ficar pronto.</p>
+      ${d.id ? prepResumo(d.preparacao, fin) : ''}
+      <div class="preplist">${itens.map((i) => prepItemHtml(i, fin)).join('')}${novos.map((n, k) => `<div class="prepi ${n.status === 'feito' ? 'ok' : ''}"><span class="prepck" aria-hidden="true">${n.status === 'feito' ? '✓' : ''}</span><div class="prept"><b>${esc(n.descricao)}</b><span class="sub">${n.categoria ? esc(PREP_CATS()[n.categoria] || n.categoria) : 'categoria automática'} · <span class="pill p-muted">a salvar</span>${n.prazo ? ` · até ${fmtDate(n.prazo)}` : ''}</span></div><div class="prepa">${fin && num(n.custo) ? `<span class="prepv ${n.status === 'feito' ? '' : 'prev'}">${brl(num(n.custo))}</span>` : ''}<button class="linkbtn danger" type="button" data-prepnovo="${k}">✕</button></div></div>`).join('')}</div>
       ${prepAddHtml(fin)}</div>`;
     const atual = $('#prepPanel');
     if (atual) { if (!atualizar) return; atual.outerHTML = html; }
     else { const alvo = $('#vfDados'); if (!alvo) return; alvo.insertAdjacentHTML('beforebegin', html); }
     $$('input[name="v-entrada"]').forEach((r) => { r.onchange = () => { d.avaliacao = r.value === 'avaliacao' && r.checked; const sp = $('#salvarPub'); if (sp) sp.hidden = d.avaliacao; }; });
     if ($('#salvarPub')) $('#salvarPub').hidden = aval;
-    $$('[data-prepnovo]').forEach((b) => { b.onclick = () => { novos.splice(Number(b.dataset.prepnovo), 1); prepFormPanel(true); }; });
-    $('#pp-add').onclick = async () => {
-      const b = prepLer(); if (!b.itens.length) { $('#pp-txt').focus(); return; }
-      if (d.id) { try { await api('POST', `/api/vehicles/${d.id}/preparacao`, b); await prepRefresh(); toast('Adicionado à preparação'); } catch (err) { toast(err.message); } return; }
-      d._prepNovos = [...novos, ...b.itens]; prepFormPanel(true);
-    };
+    $$('[data-prepnovo]').forEach((b) => { b.onclick = () => { novos.splice(Number(b.dataset.prepnovo), 1); prepFormPanel(true); gestaoSync(); }; });
+    prepAddBind(d.id, (itensNovos) => { d._prepNovos = [...novos, ...itensNovos]; prepFormPanel(true); gestaoSync(); });
+    if (!PARTNERS) loadPartners().then(() => { if ($('#prepPanel') && !$('#pp-p') && PARTNERS?.partners?.length) prepFormPanel(true); }).catch(() => {});
+  }
+  // Soma dos itens (salvos e ainda não salvos) para a previsão de lucro do formulário.
+  function prepTotais(d) {
+    const salvos = d?.id ? (d.preparacao?.itens || []) : [];
+    const novos = d?._prepNovos || [];
+    const all_ = [...salvos.map((i) => ({ feito: i.feito, v: i.custo || 0 })), ...novos.map((n) => ({ feito: n.status === 'feito', v: num(n.custo) }))];
+    return { feitos: all_.filter((x) => x.feito).reduce((s, x) => s + x.v, 0), prev: all_.filter((x) => !x.feito).reduce((s, x) => s + x.v, 0) };
   }
   const afterSaveAntes = X.afterSave;
   X.afterSave = async (v, d) => {
@@ -1458,6 +1404,7 @@
       api('GET', '/api/store/schedule').catch(() => null), api('GET', '/api/store/photos').catch(() => null), owner() ? api('GET', '/api/team').catch(() => null) : null,
     ]);
     setTimeout(ctConfigPanel, 0);
+    setTimeout(vozConfigPanel, 0);
     const st = S.me.store;
     const dias = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
     const cfgOk = can('config');
@@ -1532,7 +1479,7 @@
     ['loja', 'Loja e equipe', /^(Loja|Equipe|Dados da loja|Gestão|Painel na TV|Logo|Imagem para divulga)/i],
     ['publicacao', 'Publicação e fotos', /^(Facebook e Instagram|Publicação no Marketplace|Extensão do Chrome|Republicação|Fotos prontas|Grupos de repasse|Repasse)/i],
     ['mensagens', 'WhatsApp', /^WhatsApp/i],
-    ['conta', 'Minha conta', /^(Minha senha|App no celular)/i],
+    ['conta', 'Minha conta', /^(Minha senha|App no celular|Comandos de voz)/i],
     ['sistema', 'Sistema (administrador)', /^(Inteligência artificial|Imagens com IA|Armazenamento|App da Meta|App do Instagram)/i],
   ];
   function cfgCat(panel) {
@@ -3061,6 +3008,104 @@
   // Atalho a partir do carro (popup do veículo).
   X.contratoDoCarro = (id) => { KT.preVehicle = id; KT.modo = 'lista'; KT.ed = null; closeModal(); if (location.hash === '#contratos') X.render(); else location.hash = 'contratos'; };
 
+  /* ======================= Comandos de voz (v2.15) ======================= */
+  // Botão de microfone: o usuário fala (ou digita) e o GiroAuto entende e faz, depois de um toque para confirmar.
+  const VZ = { rec: null, media: null, chunks: [], r: null };
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  function vozFab() {
+    if ($('#vozFab') || !S.me) return;
+    document.body.insertAdjacentHTML('beforeend', '<button id="vozFab" type="button" title="Comando de voz: fale o que aconteceu e o GiroAuto atualiza" aria-label="Comando de voz"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>');
+    $('#vozFab').onclick = () => vozModal();
+    if (!$('#vozSide')) $('.side-foot .store')?.insertAdjacentHTML('beforebegin', '<button class="btn sm" id="vozSide" type="button" title="Fale o que aconteceu e o GiroAuto atualiza">🎤 Comando de voz</button>');
+    if ($('#vozSide')) $('#vozSide').onclick = () => vozModal();
+  }
+  function vozModal() {
+    VZ.r = null;
+    modal(`<div id="vozBox"><h3>🎤 Comando de voz</h3>
+      <p class="sub" style="margin:0 0 10px">Fale do jeito que contaria para alguém da loja. Ex.: <i>"o Jetta 2013 preto ficou pronto na oficina e está no pátio"</i>, <i>"inclua na Ecosport 2009 alinhamento e balanceamento"</i>, <i>"a conta de energia foi paga"</i>.</p>
+      <div class="vozmic"><button class="vozbtn" id="vz-mic" type="button" aria-label="Falar">🎤</button><span id="vz-st" class="sub">Toque no microfone e fale. Toque de novo para parar.</span></div>
+      <textarea id="vz-t" rows="2" placeholder="…ou digite o comando aqui"></textarea>
+      <div class="btnrow" style="margin-top:6px"><button class="btn primary" id="vz-go" type="button">Entender</button></div>
+      <div id="vz-out"></div>
+      <div class="modal-foot"><button class="btn" data-close type="button">Fechar</button></div></div>`, true);
+    $('#vz-mic').onclick = () => (VZ.ativo ? vozParar() : vozOuvir());
+    $('#vz-go').onclick = () => vozEnviar({ texto: $('#vz-t').value });
+    $('#vz-t').onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#vz-go').click(); } };
+    setTimeout(() => vozOuvir(), 150);
+  }
+  const vzSt = (t) => { if ($('#vz-st')) $('#vz-st').textContent = t; };
+  function vozOuvir() {
+    if (SR) {
+      const rec = new SR(); VZ.rec = rec; VZ.ativo = true; VZ.final = '';
+      rec.lang = 'pt-BR'; rec.interimResults = true; rec.continuous = false;
+      rec.onresult = (e) => { let txt = ''; for (const r of e.results) txt += r[0].transcript; $('#vz-t').value = txt; if (e.results[e.results.length - 1].isFinal) VZ.final = txt; };
+      rec.onerror = (e) => { VZ.ativo = false; $('#vz-mic')?.classList.remove('on'); vzSt(e.error === 'not-allowed' ? 'Microfone bloqueado: libere o microfone para este site ou digite o comando.' : 'Não ouvi direito. Toque e fale de novo, ou digite.'); };
+      rec.onend = () => { VZ.ativo = false; $('#vz-mic')?.classList.remove('on'); const t = ($('#vz-t')?.value || '').trim(); if (t && !VZ.enviando) vozEnviar({ texto: t }); else if (!t) vzSt('Toque no microfone e fale.'); };
+      try { rec.start(); $('#vz-mic').classList.add('on'); vzSt('Ouvindo…'); } catch { VZ.ativo = false; }
+      return;
+    }
+    // Sem reconhecimento de fala no navegador: grava o áudio e manda para a IA transcrever.
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) { vzSt('Este navegador não grava áudio. Digite o comando.'); return; }
+    navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+      const mr = new MediaRecorder(stream); VZ.media = mr; VZ.chunks = []; VZ.ativo = true;
+      mr.ondataavailable = (e) => { if (e.data.size) VZ.chunks.push(e.data); };
+      mr.onstop = () => { stream.getTracks().forEach((t) => t.stop()); VZ.ativo = false; $('#vz-mic')?.classList.remove('on'); const blob = new Blob(VZ.chunks, { type: mr.mimeType || 'audio/webm' }); if (VZ.descartar) { VZ.descartar = false; return; } if (blob.size > 2000) vozEnviar({ audio: blob }); else vzSt('Não gravou nada. Tente de novo.'); };
+      VZ.descartar = false; mr.start(); $('#vz-mic').classList.add('on'); vzSt('Gravando… toque de novo para enviar.');
+      setTimeout(() => { if (mr.state === 'recording') mr.stop(); }, 30000);
+    }).catch(() => vzSt('Microfone bloqueado: libere o microfone para este site ou digite o comando.'));
+  }
+  function vozParar() { try { VZ.rec?.stop(); } catch { /* já parou */ } try { if (VZ.media?.state === 'recording') VZ.media.stop(); } catch { /* já parou */ } }
+  async function vozEnviar({ texto, audio }) {
+    if (!texto?.trim() && !audio) { $('#vz-t').focus(); return; }
+    if (!audio && VZ.ativo) { VZ.descartar = true; vozParar(); }
+    VZ.enviando = true; vzSt('Entendendo…'); $('#vz-go').disabled = true;
+    try {
+      let r;
+      if (audio) { const fd = new FormData(); fd.append('audio', audio, 'comando.webm'); r = await api('POST', '/api/voz/interpretar', fd); }
+      else r = await api('POST', '/api/voz/interpretar', { texto });
+      VZ.r = r; if (r.transcricao && $('#vz-t')) $('#vz-t').value = r.transcricao;
+      vozMostrar(r); vzSt('Confira e confirme.');
+    } catch (e) { vzSt(e.message); }
+    VZ.enviando = false; if ($('#vz-go')) $('#vz-go').disabled = false;
+  }
+  function vozMostrar(r) {
+    const ok = r.acoes.filter((a) => a.ok);
+    $('#vz-out').innerHTML = `${r.duvida ? `<div class="warnbox" style="margin-top:10px">${esc(r.duvida)}</div>` : ''}
+      ${r.acoes.length ? `<div class="vzacoes">${r.acoes.map((a, i) => `<label class="vza ${a.ok ? '' : 'bad'}"><input type="checkbox" data-vza="${i}" ${a.ok ? 'checked' : 'disabled'}><span><b>${esc(a.tipo_label)}</b><br>${esc(a.texto || '')}${a.ok ? '' : `<br><span class="neg">${esc(a.erro)}</span>`}</span></label>`).join('')}</div>` : (r.duvida ? '' : `<div class="warnbox" style="margin-top:10px">${esc(r.resposta || 'Não entendi o que fazer. Fale o modelo do carro e o que aconteceu.')}</div>`)}
+      ${ok.length ? `<div class="btnrow" style="margin-top:8px"><button class="btn primary" id="vz-ok" type="button">Confirmar e fazer</button></div>` : ''}`;
+    if ($('#vz-ok')) $('#vz-ok').onclick = async () => {
+      const sel = $$('[data-vza]').filter((c) => c.checked).map((c) => r.acoes[Number(c.dataset.vza)]);
+      if (!sel.length) return;
+      $('#vz-ok').disabled = true;
+      try {
+        const x = await api('POST', '/api/voz/executar', { acoes: sel });
+        toast(x.fala, 7000); closeModal(); await X.loadVehicles(); X.render();
+      } catch (e) { toast(e.message); $('#vz-ok').disabled = false; }
+    };
+  }
+  // Configurações > Minha conta: chave para usar pela Siri (Atalhos do iPhone), Alexa e outros assistentes.
+  async function vozConfigPanel() {
+    const col = $('#cfgV2'); if (!col || $('#cfgVoz')) return;
+    const st = await api('GET', '/api/voz/chave').catch(() => null); if (!st || $('#cfgVoz')) return;
+    const passos = (chave) => `<ol class="note" style="padding-left:18px;display:flex;flex-direction:column;gap:4px;margin:8px 0">
+        <li>No iPhone, abra o app <b>Atalhos</b> e toque em <b>+</b>. Dê o nome <b>GiroAuto</b>.</li>
+        <li>Adicione a ação <b>Ditar Texto</b> (idioma Português).</li>
+        <li>Adicione <b>Obter Conteúdo do URL</b>: URL <code>${esc(st.url)}</code>, Método <b>POST</b>, Cabeçalho <code>Authorization</code> = <code>Bearer ${esc(chave || 'SUA-CHAVE')}</code>, Corpo <b>JSON</b> com o campo <code>texto</code> = <i>Texto Ditado</i>.</li>
+        <li>Adicione <b>Obter Valor do Dicionário</b> com a chave <code>fala</code> e depois <b>Falar Texto</b>.</li>
+        <li>Pronto: diga <b>"E aí Siri, GiroAuto"</b> e fale o comando. Ela responde o que foi feito.</li></ol>`;
+    col.insertAdjacentHTML('beforeend', `<div class="panel" id="cfgVoz"><h2>Comandos de voz</h2>
+      <p class="lead">Use o botão 🎤 no canto da tela (computador ou celular) para falar o que aconteceu, e o GiroAuto atualiza depois de você confirmar. Para usar pela <b>Siri</b> ou por outro assistente, gere a sua chave pessoal: ela age com as permissões do seu usuário.</p>
+      <div id="vz-cfg">${st.ativa ? '<div class="okbox">Chave ativa. Por segurança ela só aparece quando é gerada; gere outra se precisar configurar de novo.</div>' : ''}</div>
+      <div class="btnrow" style="margin-top:8px"><button class="btn" type="button" id="vz-gen">${st.ativa ? 'Gerar nova chave' : 'Gerar chave para a Siri'}</button>${st.ativa ? '<button class="btn ghost danger" type="button" id="vz-del">Desativar chave</button>' : ''}</div>
+      <details style="margin-top:8px"><summary class="sub">Como configurar na Siri (iPhone)</summary>${passos('')}</details></div>`);
+    $('#vz-gen').onclick = async () => {
+      const r = await api('POST', '/api/voz/chave');
+      $('#vz-cfg').innerHTML = `<div class="okbox">Sua chave (copie agora, ela não aparece de novo):<div class="obrow" style="margin-top:6px"><input readonly value="${esc(r.chave)}" id="vz-k"><button class="btn sm" type="button" id="vz-cp">Copiar</button></div></div>${passos(r.chave)}`;
+      $('#vz-cp').onclick = async () => { try { await navigator.clipboard.writeText(r.chave); toast('Chave copiada'); } catch { $('#vz-k').select(); } };
+    };
+    if ($('#vz-del')) $('#vz-del').onclick = () => confirmBox('Desativar a chave?', 'A Siri e outros assistentes configurados com ela param de funcionar.', 'Desativar', async () => { await api('DELETE', '/api/voz/chave'); toast('Chave desativada'); $('#cfgVoz').remove(); vozConfigPanel(); }, true);
+  }
+
   /* ======================= Navegação e app instalável ======================= */
   function navSetup() {
     const nav = $('.nav'); if (!nav || $('[data-view="gestao"]')) return;
@@ -3085,6 +3130,7 @@
   X.after = (view) => {
     navSetup();
     crBadge();
+    vozFab();
     const atual = view === 'novo' || view === 'importar' || view === 'rapido' ? 'estoque' : view;
     $$('.nav button').forEach((b) => { if (b.dataset.view === atual) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
     if (view === 'novo') enhanceForm();
