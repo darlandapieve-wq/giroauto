@@ -206,6 +206,7 @@
 
   function enhanceForm() {
     const d = S.draft; if (!d) return;
+    if (can('cadastrar') || can('gestao')) prepFormPanel();
     // Busca pela placa no topo do formulário
     const dados = $('#v-marca')?.closest('.panel');
     if (dados && !$('#plateBar') && can('cadastrar')) {
@@ -496,11 +497,12 @@
     const head = $('.head');
     if (head && !$('#stockTools')) {
       head.querySelector('.btn.primary')?.insertAdjacentHTML('beforebegin', `<div class="btnrow" id="stockTools" style="gap:6px;flex-wrap:wrap">
-        ${can('cadastrar') ? '<button class="btn" type="button" id="goImport">Importar planilha</button>' : ''}
+        ${can('cadastrar') ? '<button class="btn" type="button" id="goAval" title="Cadastrar um carro que ainda está em avaliação (compra ou troca)">+ Avaliação</button><button class="btn" type="button" id="goImport">Importar planilha</button>' : ''}
         ${can('cadastrar') && isMobile() ? '<button class="btn" type="button" id="goQuick">Cadastro rápido</button>' : ''}
         <a class="btn" href="/tv/${esc(S.me.store.slug)}" target="_blank" rel="noopener" title="Abra no computador ligado à TV ou monitor da loja">Painel TV</a>
         <a class="btn" id="goVitrine" href="${esc(S.me.vitrine_url || `/v/${S.me.store.slug}`)}" target="_blank" rel="noopener" title="Site público da loja com os carros disponíveis: é o link para mandar aos clientes">Vitrine da loja</a></div>`);
       $('#goImport') && ($('#goImport').onclick = () => X.go('importar'));
+      $('#goAval') && ($('#goAval').onclick = () => { S.draft = null; X._novoAval = true; X.go('novo'); });
       $('#goQuick') && ($('#goQuick').onclick = () => X.go('rapido'));
       if (head.querySelector('#stockTools')) head.style.flexWrap = 'wrap';
     }
@@ -522,6 +524,7 @@
       row.dataset.v2 = '1';
       const st = row.querySelector('.state');
       if (st) {
+        if (v.status !== 'vendido' && v.preparacao?.total) st.insertAdjacentHTML('beforeend', prepPill(v));
         if (v.parado) st.insertAdjacentHTML('beforeend', `<button class="pill p-warn badge-btn" type="button" data-parado="${v.id}" title="Sugerir oferta">Parado ${v.dias_estoque} dias</button>`);
         if (v.local_status && v.local_status !== 'patio') {
           const txt = `${esc(v.local_label)}${v.local_parceiro ? ': ' + esc(v.local_parceiro.nome) : ''}`;
@@ -912,6 +915,108 @@
     return `<div class="dsteps" title="${esc(i.status_label)}">${keys.map((k, n) => `<i class="${n <= at ? 'on' : ''}"></i>`).join('')}</div><span class="sub">${esc(i.status_label)}</span>`;
   }
 
+  /* ======================= Preparação dos carros e carros em avaliação (v2.14) ======================= */
+  const PREP_CATS = { funilaria: 'Funilaria e pintura', mecanica: 'Mecânica', eletrica: 'Elétrica e lâmpadas', interior: 'Bancos e interior', estetica: 'Estética e limpeza', pneus: 'Pneus e rodas', vidros: 'Vidros e faróis', outro: 'Outro' };
+  const prepAbertos = (v) => (v?.preparacao?.itens || []).filter((i) => !i.feito);
+  // Selo no card do carro: "🔧 3 a preparar" (abre a lista) ou "✓ preparado".
+  function prepPill(v, curto) {
+    const p = v?.preparacao; if (!p || !p.total) return '';
+    if (!p.abertos) return '<span class="pill p-ok" title="Todos os itens de preparação feitos">✓ preparado</span>';
+    const lista = prepAbertos(v).map((i) => i.descricao).join(' · ');
+    return `<button class="pill ${p.atrasados ? 'p-bad' : 'p-warn'} badge-btn" type="button" data-prepv="${v.id}" title="${esc(lista)}">🔧 ${p.abertos} ${curto ? '' : p.abertos === 1 ? 'a preparar' : 'a preparar'}</button>`;
+  }
+  const prepItemHtml = (i, fin) => `<div class="prepi ${i.feito ? 'ok' : ''} ${i.atrasado ? 'late' : ''}">
+      <button class="prepck" type="button" data-prepok="${i.id}" data-feito="${i.feito ? 1 : 0}" title="${i.feito ? 'Desfazer' : 'Marcar como feito'}" aria-label="${i.feito ? 'Desfazer' : 'Marcar como feito'}">${i.feito ? '✓' : ''}</button>
+      <div class="prept"><b>${esc(i.descricao)}</b><span class="sub">${esc(i.categoria_label)}${i.status === 'andamento' ? ' · <span class="pill p-info">em andamento</span>' : ''}${i.prazo ? ` · ${i.atrasado ? '<span class="neg">' : ''}até ${fmtDate(i.prazo)}${i.atrasado ? '</span>' : ''}` : ''}${fin && i.custo ? ` · ${brl(i.custo)}` : ''}${i.feito && i.feito_em ? ` · feito em ${fmtDate(i.feito_em)}` : ''}</span></div>
+      <div class="prepa">${!i.feito ? `<button class="linkbtn" type="button" data-prepand="${i.id}" data-st="${i.status === 'andamento' ? 'pendente' : 'andamento'}">${i.status === 'andamento' ? 'parar' : 'iniciar'}</button>` : ''}<button class="linkbtn danger" type="button" data-prepdel="${i.id}" title="Excluir">✕</button></div></div>`;
+  const prepAddHtml = (fin) => `<div class="prepadd">
+      <textarea id="pp-txt" rows="3" placeholder="O que precisa arrumar? Um item por linha. Ex.: repintar para-choque traseiro&#10;trocar lâmpada do farol esquerdo&#10;costurar rasgo do banco do motorista"></textarea>
+      <div class="prepaddf"><select id="pp-cat" aria-label="Categoria"><option value="">Categoria automática</option>${opt(Object.entries(PREP_CATS), '')}</select>
+      ${fin ? '<input id="pp-custo" inputmode="numeric" placeholder="Custo previsto (R$)" aria-label="Custo previsto">' : ''}<input id="pp-prazo" type="date" aria-label="Prazo" title="Prazo (opcional)">
+      <button class="btn primary sm" type="button" id="pp-add">Adicionar</button></div></div>`;
+  const prepLer = () => ({ itens: ($('#pp-txt')?.value || '').split('\n').map((s) => s.trim()).filter(Boolean).map((descricao) => ({ descricao, categoria: $('#pp-cat')?.value || '', custo: $('#pp-custo')?.value || '', prazo: $('#pp-prazo')?.value || '' })) });
+
+  async function prepRefresh() {
+    await X.loadVehicles();
+    if (S.view === 'novo') { const d = S.draft; const v = d?.id && S.vehicles.find((x) => x.id === d.id); if (v) { d.preparacao = v.preparacao; prepFormPanel(true); } }
+    else if (!$('#scrim') || $('#prepModal')) X.render();
+  }
+  // Ações nos itens (valem em qualquer tela: modal, formulário, gestão e painel).
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-prepv],[data-prepok],[data-prepand],[data-prepdel],[data-prepest]'); if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    try {
+      if (b.dataset.prepv) return prepModal(Number(b.dataset.prepv));
+      if (b.dataset.prepest) {
+        const v = await api('POST', `/api/vehicles/${b.dataset.prepest}/estoque`);
+        toast(`${v.marca} ${v.modelo} entrou no estoque${v.status === 'rascunho' ? ' (complete o cadastro para publicar)' : ''}`, 5000);
+        if (S.view === 'novo' && S.draft?.id === v.id) { S.draft.status = v.status; }
+        await X.loadVehicles(); if (S.view === 'novo') X.go('estoque'); else X.render();
+        return;
+      }
+      b.disabled = true;
+      if (b.dataset.prepok) await api('PUT', `/api/preparacao/${b.dataset.prepok}`, { status: b.dataset.feito === '1' ? 'pendente' : 'feito' });
+      if (b.dataset.prepand) await api('PUT', `/api/preparacao/${b.dataset.prepand}`, { status: b.dataset.st });
+      if (b.dataset.prepdel) await api('DELETE', `/api/preparacao/${b.dataset.prepdel}`);
+      const vid = Number(b.closest('[data-prepvid]')?.dataset.prepvid || 0);
+      await prepRefresh();
+      if ($('#prepModal') && vid) prepModal(vid);
+    } catch (err) { toast(err.message); b.disabled = false; }
+  }, true);
+
+  async function prepModal(vid) {
+    await X.loadVehicles();
+    const v = S.vehicles.find((x) => x.id === vid); if (!v) return;
+    const fin = can('financeiro');
+    const it = v.preparacao?.itens || [];
+    modal(`<div id="prepModal" data-prepvid="${v.id}"><h3>Preparação · ${esc(v.marca)} ${esc(v.modelo)} <span class="sub">${esc(v.placa || '')}</span></h3>
+      <p class="sub" style="margin:0 0 8px">${v.preparacao?.abertos ? `${v.preparacao.abertos} item(ns) a fazer` : it.length ? 'Tudo pronto ✓' : 'Nada anotado ainda.'}${fin && v.preparacao?.custo_aberto ? ` · custo previsto ${brl(v.preparacao.custo_aberto)} (já entra no lucro previsto do carro)` : ''}</p>
+      <div class="preplist">${it.map((i) => prepItemHtml(i, fin)).join('')}</div>
+      ${prepAddHtml(fin)}
+      <div class="err" id="pp-err" hidden></div>
+      <div class="modal-foot">${v.status === 'avaliacao' && can('cadastrar') ? `<button class="btn" type="button" data-prepest="${v.id}">Passar para o estoque</button>` : ''}<button class="btn" data-close type="button">Fechar</button></div></div>`, true);
+    $('#pp-add').onclick = async () => {
+      const b = prepLer(); if (!b.itens.length) { $('#pp-txt').focus(); return; }
+      try { await api('POST', `/api/vehicles/${v.id}/preparacao`, b); await prepRefresh(); prepModal(v.id); toast(b.itens.length === 1 ? 'Item adicionado' : `${b.itens.length} itens adicionados`); }
+      catch (err) { $('#pp-err').textContent = err.message; $('#pp-err').hidden = false; }
+    };
+    setTimeout(() => $('#pp-txt')?.focus(), 30);
+  }
+
+  // Formulário do carro: entrada (estoque ou avaliação) e a lista de preparação.
+  function prepFormPanel(atualizar) {
+    const d = S.draft; if (!d) return;
+    const fin = can('financeiro');
+    if (!d.id && X._novoAval) { d.avaliacao = true; X._novoAval = false; }
+    const aval = d.id ? d.status === 'avaliacao' : !!d.avaliacao;
+    const novos = d._prepNovos || [];
+    const itens = d.id ? (d.preparacao?.itens || []) : [];
+    const html = `<div class="panel" id="prepPanel" data-prepvid="${d.id || ''}"><h2>Entrada e preparação</h2>
+      ${!d.id ? `<div class="entradas" role="radiogroup" aria-label="Este carro entra como">
+          <label class="ent"><input type="radio" name="v-entrada" value="estoque" ${aval ? '' : 'checked'}><span><b>Estoque</b><em>Já é da loja: entra no estoque e pode ser publicado.</em></span></label>
+          <label class="ent"><input type="radio" name="v-entrada" value="avaliacao" ${aval ? 'checked' : ''}><span><b>Em avaliação</b><em>Ainda avaliando a compra/troca. Fica na lista marcado, fora da vitrine e das publicações.</em></span></label></div>`
+        : aval ? `<div class="warnbox conn-row"><span><b>Carro em avaliação.</b> Não aparece na vitrine nem pode ser publicado.</span>${can('cadastrar') ? `<button class="btn primary sm" type="button" data-prepest="${d.id}">Passar para o estoque</button>` : ''}</div>` : ''}
+      <p class="lead" style="margin-top:10px">Pendências de preparação: o que precisa arrumar antes de vender. ${d.id ? 'Marque como feito quando ficar pronto.' : 'Ficam salvas junto com o carro.'}</p>
+      <div class="preplist">${itens.map((i) => prepItemHtml(i, fin)).join('')}${novos.map((n, k) => `<div class="prepi"><span class="prepck" aria-hidden="true"></span><div class="prept"><b>${esc(n.descricao)}</b><span class="sub">${n.categoria ? esc(PREP_CATS[n.categoria]) : 'categoria automática'}${fin && n.custo ? ` · R$ ${esc(n.custo)}` : ''}${n.prazo ? ` · até ${fmtDate(n.prazo)}` : ''}</span></div><div class="prepa"><button class="linkbtn danger" type="button" data-prepnovo="${k}">✕</button></div></div>`).join('')}</div>
+      ${prepAddHtml(fin)}</div>`;
+    const atual = $('#prepPanel');
+    if (atual) { if (!atualizar) return; atual.outerHTML = html; }
+    else { const alvo = $('#vfDados'); if (!alvo) return; alvo.insertAdjacentHTML('beforebegin', html); }
+    $$('input[name="v-entrada"]').forEach((r) => { r.onchange = () => { d.avaliacao = r.value === 'avaliacao' && r.checked; const sp = $('#salvarPub'); if (sp) sp.hidden = d.avaliacao; }; });
+    if ($('#salvarPub')) $('#salvarPub').hidden = aval;
+    $$('[data-prepnovo]').forEach((b) => { b.onclick = () => { novos.splice(Number(b.dataset.prepnovo), 1); prepFormPanel(true); }; });
+    $('#pp-add').onclick = async () => {
+      const b = prepLer(); if (!b.itens.length) { $('#pp-txt').focus(); return; }
+      if (d.id) { try { await api('POST', `/api/vehicles/${d.id}/preparacao`, b); await prepRefresh(); toast('Adicionado à preparação'); } catch (err) { toast(err.message); } return; }
+      d._prepNovos = [...novos, ...b.itens]; prepFormPanel(true);
+    };
+  }
+  const afterSaveAntes = X.afterSave;
+  X.afterSave = async (v, d) => {
+    await afterSaveAntes?.(v, d);
+    if (d._prepNovos?.length) { await api('POST', `/api/vehicles/${v.id}/preparacao`, { itens: d._prepNovos }); d._prepNovos = []; }
+  };
+
   /* ======================= Pendências dos carros (v2.13) ======================= */
   const PD = { filtro: 'abertas', tipo: '', veiculo: 0, data: null };
   async function pendBadges() {
@@ -1029,11 +1134,11 @@
       const label = (key, list) => ((list || []).find((p) => p.key === key)?.label || '').split(' (')[0];
       let body = '';
       if (gTab === 'estoque') {
-        const linhas = V.map((v) => ({ v, f: v.financeiro || {} })).sort((a, b) => b.v.dias_estoque - a.v.dias_estoque);
+        const linhas = V.filter((v) => v.status !== 'avaliacao').map((v) => ({ v, f: v.financeiro || {} })).sort((a, b) => b.v.dias_estoque - a.v.dias_estoque);
         const tot = linhas.reduce((a, { f }) => ({ inv: a.inv + (f.investido || 0), prev: a.prev + (f.custos_previstos || 0), lp: a.lp + (f.previsto?.liquido || 0), sb: a.sb + (f.falta_base ? 1 : 0) }), { inv: 0, prev: 0, lp: 0, sb: 0 });
         const venda = V.reduce((s, v) => s + (v.preco_anuncio || 0), 0);
         body = `<div class="kpis">
-            <div class="kpi"><span>Carros no estoque</span><b>${V.length}</b><em>${V.filter((v) => v.parado).length} parado(s) · idade média ${V.length ? Math.round(V.reduce((s, v) => s + v.dias_estoque, 0) / V.length) : 0} dias</em></div>
+            <div class="kpi"><span>Carros no estoque</span><b>${V.filter((v) => v.status !== 'avaliacao').length}</b><em>${V.filter((v) => v.parado).length} parado(s) · idade média ${V.length ? Math.round(V.reduce((s, v) => s + v.dias_estoque, 0) / V.length) : 0} dias</em></div>
             <div class="kpi"><span>Capital investido</span><b>${brl(tot.inv)}</b><em>compra + manutenções feitas</em></div>
             <div class="kpi"><span>Custos previstos</span><b>${brl(tot.prev)}</b><em>ainda a gastar</em></div>
             <div class="kpi"><span>Valor em anúncios</span><b>${brl(venda)}</b><em>preço (ou oferta) somado</em></div>
@@ -1047,12 +1152,20 @@
           <p class="note">Dica: no cadastro de cada carro, a seção <b>Gestão do veículo</b> já calcula o lucro previsto enquanto você preenche.</p>`;
       }
       if (gTab === 'local') {
+        const prepCarros = V.filter((v) => v.preparacao?.abertos).sort((a, b) => b.preparacao.atrasados - a.preparacao.atrasados || b.preparacao.abertos - a.preparacao.abertos);
+        const prepFin = can('financeiro');
+        const prepBox = `<div class="panel prepbox"><div class="ldh"><h2 style="margin:0">Preparação <span class="sub">${prepCarros.reduce((s, v) => s + v.preparacao.abertos, 0)} item(ns) em ${prepCarros.length} carro(s)</span></h2>
+            ${prepFin && prepCarros.some((v) => v.preparacao.custo_aberto) ? `<span class="sub">Custo previsto: <b>${brl(prepCarros.reduce((s, v) => s + v.preparacao.custo_aberto, 0))}</b></span>` : ''}</div>
+          ${prepCarros.length ? `<div class="prepgrid">${prepCarros.map((v) => `<div class="prepcar" data-prepvid="${v.id}"><div class="ldh"><span><button class="vlink" type="button" data-vp="${v.id}">${esc(v.marca)} ${esc(v.modelo)}</button> <span class="sub">${esc(v.placa || '')}</span>${v.status === 'avaliacao' ? ' <span class="pill p-aval">em avaliação</span>' : ''}</span><button class="linkbtn" type="button" data-prepv="${v.id}">+ item</button></div>
+              <div class="preplist">${prepAbertos(v).map((i) => prepItemHtml(i, prepFin)).join('')}</div></div>`).join('')}</div>`
+            : '<p class="sub" style="margin:6px 0 0">Nenhuma pendência de preparação. Anote o que precisa arrumar em cada carro pelo selo 🔧 no Estoque, no cadastro do carro ou aqui no botão "+ item" do card.</p>'}</div>`;
         const grupos = Object.entries(P.locais).map(([k, l]) => [k, l, V.filter((v) => (v.local_status || 'patio') === k)]).filter(([k, , list]) => list.length || k === 'patio');
-        body = `<div class="board">${grupos.map(([k, l, list]) => `<div class="col"><h3>${esc(l)} <span class="sub">${list.length}</span></h3>${list.map((v) => `
+        body = `${prepBox}<div class="board">${grupos.map(([k, l, list]) => `<div class="col"><h3>${esc(l)} <span class="sub">${list.length}</span></h3>${list.map((v) => `
           <div class="card2">
-            <div class="t"><button class="vlink" type="button" data-vp="${v.id}">${esc(v.marca)} ${esc(v.modelo)}</button> <span class="sub">${esc(v.placa || '')}</span></div>
+            <div class="t"><button class="vlink" type="button" data-vp="${v.id}">${esc(v.marca)} ${esc(v.modelo)}</button> <span class="sub">${esc(v.placa || '')}</span>${v.status === 'avaliacao' ? ' <span class="pill p-aval">em avaliação</span>' : ''}</div>
+            ${v.preparacao?.total ? `<div style="margin:3px 0">${prepPill(v)}</div>` : `<div style="margin:3px 0"><button class="linkbtn" type="button" data-prepv="${v.id}">+ preparação</button></div>`}
             ${v.local_parceiro ? `<div class="sub">${esc(v.local_parceiro.nome)} · ${esc(v.local_parceiro.tipo)}${v.local_obs ? ' · ' + esc(v.local_obs) : ''}</div>
-              <div class="sub">Há ${v.local_dias} dia(s)${v.local_previsao ? ` · previsão ${fmtDate(v.local_previsao)}` : ''}${v.local_previsao && v.local_previsao < today() ? ' <span class="pill p-bad">atrasado</span>' : ''}</div>` : `<div class="sub">${v.dias_estoque} dias no estoque${v.parado ? ' · <span class="pill p-warn">parado</span>' : ''}</div>`}
+              <div class="sub">Há ${v.local_dias} dia(s)${v.local_previsao ? ` · previsão ${fmtDate(v.local_previsao)}` : ''}${v.local_previsao && v.local_previsao < today() ? ' <span class="pill p-bad">atrasado</span>' : ''}</div>` : v.status === 'avaliacao' ? '' : `<div class="sub">${v.dias_estoque} dias no estoque${v.parado ? ' · <span class="pill p-warn">parado</span>' : ''}</div>`}
             <div class="btnrow" style="gap:6px;margin-top:6px">${v.followup_url ? `<a class="btn sm" href="${esc(v.followup_url)}" target="_blank" rel="noopener">Pedir andamento (WhatsApp)</a>` : ''}${can('parceiros') ? `<button class="btn sm ${k === 'patio' ? '' : 'ghost'}" type="button" data-loc="${v.id}">${k === 'patio' ? 'Enviar para…' : 'Mudar'}</button>` : ''}</div>
           </div>`).join('') || '<p class="sub">Nenhum carro.</p>'}</div>`).join('')}</div>
           <p class="note">"Pedir andamento" abre o WhatsApp do parceiro com a mensagem pronta (carro, placa e desde quando está lá). Envio 100% automático exige a API paga do WhatsApp Business.</p>`;
@@ -1114,7 +1227,7 @@
         body = `<div class="btnrow" style="margin-bottom:10px">${can('parceiros') ? '<button class="btn primary" type="button" id="ptNew">+ Novo parceiro</button>' : ''}</div>
           <div class="cfields">${P.partners.length ? P.partners.map((p) => `<div class="cf"><span class="k"><b>${esc(p.nome)}</b><br><span class="sub">${esc(p.tipo_label)}</span></span><span class="v">${esc(p.contato || '')} ${esc(p.whatsapp || '')}<br><span class="sub">${p.carros} carro(s) lá agora${p.endereco ? ' · ' + esc(p.endereco) : ''}</span></span><span class="btnrow" style="gap:6px">${p.wa ? `<a class="btn sm" href="https://wa.me/${p.wa}" target="_blank" rel="noopener">WhatsApp</a>` : ''}${can('parceiros') ? `<button class="btn sm" type="button" data-pe="${p.id}">Editar</button>` : ''}</span></div>`).join('') : '<div class="cf"><span class="v sub">Cadastre oficinas, funilarias, estética, lavador, lojas parceiras e despachante para saber onde cada carro está.</span></div>'}</div>`;
       }
-      return `<div class="head"><div><h1>Gestão</h1><p>Estoque, margem, acompanhamento dos carros, documentos das vendas, pendências (multas, IPVA, restrições), contatos e despesas da loja. Clique no nome de um carro para ver os dados.</p></div></div>
+      return `<div class="head"><div><h1>Gestão</h1><p>Estoque, margem, acompanhamento e preparação dos carros, documentos das vendas, pendências (multas, IPVA, restrições), contatos e despesas da loja. Clique no nome de um carro para ver os dados.</p></div></div>
         <div class="chips tabs" style="margin-bottom:14px">${tabs.map(([k, l]) => `<button class="chip" type="button" data-gt="${k}" aria-pressed="${k === gTab}">${l}</button>`).join('')}</div>${body}`;
     },
     bind() {
@@ -1903,6 +2016,10 @@
           ${box('Onde estão os carros', 'gestao:local', `<div class="pchips">${E.locais.map((l) => `<span><b>${l.qtd}</b> ${esc(l.label)}</span>`).join('')}</div>
             <div class="pchips"><span><b>${E.status.publicado || 0}</b> no Marketplace</span><span><b>${E.status.pronto || 0}</b> prontos</span><span><b>${E.status.rascunho || 0}</b> rascunhos</span></div>
             ${E.fora.map((v) => vrow(v, `<span class="${v.atrasado ? 'neg' : ''}">${v.local_dias}d</span>${v.followup_url ? ` <a class="linkbtn" href="${esc(v.followup_url)}" target="_blank" rel="noopener" title="Pedir andamento">💬</a>` : ''}`, ` <span class="sub">${esc(v.parceiro || v.local)}</span>`)).join('') || '<p class="sub">Todos no pátio.</p>'}`)}
+          ${d.preparacao ? box(`🔧 Preparação (${d.preparacao.itens})`, 'preparacao', (d.preparacao.itens ? `<p class="sub" style="margin:0 0 2px">${d.preparacao.itens} item(ns) em ${d.preparacao.carros} carro(s)${d.preparacao.atrasados ? ` · <span class="neg">${d.preparacao.atrasados} atrasado(s)</span>` : ''}</p>` : '') + (d.preparacao.lista.map((c) => `<div class="prepcar sm" data-prepvid="${c.id}"><div class="pr"><span><button class="vlink" type="button" data-vp="${c.id}">${esc(c.titulo)}</button> <span class="sub">${esc(c.placa)}</span>${c.status === 'avaliacao' ? ' <span class="pill p-aval">avaliação</span>' : ''}</span><span class="prr"><button class="linkbtn" type="button" data-prepv="${c.id}">abrir</button></span></div>
+              ${c.itens.slice(0, 4).map((i) => `<div class="prepi mini ${i.atrasado ? 'late' : ''}"><button class="prepck" type="button" data-prepok="${i.id}" data-feito="0" title="Marcar como feito" aria-label="Marcar como feito"></button><span class="prept">${esc(i.descricao)}${i.status === 'andamento' ? ' <span class="pill p-info">em andamento</span>' : ''}${i.atrasado ? ' <span class="pill p-bad">atrasado</span>' : ''}</span></div>`).join('')}${c.itens.length > 4 ? `<p class="sub" style="margin:2px 0 0 26px">+ ${c.itens.length - 4} item(ns)</p>` : ''}</div>`).join('') || '<p class="sub">Nenhuma pendência de preparação. 👍</p>')
+              + (fin && d.preparacao.custo ? `<p class="sub" style="margin-top:6px">Custo previsto: <b>${brl(d.preparacao.custo)}</b></p>` : '')
+              + (d.avaliacao?.qtd ? `<div class="pchips" style="margin-top:8px"><span><b>${d.avaliacao.qtd}</b> em avaliação</span></div>` : ''), 'tall') : ''}
           ${box(`Parados (${E.parados_qtd})`, 'parados', E.parados.map((v) => vrow(v, `${v.dias}d · ${brl(v.preco)} <button class="btn sm" type="button" data-of2="${v.id}" title="Oferta sugerida ${brl(v.sugestao)}">Oferta</button>`)).join('') || '<p class="sub">Nenhum carro parado.</p>')}
           ${box('Vendas (6 meses)', 'resultados', `<div class="pbars">${Vd.meses.map((m) => `<div><b>${m.qtd}</b><i style="height:${Math.max(2, Math.round((m.qtd / maxM) * 56))}px"></i><span>${nome(m.mes)}</span></div>`).join('')}</div>
             ${Vd.vendedores.length ? `<div class="pchips">${Vd.vendedores.map((g, i) => `<span>${i === 0 ? '🏆 ' : ''}${esc(g.nome)} <b>${g.qtd}</b></span>`).join('')}</div>` : ''}`)}
@@ -1922,12 +2039,12 @@
       $('#pn-full') && ($('#pn-full').onclick = () => { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen?.(); });
       $$('[data-go2]').forEach((b) => {
         b.onclick = (e) => {
-          if (e.target.closest('a,[data-of2],[data-pay2],[data-vp],[data-lead]') && e.target.closest('a,[data-of2],[data-pay2],[data-vp],[data-lead]') !== b) return;
+          if (e.target.closest('a,[data-of2],[data-pay2],[data-vp],[data-lead],[data-prepv],[data-prepok]') && e.target.closest('a,[data-of2],[data-pay2],[data-vp],[data-lead],[data-prepv],[data-prepok]') !== b) return;
           const [view, tab] = b.dataset.go2.split(':');
           if (view === 'parados') return stalledModal(S.vehicles.filter((v) => v.parado));
           if (view === 'contas') { gTab = 'desp'; return X.go('gestao'); }
           if (view === 'docs') { gTab = 'docs'; return X.go('gestao'); }
-          if (view === 'fora') { gTab = 'local'; return X.go('gestao'); }
+          if (view === 'fora' || view === 'preparacao') { gTab = 'local'; return X.go('gestao'); }
           if (view === 'posvenda') { gTab = 'contatos'; CT.filtro = 'posvenda'; return X.go('gestao'); }
           if (view === 'agenda') { CR.tab = 'agenda'; return X.go('crm'); }
           if (tab) gTab = tab;
@@ -2204,10 +2321,10 @@
     };
     const card = (l) => `<div class="kcard ${l.atrasado ? 'late' : ''}" draggable="true" data-lead="${l.id}" data-drag="${l.id}">
         <div class="kc-top"><b><span>${esc(l.nome || l.telefone || l.email || 'Sem nome')}</span>${l.telefone ? `<a class="wa-ic" data-noopen data-wal="${l.id}" href="${esc(waLead(l, l.veiculo?.titulo))}" target="_blank" rel="noopener" title="Abrir conversa no WhatsApp">${WA_SVG}</a>` : ''}</b><span class="sub">${quandoCurto(l.ultimo_contato || l.created_at)}</span></div>
-        ${l.veiculo ? `<div class="kc-v">${l.veiculo.foto ? `<img src="${esc(l.veiculo.foto)}" alt="">` : ''}<span>${esc(l.veiculo.titulo)}${l.veiculo.status === 'vendido' ? ' <span class="pill p-muted">vendido</span>' : ''}</span></div>` : l.interesse ? `<div class="sub">${esc(l.interesse)}</div>` : ''}
+        ${l.veiculo ? `<div class="kc-v" title="${esc(l.veiculo.titulo)}">${l.veiculo.foto ? `<img src="${esc(l.veiculo.foto)}" alt="">` : ''}<span>${esc(l.veiculo.titulo)}${l.veiculo.status === 'vendido' ? ' <span class="pill p-muted">vendido</span>' : ''}</span></div>` : l.interesse ? `<div class="sub">${esc(l.interesse)}</div>` : ''}
         <div class="kc-tags"><span class="pill p-info">${esc(l.origem_label)}</span>${l.temperatura ? `<span title="${esc(l.temperatura_label)}">${tempIco[l.temperatura] || ''}</span>` : ''}${l.precisa_humano ? '<span class="pill p-warn">pediu atendente</span>' : ''}${l.atrasado ? `<span class="pill p-bad">sem resposta ${quandoCurto(l.created_at)}</span>` : ''}
           ${l.proxima_visita ? `<span class="pill p-ok">📅 ${dh(l.proxima_visita)}</span>` : ''}${l.proxima_tarefa ? `<span class="pill p-muted">✓ ${dh(l.proxima_tarefa)}</span>` : ''}</div>
-        <div class="kc-foot"><span class="sub">${esc(l.vendedor_nome || 'sem vendedor')}</span></div></div>`;
+        <div class="kc-foot"><span class="sub" title="Vendedor">👤 ${esc(l.vendedor_nome || 'sem vendedor')}</span><span class="sub kc-t2">${quandoCurto(l.ultimo_contato || l.created_at)}</span></div></div>`;
     return `<div class="crbar">
         <input id="crQ" placeholder="Buscar nome, telefone, carro…" value="${esc(CR.q)}">
         <select id="crO"><option value="">Todas as origens</option>${Object.entries(M.origens).map(([k, l]) => `<option value="${k}" ${k === CR.origem ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
@@ -2215,7 +2332,7 @@
         <label class="chip"><input type="checkbox" id="crM" ${CR.meus ? 'checked' : ''}> Só os meus</label>` : ''}
       </div>
       <p class="note" style="margin:6px 0">Arraste o card para mudar de etapa. Clique para abrir o lead. Vendidos e perdidos aparecem por 60 dias.</p>
-      <div class="kanban">${M.etapas.map(col).join('')}</div>`;
+      <div class="kanban" style="--ncol:${M.etapas.length}">${M.etapas.map(col).join('')}</div>`;
   }
   function crFunilBind() {
     const q = $('#crQ');

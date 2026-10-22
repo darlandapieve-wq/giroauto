@@ -95,7 +95,7 @@ app.get('/v/:slug', (req, res) => {
 app.get('/v/:slug/:id', (req, res) => {
   const store = get('SELECT * FROM stores WHERE slug = ?', req.params.slug);
   const v = store && V.serialize(V.findVehicle(store.id, req.params.id));
-  if (!v || v.status === 'rascunho') return res.status(404).send(pages.notFound());
+  if (!v || v.status === 'rascunho' || v.status === 'avaliacao') return res.status(404).send(pages.notFound());
   res.send(pages.vehiclePage(store, v, { origem: req.query.o === 'qr' ? 'qr' : 'vitrine' }).replace('</body>', `${v.status !== 'vendido' ? require('./bot').widget(store, v.id) : ''}</body>`));
 });
 
@@ -330,11 +330,16 @@ app.post('/api/vehicles', team.can('cadastrar'), (req, res) => {
   if (!d.marca || !d.modelo) throw fail(400, 'Informe ao menos marca e modelo.');
   if (d.preco_oferta) d.oferta_desde = new Date().toISOString().slice(0, 19).replace('T', ' ');
   d.created_by = req.user.id;
+  // v2.14: carro em avaliação (ainda não comprado) fica fora do estoque, da vitrine e das publicações.
+  const avaliacao = req.body?.avaliacao === true || req.body?.avaliacao === 'true' || req.body?.avaliacao === 1;
+  if (avaliacao) d.status = 'avaliacao';
   const cols = Object.keys(d);
   const r = run(`INSERT INTO vehicles (store_id, ${cols.join(',')}) VALUES (?, ${cols.map(() => '?').join(',')})`,
     req.user.storeId, ...cols.map((k) => d[k]));
-  logEvent(req.user.storeId, `${d.marca} ${d.modelo} cadastrado`);
-  arts.schedule(r.lastInsertRowid);
+  logEvent(req.user.storeId, `${d.marca} ${d.modelo} ${avaliacao ? 'cadastrado em avaliação' : 'cadastrado'}`);
+  const prep = Array.isArray(req.body?.preparacao) ? req.body.preparacao : (typeof req.body?.preparacao === 'string' ? [req.body.preparacao] : []);
+  if (prep.some((x) => String(x?.descricao ?? x ?? '').trim())) require('./preparacao').add(req.user.storeId, r.lastInsertRowid, { itens: prep }, req.user.id);
+  if (!avaliacao) arts.schedule(r.lastInsertRowid);
   res.status(201).json(V.serialize(V.findVehicle(req.user.storeId, r.lastInsertRowid)));
 });
 
@@ -404,6 +409,24 @@ app.post('/api/vehicles/:id/ready', team.can('cadastrar'), (req, res) => {
   const faltam = V.missingForPublish(v, V.photosOf(v.id).length);
   if (faltam.length) throw fail(400, `Para publicar, preencha: ${faltam.join(', ')}.`);
   if (v.status === 'rascunho') run(`UPDATE vehicles SET status='pronto', updated_at=datetime('now') WHERE id=?`, v.id);
+  res.json(V.serialize(V.findVehicle(req.user.storeId, v.id)));
+});
+
+// v2.14: carro em avaliação comprado → entra no estoque (rascunho ou pronto, conforme o cadastro).
+app.post('/api/vehicles/:id/estoque', team.can('cadastrar'), (req, res) => {
+  const v = own(req);
+  if (v.status !== 'avaliacao') throw fail(409, 'Este carro já está no estoque.');
+  const status = V.missingForPublish(v, V.photosOf(v.id).length).length ? 'rascunho' : 'pronto';
+  const hoje = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+  run(`UPDATE vehicles SET status=?, compra_data=COALESCE(NULLIF(compra_data,''), ?), updated_at=datetime('now') WHERE id=?`, status, hoje, v.id);
+  logEvent(req.user.storeId, `${v.marca} ${v.modelo} saiu da avaliação e entrou no estoque`);
+  arts.schedule(v.id);
+  res.json(V.serialize(V.findVehicle(req.user.storeId, v.id)));
+});
+app.post('/api/vehicles/:id/avaliacao', team.can('cadastrar'), (req, res) => {
+  const v = own(req);
+  if (!['rascunho', 'pronto'].includes(v.status)) throw fail(409, 'Só carros ainda não publicados podem voltar para a avaliação.');
+  run(`UPDATE vehicles SET status='avaliacao', updated_at=datetime('now') WHERE id=?`, v.id);
   res.json(V.serialize(V.findVehicle(req.user.storeId, v.id)));
 });
 
@@ -493,6 +516,7 @@ app.get('/api/vehicles/:id/photos.zip', auth.requireUser, wrap(async (req, res) 
 app.post('/api/vehicles/:id/mark-published', team.can('publicar'), (req, res) => {
   const v = own(req);
   if (v.status === 'vendido') throw fail(409, 'Veículo vendido não pode ser publicado.');
+  if (v.status === 'avaliacao') throw fail(409, 'Carro em avaliação: passe para o estoque antes de publicar.');
   const url = String(req.body?.listing_url || '').trim();
   if (url && !/^https:\/\/(www\.|web\.|m\.)?facebook\.com\/\S+$/.test(url)) throw fail(400, 'Cole o link do anúncio do Facebook (começa com https://www.facebook.com/).');
   const republicado = v.status === 'publicado';
@@ -509,6 +533,7 @@ app.post('/api/assist/start', team.can('publicar'), (req, res) => {
   const v = V.findVehicle(req.user.storeId, req.body?.vehicle_id);
   if (!v) throw fail(404, 'Veículo não encontrado.');
   if (v.status === 'vendido') throw fail(409, 'Veículo vendido não pode ser publicado.');
+  if (v.status === 'avaliacao') throw fail(409, 'Carro em avaliação: passe para o estoque antes de publicar.');
   if (!V.photosOf(v.id).length) throw fail(400, 'Adicione ao menos uma foto antes de publicar.');
   run(`UPDATE stores SET assist_vehicle_id = ?, assist_at = datetime('now') WHERE id = ?`, v.id, req.user.storeId);
   res.json({ ok: true });
@@ -517,7 +542,7 @@ app.post('/api/assist/start', team.can('publicar'), (req, res) => {
 app.get('/api/assist/current', auth.requireUser, (req, res) => {
   const s = get(`SELECT assist_vehicle_id, assist_at FROM stores WHERE id = ? AND assist_at > datetime('now', '-2 hours')`, req.user.storeId);
   const v = s?.assist_vehicle_id && V.findVehicle(req.user.storeId, s.assist_vehicle_id);
-  if (!v || v.status === 'vendido') throw fail(404, 'Nenhum veículo escolhido para publicar agora.');
+  if (!v || v.status === 'vendido' || v.status === 'avaliacao') throw fail(404, 'Nenhum veículo escolhido para publicar agora.');
   res.json({ vehicle: forAd(V.serialize(v)), version: VERSION });
 });
 
@@ -534,6 +559,7 @@ function enqueue(storeId, vehicleId, type) {
 app.post('/api/vehicles/:id/publish', team.can('publicar'), (req, res) => {
   const v = own(req);
   if (v.status === 'vendido') throw fail(409, 'Veículo vendido não pode ser publicado.');
+  if (v.status === 'avaliacao') throw fail(409, 'Carro em avaliação: passe para o estoque antes de publicar.');
   if (v.status === 'publicado') throw fail(409, 'Este veículo já está publicado. Use Republicar.');
   const faltam = V.missingForPublish(v, V.photosOf(v.id).length);
   if (faltam.length) throw fail(400, `Para publicar, preencha: ${faltam.join(', ')}.`);
@@ -927,7 +953,7 @@ app.post('/api/campaigns', team.can('campanhas'), wrap(async (req, res) => {
   if (!ids.length) throw fail(400, 'Escolha ao menos um veículo.');
   if (mode !== 'catalogo' && ids.length > 10) throw fail(400, 'Campanhas de conversa aceitam até 10 veículos (carrossel).');
   const vs = ids.map((id) => V.findVehicle(storeId, id));
-  if (vs.some((v) => !v || v.status === 'vendido' || v.status === 'rascunho')) throw fail(400, 'Há veículos vendidos, em rascunho ou inexistentes na seleção.');
+  if (vs.some((v) => !v || ['vendido', 'rascunho', 'avaliacao'].includes(v.status))) throw fail(400, 'Há veículos vendidos, em rascunho, em avaliação ou inexistentes na seleção.');
   if (mode === 'catalogo' && vs.some((v) => !v.catalogo)) throw fail(400, 'No modo Catálogo dinâmico, todos os veículos precisam estar marcados para o catálogo.');
 
   // Início: agora (+5 min) ou numa data escolhida (até 60 dias à frente).

@@ -559,6 +559,26 @@ db.exec(`CREATE TABLE IF NOT EXISTS pendencia_moves (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 )`);
 
+db.exec(`CREATE TABLE IF NOT EXISTS preparacao (
+  id INTEGER PRIMARY KEY,
+  store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+  vehicle_id INTEGER NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
+  descricao TEXT NOT NULL,
+  categoria TEXT NOT NULL DEFAULT 'outro',
+  status TEXT NOT NULL DEFAULT 'pendente',
+  custo INTEGER NOT NULL DEFAULT 0,
+  prazo TEXT,
+  parceiro_id INTEGER,
+  cost_id INTEGER,
+  obs TEXT DEFAULT '',
+  feito_em TEXT,
+  created_by INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS preparacao_vehicle ON preparacao(vehicle_id, status)');
+db.exec('CREATE INDEX IF NOT EXISTS preparacao_store ON preparacao(store_id, status)');
+
 function tx(fn) {
   db.exec('BEGIN');
   try { const r = fn(); db.exec('COMMIT'); markDirty(); return r; }

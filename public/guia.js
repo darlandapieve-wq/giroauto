@@ -254,6 +254,9 @@
       ${f.url ? `<div class="obrow"><input readonly value="${esc(f.url)}" id="obUrl"><button class="btn sm" type="button" id="obCopy">Copiar</button></div>
         <div class="btnrow" style="margin-top:8px"><a class="btn sm primary" target="_blank" rel="noopener" href="${msg(f.url)}">Enviar por WhatsApp</a><a class="btn sm" target="_blank" rel="noopener" href="${esc(f.url)}">Abrir formulário</a></div>`
         : '<div class="btnrow"><button class="btn primary sm" type="button" id="obGen">Gerar link do formulário</button></div>'}
+      ${f.docs.some((x) => x.tipo === 'cartao_cnpj') ? `<div class="${f.cnpj?.lido_em ? 'okbox' : 'warnbox'}" style="margin-top:10px">${f.cnpj?.lido_em ? `Cartão CNPJ lido em ${esc(dataBr(f.cnpj.lido_em))}${f.cnpj.situacao ? ` · situação na Receita: <b>${esc(f.cnpj.situacao)}</b>` : ''}. Os dados da empresa foram preenchidos sozinhos (só o que estava em branco).` : f.cnpj?.erro ? esc(f.cnpj.erro) : 'Cartão CNPJ recebido, aguardando leitura.'}
+        <div class="btnrow" style="margin-top:6px"><button class="btn sm" type="button" id="obCnpj">Ler o Cartão CNPJ de novo</button></div></div>` : ''}
+      ${f.cnpj?.socios?.length ? `<p class="note" style="margin-top:6px">Sócios na Receita: ${f.cnpj.socios.map((x) => `${esc(x.nome)} (${esc(x.qualificacao)})`).join('; ')}</p>` : ''}
       ${resp ? `<h4 style="margin:14px 0 4px">Respostas</h4><div class="obkvs">${resp}</div>` : ''}
       ${f.docs.length ? `<h4 style="margin:14px 0 4px">Documentos (privados, para a verificação da empresa na Meta)</h4>${f.docs.map((x) => `<div class="obkv"><span>${esc(x.nome)} <span class="sub">${esc(dataBr(x.at))}</span></span><a class="btn sm" href="/api/onboarding/docs/${x.i}">Baixar</a></div>`).join('')}` : ''}
       ${f.vendedores.length && owner() ? `<h4 style="margin:14px 0 4px">Vendedores informados</h4>${f.vendedores.map((v) => `<div class="obkv"><span>${esc(v.nome)}</span><b>${esc(v.email)}</b></div>`).join('')}
@@ -261,6 +264,10 @@
     </details>`;
   }
   function formBind() {
+    if ($('#obCnpj')) $('#obCnpj').onclick = async () => {
+      const b = $('#obCnpj'); b.disabled = true; b.textContent = 'Lendo…';
+      try { const r = await api('POST', '/api/onboarding/cnpj'); toast(r.leitura.ok ? 'Cartão CNPJ lido e dados aplicados' : (r.leitura.aviso || 'Não consegui ler'), 6000); X.render(); } catch (e) { b.disabled = false; b.textContent = 'Ler o Cartão CNPJ de novo'; }
+    };
     if ($('#obGen')) $('#obGen').onclick = async () => { await api('POST', '/api/onboarding/link'); X.render(); };
     if ($('#obCopy')) $('#obCopy').onclick = async () => { try { await navigator.clipboard.writeText($('#obUrl').value); toast('Link copiado'); } catch { $('#obUrl').select(); } };
     if ($('#obVend')) $('#obVend').onclick = async () => {

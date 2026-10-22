@@ -378,7 +378,7 @@ function results(storeId, q = {}) {
   const filtro = (v) => (!tipo || v.proprietario_tipo === tipo) && (!origem || v.compra_origem === origem);
   const users = Object.fromEntries(all('SELECT id, name FROM users WHERE store_id = ?', storeId).map((u) => [u.id, u.name]));
   const all_ = all('SELECT * FROM vehicles WHERE store_id = ?', storeId);
-  const estoque = all_.filter((v) => v.status !== 'vendido' && filtro(v));
+  const estoque = all_.filter((v) => v.status !== 'vendido' && v.status !== 'avaliacao' && filtro(v));
   const soldIn = (v, a, b) => v.status === 'vendido' && v.vendido_em && v.vendido_em.slice(0, 10) >= a && v.vendido_em.slice(0, 10) <= b;
   const vendidos = all_.filter((v) => soldIn(v, from, to) && filtro(v) && (!vendedor || v.venda_vendedor_id === vendedor));
   const byId = new Map(all_.map((v) => [v.id, v]));

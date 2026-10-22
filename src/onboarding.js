@@ -23,7 +23,7 @@ function resumo(storeId) {
   const ob = dados(storeId);
   return {
     url: ob.token ? `${config.publicUrl}/implantacao/${ob.token}` : '', enviado_em: ob.enviado_em || null, dados: ob.form || null,
-    vendedores: ob.vendedores || [], docs: (ob.docs || []).map(({ tipo, nome, at }, i) => ({ i, tipo, nome, at })),
+    cnpj: ob.cnpj || null, vendedores: ob.vendedores || [], docs: (ob.docs || []).map(({ tipo, nome, at }, i) => ({ i, tipo, nome, at })),
   };
 }
 
@@ -61,6 +61,8 @@ function pagina(store) {
 label{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:600;color:var(--mut)}
 input,textarea,select{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-weight:400}
 .muted{color:var(--mut);font-size:13px}button{font:inherit;font-weight:700;background:var(--acc);color:#1b1400;border:0;border-radius:10px;padding:13px 18px;cursor:pointer;width:100%;margin-top:16px}
+.cnpjbox{background:var(--bg);border:1px dashed var(--acc);border-radius:10px;padding:12px;margin-bottom:12px}.cnpjbox p{margin:6px 0 0}.cnpjbox a{color:inherit}
+.lido{outline:2px solid #1d7f48;outline-offset:-1px}
 .ok{background:#ddf2e5;color:#1d7f48;border-radius:10px;padding:12px;margin-top:14px}.er{color:#b0352a;margin-top:8px}
 .vend{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;margin-bottom:6px}.vend input{min-width:0;width:100%}.vend span{display:none}
 @media(max-width:600px){.g{grid-template-columns:1fr}}
@@ -68,7 +70,10 @@ input,textarea,select{font:inherit;color:var(--ink);background:var(--bg);border:
 <h1>${esc(store.name)} no GiroAuto</h1><p class="muted">Preencha o que souber: leva uns 5 minutos. Com isso deixamos o sistema da loja pronto (contratos, atendimento no site e no WhatsApp, equipe e integrações). Você pode voltar e completar depois por este mesmo link.</p>
 ${ob.enviado_em ? `<div class="ok">Recebemos seus dados em ${esc(new Date(ob.enviado_em).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }))}. Se quiser, corrija e envie de novo.</div>` : ''}
 <form id="f" enctype="multipart/form-data">
-<div class="card"><h2>1. Empresa (igual ao Cartão CNPJ)</h2><div class="g">
+<div class="card"><h2>1. Empresa</h2>
+<div class="cnpjbox"><label>Cartão CNPJ (PDF do site da Receita ou foto)<input type="file" name="cartao_cnpj" id="cnpjFile" accept="application/pdf,image/jpeg,image/png"></label>
+<p class="muted" id="cnpjMsg">Anexe o Cartão CNPJ e os dados da empresa se preenchem sozinhos. Depois é só conferir. <a href="https://solucoes.receita.fazenda.gov.br/servicos/cnpjreva/cnpjreva_solicitacao.asp" target="_blank" rel="noopener">Tirar o Cartão CNPJ na Receita</a></p></div>
+<div class="g">
 ${campo('razao_social', 'Razão social', ct.razao_social, 'class="w"')}${campo('nome', 'Nome fantasia', store.name)}${campo('cnpj', 'CNPJ', ct.cnpj, 'inputmode="numeric"')}
 <label class="w">Endereço completo<input name="endereco" value="${v('endereco', store.address)}"></label>${campo('cidade', 'Cidade', store.city)}${campo('uf', 'UF', store.state, 'maxlength="2"')}${campo('cep', 'CEP', store.postal_code, 'inputmode="numeric"')}
 ${campo('telefone', 'Telefone', store.phone, 'inputmode="tel"')}${campo('whatsapp', 'WhatsApp da loja', store.whatsapp, 'inputmode="tel"')}${campo('email', 'E-mail da empresa', '', 'type="email"')}${campo('site', 'Site (se tiver)')}
@@ -88,13 +93,17 @@ ${campo('instagram', 'Instagram da loja (@)')}${campo('facebook', 'Página do Fa
 </div></div>
 <div class="card"><h2>5. Arquivos</h2><div class="g">
 <label>Logo (PNG/JPG)<input type="file" name="logo" accept="image/png,image/jpeg,image/webp"></label>
-<label>Cartão CNPJ (PDF ou foto)<input type="file" name="cartao_cnpj" accept="application/pdf,image/jpeg,image/png"></label>
 <label>Comprovante de endereço da empresa<input type="file" name="comprovante" accept="application/pdf,image/jpeg,image/png"></label>
 <label>Contrato social (se tiver)<input type="file" name="contrato_social" accept="application/pdf,image/jpeg,image/png"></label>
 </div><p class="muted">Os documentos ficam privados e servem só para a verificação da empresa na Meta (WhatsApp oficial).</p></div>
 <button type="submit">Enviar</button><div class="er" id="er"></div>
 </form></div>
 <script>
+document.getElementById('cnpjFile').onchange=function(){var f=this.files[0];if(!f)return;var m=document.getElementById('cnpjMsg');m.textContent='Lendo o Cartão CNPJ…';var fd=new FormData();fd.append('arquivo',f);
+fetch(location.pathname.replace('/implantacao/','/api/public/implantacao/')+'/cnpj',{method:'POST',body:fd}).then(function(r){return r.json();}).then(function(j){
+if(!j.ok){m.textContent=j.aviso||j.error||'Não consegui ler este arquivo. Preencha os campos abaixo.';return;}var n=0;
+['razao_social','nome','cnpj','endereco','cidade','uf','cep','telefone','email','representante','foro'].forEach(function(k){var i=document.querySelector('[name="'+k+'"]');var v=j.dados[k];if(i&&v&&(!i.value||i.dataset.auto)){i.value=v;i.dataset.auto='1';i.classList.add('lido');n++;}});
+m.textContent='Pronto: '+n+' campo(s) preenchido(s) a partir do Cartão CNPJ'+(j.dados.situacao?' (situação: '+j.dados.situacao+')':'')+'. Confira abaixo e complete o que faltar.';}).catch(function(){m.textContent='Não consegui ler agora. Preencha os campos abaixo; o arquivo será enviado junto.';});};
 document.getElementById('add').onclick=function(){var d=document.createElement('div');d.className='vend';d.innerHTML='<input name="vend_nome" placeholder="Nome"><input name="vend_email" type="email" placeholder="E-mail"><span></span>';document.getElementById('vs').appendChild(d);};
 document.getElementById('f').onsubmit=function(e){e.preventDefault();var b=this.querySelector('button[type=submit]');b.disabled=true;b.textContent='Enviando…';
 fetch(location.pathname.replace('/implantacao/','/api/public/implantacao/'),{method:'POST',body:new FormData(this)}).then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j.error||'Erro');return j;});})
@@ -151,6 +160,53 @@ async function receber(store, body, files = []) {
     'troca', 'financiamento', 'garantia', 'laudo', 'entrega', 'outras', 'portais', 'email_leads', 'instagram', 'facebook'].map((k) => [k, typeof b[k] === 'string' ? b[k] : '']));
   salvar(store.id, { form, vendedores, docs, enviado_em: new Date().toISOString() });
   logEvent(store.id, 'Formulário de implantação recebido do dono da loja');
+  // Cartão CNPJ novo: lê em segundo plano e completa o que ficou em branco.
+  if (files.some((f) => f.fieldname === 'cartao_cnpj')) return { leitura: lerCnpjSalvo(store.id).catch((e) => console.error('cnpj', e.message)) };
+  return {};
+}
+
+/* ---------------- Cartão CNPJ (v2.14): dados da empresa sem digitar ---------------- */
+const FORM_CNPJ = ['razao_social', 'nome', 'cnpj', 'endereco', 'cidade', 'uf', 'cep', 'telefone', 'email', 'representante', 'foro'];
+
+// Completa só o que está em branco: loja, dados para contratos e as respostas do formulário.
+function aplicarCnpj(storeId, d) {
+  const s = get('SELECT * FROM stores WHERE id = ?', storeId);
+  const up = { address: d.endereco, city: d.cidade, state: d.uf, postal_code: d.cep, phone: d.telefone };
+  const cols = Object.entries(up).filter(([k, v]) => v && !s[k]);
+  if (cols.length) run(`UPDATE stores SET ${cols.map(([k]) => `${k} = ?`).join(', ')} WHERE id = ?`, ...cols.map(([, v]) => v), storeId);
+  const K = require('./contratos');
+  const ct = json(s.contrato_loja, {});
+  const loja = {};
+  for (const k of ['razao_social', 'cnpj', 'representante']) if (d[k] && !ct[k]) loja[k] = d[k];
+  if (d.endereco && !ct.endereco) loja.endereco = [d.endereco, d.cidade && `${d.cidade}/${d.uf}`, d.cep && `CEP ${d.cep}`].filter(Boolean).join(', ');
+  K.saveLoja(storeId, loja, !ct.foro && d.cidade ? d.cidade : undefined);
+  const ob = dados(storeId);
+  const form = { ...(ob.form || {}) };
+  for (const k of FORM_CNPJ) if (d[k] && !form[k]) form[k] = d[k];
+  salvar(storeId, { form, cnpj: { lido_em: new Date().toISOString(), situacao: d.situacao || '', abertura: d.abertura || '', atividade: d.atividade || '', socios: d.socios || [] } });
+  logEvent(storeId, `Cartão CNPJ lido: ${d.razao_social || d.cnpj}`);
+}
+
+async function lerCnpjSalvo(storeId) {
+  const ob = dados(storeId);
+  const doc = (ob.docs || []).find((x) => x.tipo === 'cartao_cnpj');
+  if (!doc) throw httpError(400, 'Nenhum Cartão CNPJ enviado ainda.');
+  const file = await require('./storage').ensureLocal(doc.file);
+  if (!file) throw httpError(404, 'Arquivo do Cartão CNPJ não encontrado.');
+  const mime = /\.pdf$/i.test(doc.file) ? 'application/pdf' : /\.png$/i.test(doc.file) ? 'image/png' : 'image/jpeg';
+  const r = await require('./cnpj').ler(fs.readFileSync(file), mime);
+  if (!r.ok) { salvar(storeId, { cnpj: { erro: r.aviso, tentado_em: new Date().toISOString() } }); return r; }
+  aplicarCnpj(storeId, r.dados);
+  return r;
+}
+
+// Ao iniciar: lê os Cartões CNPJ já enviados e ainda não lidos (lojas cadastradas antes da v2.14).
+async function lerPendentes() {
+  for (const s of all("SELECT id, onboarding FROM stores WHERE onboarding LIKE '%cartao_cnpj%'")) {
+    const ob = json(s.onboarding, {});
+    if (ob.cnpj?.lido_em || ob.cnpj?.tentado_em) continue;
+    await lerCnpjSalvo(s.id).catch((e) => console.error('cnpj', s.id, e.message));
+  }
 }
 
 // Cria os acessos dos vendedores informados no formulário, com senha provisória (mostrada uma vez ao administrador).
@@ -176,4 +232,4 @@ async function documento(storeId, i) {
   return { file, nome: `${d.tipo}${path.extname(file)}` };
 }
 
-module.exports = { resumo, gerarLink, lojaPorToken, pagina, receber, criarVendedores, documento, salvar };
+module.exports = { lerCnpjSalvo, lerPendentes, aplicarCnpj, resumo, gerarLink, lojaPorToken, pagina, receber, criarVendedores, documento, salvar };

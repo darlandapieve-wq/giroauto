@@ -114,6 +114,8 @@ function serialize(v) {
     dias_publicado: v.status === 'publicado' ? daysSince(v.publicado_em) : 0,
     artes: require('./arts').listArts(v.id),
     canais: require('./channels').listingsOf(v.id),
+    preparacao: require('./preparacao').doVeiculo(v.id),
+    em_avaliacao: v.status === 'avaliacao',
     // Uma oferta lançada depois da publicação libera republicar na hora, com o preço novo.
     oferta_nova: v.status === 'publicado' && ofertaAtiva(v) && !!v.oferta_desde && !!v.publicado_em && v.oferta_desde > v.publicado_em,
     pode_republicar: v.status === 'publicado' && (daysSince(v.publicado_em) >= config.republishDays
@@ -130,7 +132,7 @@ function extras2(v) {
   const parceiro = v.local_parceiro_id ? get('SELECT id, nome, tipo, contato, whatsapp FROM partners WHERE id = ?', v.local_parceiro_id) : null;
   return {
     dias_estoque: v.status === 'vendido' ? G.daysBetween(v.compra_data || v.created_at, new Date(String(v.vendido_em || '').replace(' ', 'T') + 'Z')) : dias,
-    parado: v.status !== 'vendido' && dias >= (store.parado_dias || 25),
+    parado: v.status !== 'vendido' && v.status !== 'avaliacao' && dias >= (store.parado_dias || 25),
     parado_dias: store.parado_dias || 25,
     fipe_diff_pct: v.fipe && preco ? Math.round(((preco - v.fipe) / v.fipe) * 1000) / 10 : null,
     local_label: G.LOCAL[v.local_status] || '',

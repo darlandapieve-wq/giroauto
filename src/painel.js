@@ -26,7 +26,8 @@ function painel(storeId, q = {}, fin = true) {
   const per = periodo(q);
   const R = G.results(storeId, { from: per.from, to: per.to, tipo: q.tipo || '' });
   const vs = all('SELECT * FROM vehicles WHERE store_id = ?', storeId).map(V.serialize);
-  const estoque = vs.filter((v) => v.status !== 'vendido');
+  const estoque = vs.filter((v) => v.status !== 'vendido' && v.status !== 'avaliacao');
+  const emAvaliacao = vs.filter((v) => v.status === 'avaliacao').map((v) => ({ id: v.id, titulo: `${v.marca} ${v.modelo}`, placa: v.placa, ano: v.ano_modelo, desde: v.created_at, foto: v.photos?.[0]?.url || '' }));
   const hoje = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
   const mini = (v) => ({ id: v.id, titulo: `${v.marca} ${v.modelo}`, placa: v.placa, dias: v.dias_estoque, preco: v.preco_anuncio, fipe: v.fipe, status: v.status, oferta: v.oferta_ativa, foto: v.photos?.[0]?.url || '' });
 
@@ -86,6 +87,8 @@ function painel(storeId, q = {}, fin = true) {
   if (semFoto) add('baixo', `${semFoto} carro(s) sem foto`, 'Completar', 'estoque');
   if (semCompra) add('baixo', `${semCompra} carro(s) sem valor de compra (lucro não calculado)`, 'Gestão', 'gestao');
   if (visitasHoje.length) add('medio', `${visitasHoje.length} visita(s) agendada(s) para hoje`, 'Agenda', 'agenda');
+  const prepAtras = require('./preparacao').painel(storeId).atrasados;
+  if (prepAtras) add('medio', `${prepAtras} item(ns) de preparação com prazo vencido`, 'Preparação', 'preparacao');
   if (posVenda.length) add('baixo', `${posVenda.length} pós-venda para fazer hoje (7, 30 ou 90 dias)`, 'Enviar', 'posvenda');
 
   const k = R.kpis;
@@ -115,6 +118,8 @@ function painel(storeId, q = {}, fin = true) {
       contas_total: contas.reduce((s, c) => s + c.valor, 0),
     } : null,
     posvenda: posVenda,
+    preparacao: require('./preparacao').painel(storeId),
+    avaliacao: { qtd: emAvaliacao.length, lista: emAvaliacao.slice(0, 8) },
     contatos: get('SELECT COUNT(*) n FROM contacts WHERE store_id = ?', storeId).n,
   };
 }

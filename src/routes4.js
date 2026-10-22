@@ -33,6 +33,15 @@ function register(app) {
     if (!s) return res.status(404).send('Link de implantação inválido ou expirado.');
     res.set('X-Robots-Tag', 'noindex').send(OB.pagina(s));
   });
+  const umArquivo = require('multer')({ storage: require('multer').memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1 } }).single('arquivo');
+  app.post('/api/public/implantacao/:token/cnpj', umArquivo, wrap(async (req, res) => {
+    if (!OB.lojaPorToken(req.params.token)) return res.status(404).json({ error: 'Link de implantação inválido.' });
+    if (!req.file || !/^(application\/pdf|image\/(jpeg|png|webp))$/.test(req.file.mimetype)) return res.status(400).json({ ok: false, aviso: 'Envie o Cartão CNPJ em PDF ou foto (JPG/PNG).' });
+    const r = await require('./cnpj').ler(req.file.buffer, req.file.mimetype);
+    res.json({ ok: r.ok, aviso: r.aviso, dados: r.ok ? { ...r.dados, socios: undefined } : {} });
+  }));
+  app.post('/api/onboarding/cnpj', team.can('config'), wrap(async (req, res) => { const r = await OB.lerCnpjSalvo(req.user.storeId); res.json({ leitura: { ok: r.ok, aviso: r.aviso, fonte: r.fonte }, ...OB.resumo(req.user.storeId) }); }));
+  setTimeout(() => OB.lerPendentes().catch((e) => console.error('cnpj pendentes', e.message)), 20000).unref?.();
   app.post('/api/public/implantacao/:token', obUpload, wrap(async (req, res) => {
     const s = OB.lojaPorToken(req.params.token);
     if (!s) return res.status(404).json({ error: 'Link de implantação inválido.' });
@@ -41,6 +50,14 @@ function register(app) {
   }));
 
   /* ---------------- Pendências dos carros: multas, IPVA, licenciamento, restrições… (v2.13) ---------------- */
+  /* ---------------- Preparação dos carros (v2.14) ---------------- */
+  const PR = require('./preparacao');
+  const prep = team.canAny('cadastrar', 'gestao', 'vender');
+  app.get('/api/preparacao', prep, (req, res) => res.json({ itens: PR.list(req.user.storeId, { vehicleId: req.query.vehicle_id, abertos: req.query.abertos === '1' }), categorias: PR.CATS, status: PR.STATUS }));
+  app.post('/api/vehicles/:id/preparacao', prep, (req, res) => { PR.add(req.user.storeId, req.params.id, req.body || {}, req.user.id); res.status(201).json(PR.doVeiculo(Number(req.params.id))); });
+  app.put('/api/preparacao/:pid', prep, (req, res) => { const p = PR.update(req.user.storeId, req.params.pid, req.body || {}, req.user.id); res.json({ item: p, veiculo: PR.doVeiculo(p.vehicle_id) }); });
+  app.delete('/api/preparacao/:pid', prep, (req, res) => { const vid = require('./db').get('SELECT vehicle_id FROM preparacao WHERE id = ? AND store_id = ?', Number(req.params.pid), req.user.storeId)?.vehicle_id; PR.remove(req.user.storeId, req.params.pid); res.json(PR.doVeiculo(vid)); });
+
   const PD = require('./pendencias');
   const pend = team.canAny('vender', 'gestao');
   app.get('/api/pendencias', pend, (req, res) => res.json({ itens: PD.list(req.user.storeId, { vehicleId: req.query.vehicle_id }), tipos: PD.TIPOS, status: PD.STATUS, responsaveis: PD.RESPONSAVEL }));

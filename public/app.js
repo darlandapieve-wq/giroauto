@@ -271,6 +271,7 @@
     if (j) return `<span class="pill ${j.note ? 'p-warn' : 'p-info'}" ${j.note ? `title="${esc(j.note)}"` : ''}>${j.note ? 'Precisa de você' : j.status === 'em_andamento' ? 'Publicando agora' : 'Na fila'}: ${JOBNAME[j.type]}</span>${j.note ? `<span class="sub" style="max-width:220px">${esc(j.note)}</span>` : ''}`;
     if (v.status === 'vendido') return '<span class="pill p-muted">Vendido</span>';
     if (v.status === 'rascunho') return '<span class="pill p-muted">Rascunho</span>';
+    if (v.status === 'avaliacao') return '<span class="pill p-aval" title="Ainda não está no estoque: fora da vitrine e das publicações">Em avaliação</span>';
     if (v.status === 'pronto') return '<span class="pill p-info">Pronto para publicar</span>';
     if (v.pode_republicar) return '<span class="pill p-warn">Republicar</span>';
     return '<span class="pill p-ok">No Marketplace</span>';
@@ -289,7 +290,7 @@
     const cat = V.filter((v) => v.catalogo && ['pronto', 'publicado'].includes(v.status)).length;
     const mes = new Date().toISOString().slice(0, 7);
     const vend = V.filter((v) => v.status === 'vendido' && (v.vendido_em || '').startsWith(mes)).length;
-    const filtros = [['todos', 'Todos'], ['publicado', 'No Marketplace'], ['republicar', 'Para republicar'], ['pronto', 'Prontos'], ['rascunho', 'Rascunhos'], ['vendido', 'Vendidos']];
+    const filtros = [['todos', 'Todos'], ['publicado', 'No Marketplace'], ['republicar', 'Para republicar'], ['pronto', 'Prontos'], ['rascunho', 'Rascunhos'], ['avaliacao', 'Em avaliação'], ['vendido', 'Vendidos']];
     let list = V.filter((v) => S.filtro === 'todos' ? true : S.filtro === 'republicar' ? v.pode_republicar : v.status === S.filtro);
     if (S.busca) { const q = S.busca.toLowerCase(); list = list.filter((v) => `${v.marca} ${v.modelo} ${v.versao} ${v.placa}`.toLowerCase().includes(q)); }
     const empty = !V.length
@@ -320,11 +321,12 @@
     if (v.status === 'publicado') acts += `<button class="btn sm ${v.pode_republicar ? 'primary' : ''}" data-act="republicar" data-id="${v.id}" type="button" ${busy ? 'disabled' : ''} ${v.oferta_nova ? 'title="Republicar com o preço de oferta"' : ''}>${v.oferta_nova ? 'Republicar com oferta' : 'Republicar'}</button>`;
     if (v.status === 'pronto' && v.organico) acts += `<button class="btn sm primary" data-act="publicar" data-id="${v.id}" type="button" ${busy ? 'disabled' : ''}>Publicar</button>`;
     if (v.status === 'rascunho') acts += `<button class="btn sm" data-act="editar" data-id="${v.id}" type="button">Completar cadastro</button>`;
-    if (v.status !== 'vendido' && v.status !== 'rascunho') acts += `<button class="btn sm" data-act="divulgar" data-id="${v.id}" type="button">Divulgar</button><button class="btn sm" data-act="editar" data-id="${v.id}" type="button">Editar</button><button class="btn sm danger" data-act="vendido" data-id="${v.id}" type="button">Vendido</button>`;
+    if (v.status === 'avaliacao') acts += `<button class="btn sm primary" data-prepest="${v.id}" type="button" title="Comprou o carro? Ele entra no estoque com um clique">Passar para o estoque</button><button class="btn sm" data-act="editar" data-id="${v.id}" type="button">Editar</button>`;
+    if (!['vendido', 'rascunho', 'avaliacao'].includes(v.status)) acts += `<button class="btn sm" data-act="divulgar" data-id="${v.id}" type="button">Divulgar</button><button class="btn sm" data-act="editar" data-id="${v.id}" type="button">Editar</button><button class="btn sm danger" data-act="vendido" data-id="${v.id}" type="button">Vendido</button>`;
     if (v.status === 'vendido') acts += `<button class="btn sm" data-act="editar" data-id="${v.id}" type="button" title="Editar dados do veículo e da venda">Editar</button>`;
     acts += `<button class="btn sm ghost" data-act="duplicar" data-id="${v.id}" type="button" title="Criar uma cópia com os mesmos dados e fotos">Duplicar</button>`;
     acts += `<button class="btn sm ghost danger" data-act="excluir" data-id="${v.id}" type="button" title="Excluir veículo">Excluir</button>`;
-    return `<div class="row ${v.status === 'vendido' ? 'sold' : ''}">
+    return `<div class="row ${v.status === 'vendido' ? 'sold' : ''} ${v.status === 'avaliacao' ? 'aval' : ''}">
       ${thumb(v)}
       <div style="min-width:0">
         <div class="title">${esc(v.marca)} ${esc(v.modelo)} <span class="sub">${esc(v.versao)}</span></div>

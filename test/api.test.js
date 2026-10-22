@@ -35,6 +35,7 @@ before(async () => {
     META_APP_SECRET: 'secret',
     META_GRAPH_URL: `http://127.0.0.1:${mockServer.address().port}`,
     PUBLIC_URL: 'http://localhost:9',
+    CNPJ_API_URL: `http://127.0.0.1:${mockServer.address().port}/brasilapi/cnpj/v1/{cnpj}`,
   });
   const app = require('../src/server');
   await new Promise((r) => { server = app.listen(0, r); });
@@ -1624,6 +1625,89 @@ test('v2.13.3: formulário de implantação — link público, dados aplicados, 
   r = await api('POST', '/api/auth/login', { email: 'ana.implantacao@x.com', senha: senhaAna });
   assert.equal(r.status, 200, 'vendedora entra com a senha provisória');
   cookie = me;
+});
+
+test('v2.14: Cartão CNPJ lido sozinho (PDF com texto e foto pela IA) e aplicado na loja', async () => {
+  const pdf = fs.readFileSync(path.join(__dirname, 'fixtures', 'cartao-cnpj.pdf'));
+  const reg = await fetch(`${base}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ loja: 'Garage Teste', nome: 'Will', email: 'will.g45@x.com', senha: '12345678' }) });
+  const ck = reg.headers.get('set-cookie').split(';')[0];
+  const call = async (m, u, b) => { const r = await fetch(base + u, { method: m, headers: { cookie: ck, ...(b ? { 'Content-Type': 'application/json' } : {}) }, body: b ? JSON.stringify(b) : undefined }); return { status: r.status, body: await r.json() }; };
+  const tok = (await call('POST', '/api/onboarding/link')).body.url.split('/').pop();
+  // Prévia no formulário: lê o PDF e completa com a base da Receita
+  let fd = new FormData(); fd.append('arquivo', new Blob([pdf], { type: 'application/pdf' }), 'cartao.pdf');
+  let r = await (await fetch(`${base}/api/public/implantacao/${tok}/cnpj`, { method: 'POST', body: fd })).json();
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.dados.cnpj, '11.222.333/0001-81');
+  assert.equal(r.dados.razao_social, 'GARAGE QUARENTA E CINCO VEICULOS LTDA');
+  assert.equal(r.dados.representante, 'Joao Pereira dos Santos', 'sócio-administrador vira representante');
+  assert.equal(r.dados.cidade, 'Cascavel'); assert.equal(r.dados.uf, 'PR'); assert.equal(r.dados.cep, '85801-000');
+  assert.match(r.dados.endereco, /Avenida Brasil, 1500 - Sala 2 - Centro/);
+  // Foto: a IA lê o número
+  process.env.GEMINI_URL = process.env.META_GRAPH_URL; process.env.GEMINI_API_KEY = 'AIzaTESTKEY1234567890123456789012345';
+  mock.state.cnpjReply = { cnpj: '11.222.333/0001-81', razao_social: 'GARAGE QUARENTA E CINCO VEICULOS LTDA' };
+  fd = new FormData(); fd.append('arquivo', new Blob([JPG], { type: 'image/jpeg' }), 'foto.jpg');
+  r = await (await fetch(`${base}/api/public/implantacao/${tok}/cnpj`, { method: 'POST', body: fd })).json();
+  assert.equal(r.ok, true, 'foto lida pela IA'); assert.equal(r.dados.telefone, '4532221100');
+  mock.state.cnpjReply = { cnpj: '' };
+  fd = new FormData(); fd.append('arquivo', new Blob([JPG], { type: 'image/jpeg' }), 'foto.jpg');
+  r = await (await fetch(`${base}/api/public/implantacao/${tok}/cnpj`, { method: 'POST', body: fd })).json();
+  assert.equal(r.ok, false); assert.match(r.aviso, /CNPJ/);
+  delete process.env.GEMINI_API_KEY; delete process.env.GEMINI_URL;
+  // Envio do formulário só com o nome e o arquivo: o resto vem do cartão (sem apagar o que foi digitado)
+  fd = new FormData(); fd.append('nome', 'Garage45'); fd.append('cartao_cnpj', new Blob([pdf], { type: 'application/pdf' }), 'cartao.pdf');
+  assert.equal((await fetch(`${base}/api/public/implantacao/${tok}`, { method: 'POST', body: fd })).status, 200);
+  r = await call('POST', '/api/onboarding/cnpj');
+  assert.equal(r.body.leitura.ok, true);
+  assert.ok(r.body.cnpj.lido_em); assert.equal(r.body.cnpj.situacao, 'ATIVA');
+  assert.equal(r.body.dados.razao_social, 'GARAGE QUARENTA E CINCO VEICULOS LTDA'); assert.equal(r.body.dados.nome, 'Garage45');
+  const me = (await call('GET', '/api/me')).body.store;
+  assert.equal(me.city, 'Cascavel'); assert.equal(me.state, 'PR'); assert.equal(me.name, 'Garage45');
+  const g = (await call('GET', '/api/guia')).body;
+  assert.ok(g.etapas.contrato, 'dados para contratos preenchidos');
+  const ct = (await call('GET', '/api/store/contrato')).body;
+  assert.equal(ct.representante, 'Joao Pereira dos Santos'); assert.equal(ct.cnpj, '11.222.333/0001-81');
+});
+
+test('v2.14: carro em avaliação e preparação (itens, custo previsto, feito, painel)', async () => {
+  let r = await api('POST', '/api/vehicles', { marca: 'Fiat', modelo: 'Argo', ano_modelo: 2021, preco: 69900, avaliacao: true, preparacao: ['repintar para-choque traseiro', 'trocar lâmpada do farol'] });
+  assert.equal(r.status, 201); const id = r.body.id;
+  assert.equal(r.body.status, 'avaliacao'); assert.equal(r.body.em_avaliacao, true);
+  assert.equal(r.body.preparacao.abertos, 2);
+  assert.deepEqual(r.body.preparacao.itens.map((i) => i.categoria), ['funilaria', 'eletrica'], 'categoria pela descrição');
+  // fora da vitrine e das publicações
+  const slug = (await api('GET', '/api/me')).body.store.slug;
+  assert.equal((await fetch(`${base}/v/${slug}/${id}`)).status, 404);
+  r = await api('POST', `/api/vehicles/${id}/publish`); assert.equal(r.status, 409);
+  r = await api('GET', '/api/painel');
+  assert.ok(r.body.avaliacao.qtd >= 1);
+  assert.ok(!r.body.estoque.parados.some((v) => v.id === id));
+  // mais itens depois, com custo previsto que entra nos custos do carro
+  r = await api('POST', `/api/vehicles/${id}/preparacao`, { itens: [{ descricao: 'costurar rasgo do banco do motorista', custo: '350' }] });
+  assert.equal(r.status, 201); assert.equal(r.body.abertos, 3);
+  const banco = r.body.itens.find((i) => /banco/.test(i.descricao));
+  assert.equal(banco.categoria, 'interior');
+  let custos = (await api('GET', `/api/vehicles/${id}/finance`)).body;
+  const lista = Array.isArray(custos) ? custos : custos.costs || custos.itens || [];
+  assert.ok(lista.some((c) => c.valor === 350 && c.status === 'previsto'), JSON.stringify(custos).slice(0, 300));
+  r = await api('PUT', `/api/preparacao/${banco.id}`, { status: 'feito' });
+  assert.equal(r.body.item.feito, true); assert.equal(r.body.veiculo.abertos, 2);
+  custos = (await api('GET', `/api/vehicles/${id}/finance`)).body;
+  assert.ok((Array.isArray(custos) ? custos : custos.costs || custos.itens || []).some((c) => c.valor === 350 && c.status === 'realizado'), 'feito vira custo realizado');
+  r = await api('GET', '/api/painel');
+  assert.ok(r.body.preparacao.itens >= 2); assert.ok(r.body.preparacao.lista.some((c) => c.id === id));
+  // passa para o estoque com um clique
+  r = await api('POST', `/api/vehicles/${id}/estoque`);
+  assert.equal(r.status, 200); assert.ok(['rascunho', 'pronto'].includes(r.body.status)); assert.ok(r.body.compra_data);
+  assert.equal((await api('POST', `/api/vehicles/${id}/estoque`)).status, 409);
+  // excluir item com custo previsto apaga o custo
+  const lamp = r.body.preparacao.itens.find((i) => /lâmpada/.test(i.descricao));
+  await api('PUT', `/api/preparacao/${lamp.id}`, { custo: 80 });
+  r = await api('DELETE', `/api/preparacao/${lamp.id}`);
+  assert.equal(r.body.abertos, 1);
+  custos = (await api('GET', `/api/vehicles/${id}/finance`)).body;
+  assert.ok(!(Array.isArray(custos) ? custos : custos.costs || custos.itens || []).some((c) => c.valor === 80));
+  r = await api('GET', '/api/preparacao?abertos=1');
+  assert.ok(r.body.itens.every((i) => !i.feito));
 });
 
 test('v2.0: agenda de republicação, QR, folha A4, painel TV e fotos prontas', async () => {

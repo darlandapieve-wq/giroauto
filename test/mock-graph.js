@@ -35,6 +35,8 @@ function createMock() {
     state.geminiCalls.push({ version: req.params[0], model: req.params[1], body: req.body });
     if (state.geminiFail) return res.status(429).json({ error: { message: 'Resource has been exhausted (e.g. check quota).' } });
     // Chat/extração de texto (v2.10): sem imagem na requisição, devolve a próxima resposta JSON combinada no teste.
+    const pedido = JSON.stringify(req.body.contents || []);
+    if (/Cart\u00e3o CNPJ|Cartão CNPJ/.test(pedido)) return res.json({ candidates: [{ content: { parts: [{ text: JSON.stringify(state.cnpjReply || { cnpj: '' }) }] } }] });
     const temImagem = (req.body.contents || []).some((c) => (c.parts || []).some((p) => p.inline_data || p.inlineData));
     if (!temImagem) {
       if (state.chatFail) return res.status(500).json({ error: { message: 'falha simulada' } });
@@ -64,6 +66,13 @@ function createMock() {
       <tr><td><b>Ano:</b></td><td>2015</td></tr><tr><td><b>Ano Modelo:</b></td><td>2016</td></tr><tr><td><b>Cor:</b></td><td>Prata</td></tr>
       <tr><td><b>Combustível:</b></td><td>Alcool / Gasolina</td></tr><tr><td><b>UF:</b></td><td>PR</td></tr><tr><td><b>Município:</b></td><td>Assis Chateaubriand</td></tr></table>
       <table><tr><th>Código FIPE</th><th>Modelo</th><th>Valor</th></tr><tr><td>005340-6</td><td>Fox Track 1.6 Flex 8V 5p</td><td>R$ 49.846,00</td></tr></table></body></html>`);
+  });
+  app.get('/brasilapi/cnpj/v1/:n', (req, res) => {
+    if (req.params.n !== '11222333000181') return res.status(404).json({ message: 'CNPJ não encontrado' });
+    res.json({ cnpj: '11222333000181', razao_social: 'GARAGE QUARENTA E CINCO VEICULOS LTDA', nome_fantasia: 'GARAGE45', descricao_tipo_de_logradouro: 'AVENIDA', logradouro: 'BRASIL',
+      numero: '1500', complemento: 'SALA 2', bairro: 'CENTRO', municipio: 'CASCAVEL', uf: 'PR', cep: '85801000', ddd_telefone_1: '4532221100', email: 'CONTATO@GARAGE45.COM.BR',
+      data_inicio_atividade: '2020-03-10', cnae_fiscal_descricao: 'Comércio a varejo de automóveis, camionetas e utilitários usados', descricao_situacao_cadastral: 'ATIVA',
+      qsa: [{ nome_socio: 'MARIA DA SILVA', qualificacao_socio: 'Sócio' }, { nome_socio: 'JOAO PEREIRA DOS SANTOS', qualificacao_socio: 'Sócio-Administrador' }] });
   });
   app.get('/fipe/carros/marcas', (req, res) => res.json([{ codigo: '59', nome: 'VW - VolksWagen' }]));
   app.get('/fipe/carros/marcas/59/modelos', (req, res) => res.json({ modelos: [{ codigo: 5585, nome: 'Fox Track 1.6 Flex 8V 5p' }], anos: [] }));

@@ -69,7 +69,7 @@ function parse({ from = '', subject = '', text = '', html = '' }, store = {}) {
 
 // Acha o carro do anúncio no estoque: placa, ou marca + modelo (+ ano) citados no e-mail.
 function acharVeiculo(storeId, dados, textoTodo) {
-  const vs = all(`SELECT id, marca, modelo, versao, ano_fab, ano_modelo, placa, status FROM vehicles WHERE store_id = ? AND status != 'rascunho' ORDER BY status = 'vendido', updated_at DESC`, storeId);
+  const vs = all(`SELECT id, marca, modelo, versao, ano_fab, ano_modelo, placa, status FROM vehicles WHERE store_id = ? AND status NOT IN ('rascunho','avaliacao') ORDER BY status = 'vendido', updated_at DESC`, storeId);
   if (dados.placa) { const v = vs.find((x) => String(x.placa || '').toUpperCase().replace(/\W/g, '') === dados.placa); if (v) return v; }
   const alvo = sem(`${dados.veiculo}\n${textoTodo}`);
   let melhor = null; let nota = 0;

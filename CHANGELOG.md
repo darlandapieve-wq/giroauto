@@ -2,6 +2,13 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.14.0 — 22/10/2026
+
+- **Cartão CNPJ lido sozinho**: no formulário de implantação, o dono anexa o Cartão CNPJ (PDF do site da Receita ou foto) logo no item "1. Empresa" e os campos se preenchem na hora (razão social, nome fantasia, CNPJ, endereço, cidade, UF, CEP, telefone, e-mail e representante legal pelo quadro de sócios). O GiroAuto lê o texto do PDF, usa a IA para fotos e completa com a base pública da Receita. Ao enviar, só o que ficou em branco é preenchido na loja, nos dados para contratos e nas respostas. No guia Primeiros passos aparece a situação na Receita, os sócios e o botão **Ler o Cartão CNPJ de novo**. Cartões já enviados (como o da Garage45) são lidos sozinhos.
+- **CRM**: o funil inteiro (8 etapas) cabe na tela, sem barra de rolagem lateral, com cards mais compactos.
+- **Preparação dos carros**: anote o que precisa arrumar antes de vender (repintar para-choque, trocar lâmpada, costurar banco…), no cadastro do carro ou depois, um item por linha. A categoria é escolhida pela descrição; dá para pôr prazo e custo previsto (que entra nos custos do carro como previsto e vira realizado quando o item é feito). Os itens aparecem no selo 🔧 do carro no Estoque, em Gestão > Acompanhamento (quadro Preparação) e no Painel (quadro Preparação), com marcar como feito em um clique.
+- **Carros em avaliação**: em "+ Novo veículo" escolha **Estoque** ou **Em avaliação** (ou use o botão **+ Avaliação** no Estoque). O carro em avaliação aparece na lista marcado, fora da vitrine, das publicações, das campanhas e dos números do estoque. Comprou? **Passar para o estoque** com um clique.
+
 ## v2.13.3 — 16/10/2026
 
 - **Primeiros passos > Formulário para o dono da loja**: gere um link e mande por WhatsApp. O dono preenche pelo celular, sem login, os dados da empresa como no Cartão CNPJ, horários, regras de atendimento (troca, financiamento, garantia, laudo, entrega), vendedores, portais e redes, e envia o logo e os documentos. O GiroAuto aplica as respostas na loja, nos dados para contratos, no CRM e nas regras do assistente (sem apagar o que já foi escrito).
