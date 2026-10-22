@@ -2,6 +2,12 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.15.1 — 22/10/2026
+
+- **Correção do comando de voz**: quando a IA do Google não respondia, aparecia "Erro interno no servidor". Agora o GiroAuto tenta todos os modelos disponíveis e, se a IA estiver fora do ar ou lenta, entende sozinho os comandos mais comuns (carro no pátio ou na oficina/parceiro, serviço pronto, incluir preparação, conta paga), identificando o carro por modelo, ano, cor ou placa. Se houver dois carros parecidos, ele pergunta qual. Quando não dá para entender, mostra uma mensagem clara em vez do erro.
+- **Alexa**: em Configurações > Minha conta > Comandos de voz, o botão **Configurar a Alexa** gera o pacote da skill (modelo de interação e código, já com a chave) e mostra o passo a passo no console da Amazon. Funciona nos Echo da sua conta sem precisar publicar a skill.
+- Chaves de voz por aparelho (Siri, Alexa): cada uma aparece na lista com a data de uso e pode ser desativada sozinha.
+
 ## v2.15.0 — 22/10/2026
 
 - **Preparação e custos numa lista só.** O quadro **Entrada, preparação e custos** do cadastro do carro substitui as listas "Manutenções e custos já feitos" e "Custos previstos" da Gestão do veículo. Cada item tem descrição, categoria, situação (a fazer, em andamento ou feito), valor, prazo/data e parceiro. Item a fazer com valor é custo previsto; ao marcar ✓ vira custo realizado. O lucro previsto da Gestão do veículo usa essa lista. A mesma lista aparece em Gestão > Estoque e margem (Abrir), no selo 🔧 do Estoque, em Gestão > Acompanhamento e no quadro Preparação do Painel, com editar, iniciar, marcar como feito e excluir. Os custos lançados antes desta versão foram trazidos para a lista automaticamente.

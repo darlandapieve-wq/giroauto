@@ -57,9 +57,15 @@ function register(app) {
     res.json(await VZ.interpretar(req.user, { texto: req.body?.texto, audio: req.file }));
   }));
   app.post('/api/voz/executar', auth.requireUser, (req, res) => { const feitas = VZ.executar(req.user, req.body?.acoes || []); res.json({ feitas, fala: VZ.fala({}, feitas) }); });
-  app.get('/api/voz/chave', auth.requireUser, (req, res) => res.json({ ativa: VZ.temChave(req.user.id), url: `${require('./config').publicUrl}/api/voz/comando` }));
-  app.post('/api/voz/chave', auth.requireUser, (req, res) => res.json({ chave: VZ.gerarChave(req.user.id), url: `${require('./config').publicUrl}/api/voz/comando` }));
-  app.delete('/api/voz/chave', auth.requireUser, (req, res) => { VZ.removerChave(req.user.id); res.json({ ok: true }); });
+  const vozUrl = () => `${require('./config').publicUrl}/api/voz/comando`;
+  app.get('/api/voz/chave', auth.requireUser, (req, res) => res.json({ ativa: VZ.temChave(req.user.id), chaves: VZ.chaves(req.user.id), url: vozUrl() }));
+  app.post('/api/voz/chave', auth.requireUser, (req, res) => res.json({ chave: VZ.gerarChave(req.user.id, req.body?.nome || 'Siri'), url: vozUrl() }));
+  app.delete('/api/voz/chave', auth.requireUser, (req, res) => { VZ.removerChave(req.user.id, req.query.id); res.json({ ok: true }); });
+  // Alexa: gera uma chave e o pacote da skill (modelo de interação + código) para colar no console da Amazon.
+  app.post('/api/voz/alexa', auth.requireUser, (req, res) => {
+    const chave = VZ.gerarChave(req.user.id, 'Alexa');
+    res.json({ chave, ...require('./alexa').pacote({ url: vozUrl(), chave, invocacao: req.body?.invocacao }) });
+  });
   // Siri (Atalhos do iPhone), Alexa ou outro assistente: manda o texto já transcrito e recebe a frase para falar.
   // Executa direto quando o comando é claro; com dúvida, só responde a pergunta.
   app.post('/api/voz/comando', require('express').text({ type: 'text/*', limit: '20kb' }), wrap(async (req, res) => {
@@ -67,8 +73,10 @@ function register(app) {
     const user = VZ.usuarioDaChave(tok);
     if (!user) return res.status(401).json({ fala: 'Chave do GiroAuto inválida. Gere uma nova em Configurações, Minha conta.' });
     const texto = typeof req.body === 'string' ? req.body : (req.body?.texto || req.body?.text || req.query.texto || '');
+    // A Alexa espera a resposta em poucos segundos: usa um prazo menor para a IA (e as regras se ela demorar).
+    const prazoMs = /alexa/i.test(String(req.body?.origem || req.query.origem || '')) ? 5500 : 25000;
     let r;
-    try { r = await VZ.interpretar(user, { texto }); } catch (e) { return res.json({ fala: e.message }); }
+    try { r = await VZ.interpretar(user, { texto }, { prazoMs }); } catch (e) { return res.json({ fala: e.message }); }
     const feitas = r.duvida ? [] : VZ.executar(user, r.acoes.filter((a) => a.ok));
     res.json({ fala: VZ.fala(r, feitas), transcricao: r.transcricao, feitas });
   }));

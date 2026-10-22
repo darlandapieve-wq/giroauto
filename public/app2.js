@@ -3083,27 +3083,43 @@
       } catch (e) { toast(e.message); $('#vz-ok').disabled = false; }
     };
   }
-  // Configurações > Minha conta: chave para usar pela Siri (Atalhos do iPhone), Alexa e outros assistentes.
+  // Configurações > Minha conta: chaves para a Siri (Atalhos do iPhone) e para a Alexa, uma por aparelho.
   async function vozConfigPanel() {
     const col = $('#cfgV2'); if (!col || $('#cfgVoz')) return;
     const st = await api('GET', '/api/voz/chave').catch(() => null); if (!st || $('#cfgVoz')) return;
-    const passos = (chave) => `<ol class="note" style="padding-left:18px;display:flex;flex-direction:column;gap:4px;margin:8px 0">
+    const copiar = (id) => async () => { const el = $(id); try { await navigator.clipboard.writeText(el.value); toast('Copiado'); } catch { el.select(); } };
+    const passosSiri = (chave) => `<ol class="note vzpassos">
         <li>No iPhone, abra o app <b>Atalhos</b> e toque em <b>+</b>. Dê o nome <b>GiroAuto</b>.</li>
         <li>Adicione a ação <b>Ditar Texto</b> (idioma Português).</li>
         <li>Adicione <b>Obter Conteúdo do URL</b>: URL <code>${esc(st.url)}</code>, Método <b>POST</b>, Cabeçalho <code>Authorization</code> = <code>Bearer ${esc(chave || 'SUA-CHAVE')}</code>, Corpo <b>JSON</b> com o campo <code>texto</code> = <i>Texto Ditado</i>.</li>
         <li>Adicione <b>Obter Valor do Dicionário</b> com a chave <code>fala</code> e depois <b>Falar Texto</b>.</li>
         <li>Pronto: diga <b>"E aí Siri, GiroAuto"</b> e fale o comando. Ela responde o que foi feito.</li></ol>`;
     col.insertAdjacentHTML('beforeend', `<div class="panel" id="cfgVoz"><h2>Comandos de voz</h2>
-      <p class="lead">Use o botão 🎤 no canto da tela (computador ou celular) para falar o que aconteceu, e o GiroAuto atualiza depois de você confirmar. Para usar pela <b>Siri</b> ou por outro assistente, gere a sua chave pessoal: ela age com as permissões do seu usuário.</p>
-      <div id="vz-cfg">${st.ativa ? '<div class="okbox">Chave ativa. Por segurança ela só aparece quando é gerada; gere outra se precisar configurar de novo.</div>' : ''}</div>
-      <div class="btnrow" style="margin-top:8px"><button class="btn" type="button" id="vz-gen">${st.ativa ? 'Gerar nova chave' : 'Gerar chave para a Siri'}</button>${st.ativa ? '<button class="btn ghost danger" type="button" id="vz-del">Desativar chave</button>' : ''}</div>
-      <details style="margin-top:8px"><summary class="sub">Como configurar na Siri (iPhone)</summary>${passos('')}</details></div>`);
+      <p class="lead">Use o botão 🎤 (no menu ou no canto da tela do celular) para falar o que aconteceu; o GiroAuto atualiza depois de você confirmar. Para usar pela <b>Siri</b> ou pela <b>Alexa</b>, gere uma chave para cada aparelho: ela age com as permissões do seu usuário e pode ser desativada quando quiser.</p>
+      ${st.chaves.length ? `<div class="cfields">${st.chaves.map((k) => `<div class="cf"><span class="k">${esc(k.nome)}<br><span class="sub">criada em ${fmtDate(k.created_at)}${k.usado_em ? ` · usada em ${fmtDate(k.usado_em)}` : ' · ainda não usada'}</span></span><span></span><span><button class="btn sm ghost danger" type="button" data-vzdel="${k.id}">Desativar</button></span></div>`).join('')}</div>` : ''}
+      <div id="vz-cfg"></div>
+      <div class="btnrow" style="margin-top:8px"><button class="btn" type="button" id="vz-gen">Configurar a Siri (iPhone)</button><button class="btn" type="button" id="vz-alexa">Configurar a Alexa</button></div></div>`);
     $('#vz-gen').onclick = async () => {
-      const r = await api('POST', '/api/voz/chave');
-      $('#vz-cfg').innerHTML = `<div class="okbox">Sua chave (copie agora, ela não aparece de novo):<div class="obrow" style="margin-top:6px"><input readonly value="${esc(r.chave)}" id="vz-k"><button class="btn sm" type="button" id="vz-cp">Copiar</button></div></div>${passos(r.chave)}`;
-      $('#vz-cp').onclick = async () => { try { await navigator.clipboard.writeText(r.chave); toast('Chave copiada'); } catch { $('#vz-k').select(); } };
+      const r = await api('POST', '/api/voz/chave', { nome: 'Siri' });
+      $('#vz-cfg').innerHTML = `<div class="okbox" style="margin-top:10px">Sua chave para a Siri (copie agora, ela não aparece de novo):<div class="obrow" style="margin-top:6px"><input readonly value="${esc(r.chave)}" id="vz-k"><button class="btn sm" type="button" id="vz-cp">Copiar</button></div></div>${passosSiri(r.chave)}`;
+      $('#vz-cp').onclick = copiar('#vz-k');
     };
-    if ($('#vz-del')) $('#vz-del').onclick = () => confirmBox('Desativar a chave?', 'A Siri e outros assistentes configurados com ela param de funcionar.', 'Desativar', async () => { await api('DELETE', '/api/voz/chave'); toast('Chave desativada'); $('#cfgVoz').remove(); vozConfigPanel(); }, true);
+    $('#vz-alexa').onclick = async () => {
+      const r = await api('POST', '/api/voz/alexa', {});
+      $('#vz-cfg').innerHTML = `<div class="okbox" style="margin-top:10px">Pacote da skill pronto, já com a sua chave. Ele só aparece agora: faça os passos abaixo em seguida (ou gere de novo depois).</div>
+        <ol class="note vzpassos">
+          <li>Entre em <a class="link" href="https://developer.amazon.com/alexa/console/ask" target="_blank" rel="noopener">developer.amazon.com/alexa/console/ask</a> com a <b>mesma conta Amazon do seu Echo</b> (crie a conta de desenvolvedor, é grátis).</li>
+          <li><b>Create Skill</b>: nome <b>GiroAuto</b>, idioma <b>Portuguese (BR)</b>, tipo <b>Other &gt; Custom</b>, hospedagem <b>Alexa-hosted (Node.js)</b>, modelo <b>Start from Scratch</b>.</li>
+          <li>Em <b>Build &gt; Interaction Model &gt; JSON Editor</b>, apague tudo, cole o <b>Modelo</b> abaixo, clique <b>Save</b> e depois <b>Build skill</b>.</li>
+          <li>Na aba <b>Code</b>, abra <code>lambda/index.js</code>, apague tudo, cole o <b>Código</b> abaixo e clique <b>Deploy</b>.</li>
+          <li>Na aba <b>Test</b>, mude "Off" para <b>Development</b>. Pronto: nos Echo dessa conta, diga <b>"Alexa, abrir ${esc(r.invocacao)}"</b> e fale o comando, ou direto: <b>"Alexa, pede para o ${esc(r.invocacao)} anotar que o Jetta preto está no pátio"</b>.</li>
+        </ol>
+        <div class="f"><label for="vz-am">Modelo (JSON Editor)</label><textarea id="vz-am" class="vzcode" rows="6" readonly>${esc(r.modelo)}</textarea><button class="btn sm" type="button" id="vz-amc" style="margin-top:4px">Copiar modelo</button></div>
+        <div class="f" style="margin-top:8px"><label for="vz-ac">Código (lambda/index.js)</label><textarea id="vz-ac" class="vzcode" rows="6" readonly>${esc(r.codigo)}</textarea><button class="btn sm" type="button" id="vz-acc" style="margin-top:4px">Copiar código</button></div>
+        <p class="note">Não precisa publicar a skill na loja da Amazon: em modo Development ela funciona nos aparelhos da sua conta.</p>`;
+      $('#vz-amc').onclick = copiar('#vz-am'); $('#vz-acc').onclick = copiar('#vz-ac');
+    };
+    $$('[data-vzdel]').forEach((b) => { b.onclick = () => confirmBox('Desativar esta chave?', 'O assistente configurado com ela para de funcionar.', 'Desativar', async () => { await api('DELETE', `/api/voz/chave?id=${b.dataset.vzdel}`); toast('Chave desativada'); $('#cfgVoz').remove(); vozConfigPanel(); }, true); });
   }
 
   /* ======================= Navegação e app instalável ======================= */

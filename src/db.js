@@ -308,6 +308,15 @@ addColumn('stores', 'onboarding', "TEXT NOT NULL DEFAULT '{}'");
 // v2.7: último acesso dos usuários e canal de sugestões/erros (visto pelo desenvolvedor).
 addColumn('users', 'last_seen', 'TEXT');
 addColumn('users', 'voz_token', "TEXT NOT NULL DEFAULT ''");
+db.exec(`CREATE TABLE IF NOT EXISTS voz_chaves (
+  id INTEGER PRIMARY KEY,
+  store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  nome TEXT NOT NULL DEFAULT 'Assistente',
+  hash TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  usado_em TEXT
+)`);
 db.exec(`CREATE TABLE IF NOT EXISTS feedback (
   id INTEGER PRIMARY KEY,
   store_id INTEGER REFERENCES stores(id) ON DELETE SET NULL,

@@ -1784,6 +1784,43 @@ test('v2.15: comandos de voz — interpreta, confere e executa (app, Siri/Alexa 
   delete process.env.GEMINI_API_KEY; delete process.env.GEMINI_URL;
 });
 
+test('v2.15.1: voz sem IA (regras), chaves por aparelho e pacote da Alexa', async () => {
+  process.env.GEMINI_URL = process.env.META_GRAPH_URL; process.env.GEMINI_API_KEY = 'AIzaTESTKEY1234567890123456789012345';
+  let r = await api('POST', '/api/vehicles', { marca: 'Ford', modelo: 'Ecosport', versao: 'XLS', ano_modelo: 2009, cor: 'Prata', preco: 32900 });
+  const eco = r.body;
+  mock.state.chatFail = true; // IA fora do ar: entende pelas regras
+  r = await api('POST', '/api/voz/interpretar', { texto: 'inclua uma pendencia de preparação da ecosport 2009 de realizar alinhamento e balanceamento' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.fonte, 'regras');
+  assert.equal(r.body.acoes[0].tipo, 'preparacao_add'); assert.equal(r.body.acoes[0].vehicle_id, eco.id);
+  assert.equal(r.body.acoes[0].itens[0].descricao, 'Alinhamento e balanceamento');
+  r = await api('POST', '/api/voz/interpretar', { texto: 'bom dia' });
+  assert.equal(r.status, 200); assert.ok(r.body.duvida, 'sem carro: pergunta');
+  mock.state.chatFail = false;
+  // chaves por aparelho
+  const siri = (await api('POST', '/api/voz/chave', { nome: 'Siri' })).body.chave;
+  const al = (await api('POST', '/api/voz/alexa', { invocacao: 'giro auto' })).body;
+  assert.match(al.chave, /^gv_/); assert.equal(al.invocacao, 'giro auto');
+  const modelo = JSON.parse(al.modelo);
+  assert.equal(modelo.interactionModel.languageModel.intents[0].name, 'ComandoIntent');
+  assert.ok(al.codigo.includes(al.chave) && al.codigo.includes('/api/voz/comando'));
+  new (require('node:vm').Script)(al.codigo); // código da skill é JavaScript válido
+  let k = (await api('GET', '/api/voz/chave')).body.chaves;
+  assert.deepEqual(k.map((x) => x.nome).sort(), ['Alexa', 'Siri']);
+  mock.state.chatReplies = [{ acoes: [{ tipo: 'local', vehicle_id: eco.id, status: 'manutencao' }], resposta: 'ok' }];
+  let x = await fetch(`${base}/api/voz/comando`, { method: 'POST', headers: { Authorization: `Bearer ${al.chave}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ texto: 'a ecosport foi para a oficina', origem: 'alexa' }) });
+  assert.match((await x.json()).fala, /Pronto/);
+  k = (await api('GET', '/api/voz/chave')).body.chaves;
+  assert.ok(k.find((c) => c.nome === 'Alexa').usado_em, 'registra o uso');
+  await api('DELETE', `/api/voz/chave?id=${k.find((c) => c.nome === 'Alexa').id}`);
+  x = await fetch(`${base}/api/voz/comando`, { method: 'POST', headers: { Authorization: `Bearer ${al.chave}`, 'Content-Type': 'text/plain' }, body: 'oi' });
+  assert.equal(x.status, 401, 'chave da Alexa desativada');
+  mock.state.chatReplies = [{ acoes: [], duvida: 'Qual carro?' }];
+  x = await fetch(`${base}/api/voz/comando`, { method: 'POST', headers: { Authorization: `Bearer ${siri}`, 'Content-Type': 'text/plain' }, body: 'oi' });
+  assert.equal(x.status, 200, 'a da Siri continua');
+  delete process.env.GEMINI_API_KEY; delete process.env.GEMINI_URL;
+});
+
 test('v2.0: agenda de republicação, QR, folha A4, painel TV e fotos prontas', async () => {
   const sched = require('../src/schedule');
   const db = require('../src/db');
