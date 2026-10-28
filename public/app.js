@@ -97,7 +97,11 @@
     await Promise.all([loadVehicles(), loadJobs(), loadMeta(), loadExt()]);
     if (S.jobs.some((j) => ['pendente', 'em_andamento'].includes(j.status))) watchJobs();
     route();
-    setInterval(async () => { await Promise.all([loadVehicles(), loadJobs(), loadExt()]); if (['estoque', 'republicacao'].includes(S.view) && !$('#scrim')) render(); else counts(); }, 20000);
+    // Atualiza a cada 30 s só com a aba visível (economiza banda); ao voltar para a aba, atualiza na hora.
+    const refresh = async () => { await Promise.all([loadVehicles(), loadJobs(), loadExt()]); if (['estoque', 'republicacao'].includes(S.view) && !$('#scrim')) render(); else counts(); };
+    let lastRefresh = Date.now();
+    setInterval(() => { if (!document.hidden) { lastRefresh = Date.now(); refresh(); } }, 30000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - lastRefresh > 30000) { lastRefresh = Date.now(); refresh(); } });
   }
   async function loadVehicles() { S.vehicles = await api('GET', '/api/vehicles'); }
   async function loadJobs() { S.jobs = await api('GET', '/api/jobs'); }

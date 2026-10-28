@@ -30,7 +30,7 @@ async function boot() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'giro-ver-'));
   tmpDirs.push(dir);
   const child = spawn(process.execPath, ['--no-warnings=ExperimentalWarning', path.join(__dirname, '..', 'src', 'start.js')], {
-    env: { ...process.env, GIROAUTO_SKIP_ENV: '1', DATA_DIR: dir, PORT: String(PORT), PUBLIC_URL: base, SUPABASE_URL: supaUrl, ...MODES[MODE], GIROAUTO_DB: '' },
+    env: { ...process.env, GIROAUTO_SKIP_ENV: '1', DATA_DIR: dir, PORT: String(PORT), PUBLIC_URL: base, SUPABASE_URL: supaUrl, ...MODES[MODE], GIROAUTO_DB: '', GIROAUTO_BACKUP_QUIET_MS: '1000', GIROAUTO_BACKUP_MAX_WAIT_MS: '3000', GIROAUTO_BACKUP_GAP_MS: '0' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let out = '';

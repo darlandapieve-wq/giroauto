@@ -10,6 +10,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const zlib = require('node:zlib');
 const config = require('./config');
 
 const URL_ = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
@@ -118,18 +119,27 @@ async function restore() {
   if (!snap) return { restored: false, reason: 'sem cópia no Supabase' };
   fs.mkdirSync(path.dirname(dbPath()), { recursive: true });
   for (const ext of ['', '-wal', '-shm']) fs.rmSync(dbPath() + ext, { force: true });
-  fs.writeFileSync(dbPath(), snap);
+  // Cópias novas vão comprimidas (gzip); as antigas, sem compressão, continuam sendo lidas.
+  fs.writeFileSync(dbPath(), isGzip(snap) ? zlib.gunzipSync(snap) : snap);
   state.restoredFrom = new Date().toISOString();
   return { restored: true, bytes: snap.length };
 }
 
+const isGzip = (b) => b.length > 2 && b[0] === 0x1f && b[1] === 0x8b;
+
+// Economia de banda (plano gratuito do Render: 5 GB/mês de saída):
+// - espera 10 s sem alterações (no máximo 60 s) para juntar várias gravações numa cópia só;
+// - e nunca envia mais de uma cópia a cada 2 minutos. O desligamento (SIGTERM) sempre envia a última.
+const ms = (k, d) => (Number.isFinite(Number(process.env[k])) && process.env[k] !== '' ? Number(process.env[k]) : d);
+const QUIET_MS = ms('GIROAUTO_BACKUP_QUIET_MS', 10e3), MAX_WAIT_MS = ms('GIROAUTO_BACKUP_MAX_WAIT_MS', 60e3), MIN_GAP_MS = ms('GIROAUTO_BACKUP_GAP_MS', 120e3);
 function markDirty() {
   if (!enabled()) return;
   state.dirty = true;
-  if (!state.firstDirtyAt) state.firstDirtyAt = Date.now();
+  const now = Date.now();
+  if (!state.firstDirtyAt) state.firstDirtyAt = now;
   clearTimeout(state.timer);
-  // Espera 3 s sem alterações (no máximo 15 s) para juntar várias gravações numa cópia só.
-  const wait = Math.max(0, Math.min(3000, 15000 - (Date.now() - state.firstDirtyAt)));
+  let wait = Math.max(0, Math.min(QUIET_MS, MAX_WAIT_MS - (now - state.firstDirtyAt)));
+  if (state.lastFlushAt) wait = Math.max(wait, MIN_GAP_MS - (now - state.lastFlushAt));
   state.timer = setTimeout(() => { flush().catch(() => {}); }, wait);
 }
 
@@ -144,10 +154,19 @@ async function flush() {
     const tmp = path.join(os.tmpdir(), `giro-snap-${process.pid}-${Date.now()}.db`);
     try {
       db.exec(`VACUUM INTO '${tmp.replace(/'/g, "''")}'`);
-      const data = fs.readFileSync(tmp);
-      await upload(BUCKET_DATA, DB_OBJECT, data);
+      const data = zlib.gzipSync(fs.readFileSync(tmp), { level: 9 });
+      state.lastFlushAt = Date.now();
+      await upload(BUCKET_DATA, DB_OBJECT, data, 'application/gzip');
       const day = new Date().toISOString().slice(0, 10);
-      if (state.lastDaily !== day) { await upload(BUCKET_DATA, `copias/giroauto-${day}.db`, data); state.lastDaily = day; }
+      if (state.lastDaily !== day) {
+        await upload(BUCKET_DATA, `copias/giroauto-${day}.db`, data, 'application/gzip');
+        state.lastDaily = day;
+        // Guarda só as cópias diárias dos últimos 14 dias.
+        const velhas = [];
+        for (let d = 15; d <= 45; d++) velhas.push(`copias/giroauto-${new Date(Date.now() - d * 864e5).toISOString().slice(0, 10)}.db`);
+        remove(BUCKET_DATA, velhas).catch(() => {});
+      }
+      state.lastBytes = data.length;
       state.lastBackupAt = new Date().toISOString();
       state.lastError = '';
     } catch (e) {

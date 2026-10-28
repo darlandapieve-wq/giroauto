@@ -601,9 +601,12 @@ const all = (sql, ...a) => db.prepare(sql).all(...a).map(plain);
 const get = (sql, ...a) => plain(db.prepare(sql).get(...a));
 const markDirty = () => require('./storage').markDirty();
 const run = (sql, ...a) => { const r = db.prepare(sql).run(...a); if (r.changes) markDirty(); return r; };
+// Gravação de baixa importância (último acesso, último check): não dispara cópia ao Supabase.
+// Vai junto na próxima cópia causada por uma alteração real ou no desligamento do servidor.
+const runQuiet = (sql, ...a) => db.prepare(sql).run(...a);
 
 function logEvent(storeId, message) {
   run('INSERT INTO events (store_id, message) VALUES (?, ?)', storeId, message);
 }
 
-module.exports = { db, tx, all, get, run, logEvent };
+module.exports = { db, tx, all, get, run, runQuiet, logEvent };

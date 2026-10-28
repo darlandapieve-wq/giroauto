@@ -1,5 +1,5 @@
 // CRM (v2.9): leads de todas as origens num funil, distribuição entre vendedores, histórico, visitas e tarefas.
-const { get, all, run, tx, logEvent } = require('./db');
+const { get, all, run, runQuiet, tx, logEvent } = require('./db');
 const C = require('./contatos');
 const V = require('./vehicles');
 
@@ -32,9 +32,9 @@ const CFG_PADRAO = { distribuicao: 'rodizio', vendedores: [], sla_min: 15, horar
 function config(storeId) {
   return { ...CFG_PADRAO, ...json(get('SELECT crm_config FROM stores WHERE id = ?', storeId)?.crm_config, {}) };
 }
-function saveConfig(storeId, patch) {
+function saveConfig(storeId, patch, { quiet = false } = {}) {
   const c = { ...config(storeId), ...patch };
-  run('UPDATE stores SET crm_config = ? WHERE id = ?', JSON.stringify(c), storeId);
+  (quiet ? runQuiet : run)('UPDATE stores SET crm_config = ? WHERE id = ?', JSON.stringify(c), storeId);
   return c;
 }
 function publicConfig(storeId) {

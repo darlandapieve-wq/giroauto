@@ -2,6 +2,13 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.15.4 — 28/10/2026
+
+- **Economia de banda (plano gratuito do Render, 5 GB/mês)**: o servidor estava enviando o banco inteiro ao Supabase a cada minuto, porque cada consulta da extensão gravava o "último acesso". Agora o último acesso da extensão e dos usuários, e a hora do check de e-mail sem mensagens novas, não disparam cópia — vão junto na próxima alteração de verdade ou no desligamento.
+- **Cópia do banco comprimida** (gzip) e no máximo uma a cada 2 minutos (espera 10 s sem alterações, até 60 s). Cópias antigas sem compressão continuam sendo restauradas. Cópias diárias guardadas por 14 dias.
+- **Respostas comprimidas** (gzip) para o painel, a API e as páginas.
+- **Painel**: a atualização automática passou de 20 s para 30 s e pausa com a aba em segundo plano; ao voltar à aba, atualiza na hora.
+
 ## v2.15.3 — 22/10/2026
 
 - **Painel**: saíram o aviso de pós-venda em "Onde atuar agora" e o quadro "Pós-venda hoje" (os contatos de pós-venda continuam em Gestão > Contatos).

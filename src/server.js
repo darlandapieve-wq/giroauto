@@ -19,6 +19,8 @@ const instagram = require('./instagram');
 const team = require('./team');
 
 const app = express();
+// Respostas comprimidas (gzip): reduz a banda de saída do painel, da API e das páginas.
+app.use(require('compression')());
 app.disable('x-powered-by');
 app.set('trust proxy', true);
 app.use(express.json({ limit: '6mb', verify: (req, _res, buf) => { if (req.url.startsWith('/api/wa/webhook')) req.rawBody = buf; } }));
@@ -756,7 +758,8 @@ extRouter.get('/next', auth.requireExtension, (req, res) => {
   const hoje = get(`SELECT COUNT(*) n FROM ext_jobs WHERE store_id = ? AND status = 'concluido' AND type IN ('publicar','republicar')
     AND date(updated_at, '-3 hours') = date('now', '-3 hours')`, req.ext.storeId).n;
   if (job.type !== 'excluir' && hoje >= st.daily_limit) {
-    run(`UPDATE ext_jobs SET note=? WHERE id=?`, `Limite de ${st.daily_limit} publicações por dia atingido. Continua amanhã.`, job.id);
+    const nota = `Limite de ${st.daily_limit} publicações por dia atingido. Continua amanhã.`;
+    run(`UPDATE ext_jobs SET note=? WHERE id=? AND COALESCE(note,'') <> ?`, nota, job.id, nota);
     return res.json({ job: null, pendentes, limit_reached: true });
   }
   run(`UPDATE ext_jobs SET status='em_andamento', note='', updated_at=datetime('now') WHERE id=?`, job.id);

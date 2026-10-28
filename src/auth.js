@@ -1,4 +1,4 @@
-const { get, run } = require('./db');
+const { get, run, runQuiet } = require('./db');
 const { randomToken, sha256 } = require('./crypto');
 const config = require('./config');
 
@@ -39,7 +39,7 @@ function loadUser(req, _res, next) {
     if (row && row.expires_at > Date.now() && row.active) {
       req.user = { id: row.id, name: row.name, email: row.email, role: row.role, storeId: row.store_id, perms: require('./team').permsOf(row) };
       // Último acesso (para o painel do desenvolvedor), gravado no máximo a cada 5 minutos.
-      if (!row.last_seen || Date.parse(row.last_seen.replace(' ', 'T') + 'Z') < Date.now() - 300e3) run("UPDATE users SET last_seen = datetime('now') WHERE id = ?", row.id);
+      if (!row.last_seen || Date.parse(row.last_seen.replace(' ', 'T') + 'Z') < Date.now() - 300e3) runQuiet("UPDATE users SET last_seen = datetime('now') WHERE id = ?", row.id);
     }
   }
   next();
@@ -56,7 +56,8 @@ function requireExtension(req, res, next) {
   if (!m) return res.status(401).json({ error: 'Extensão não pareada.' });
   const row = get('SELECT store_id FROM ext_tokens WHERE token_hash = ?', sha256(m[1]));
   if (!row) return res.status(401).json({ error: 'Pareamento inválido ou revogado. Pareie a extensão de novo pelo painel.' });
-  run("UPDATE ext_tokens SET last_seen = datetime('now') WHERE token_hash = ?", sha256(m[1]));
+  // A extensão consulta a cada minuto: o último acesso não dispara cópia do banco ao Supabase.
+  runQuiet("UPDATE ext_tokens SET last_seen = datetime('now') WHERE token_hash = ?", sha256(m[1]));
   req.ext = { storeId: row.store_id };
   next();
 }

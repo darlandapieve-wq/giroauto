@@ -197,12 +197,14 @@ async function imapCheck(storeId, { teste = false } = {}) {
         const r = await processar(storeId, { from, subject, text: p.text || '', html: p.html || '' }, { msgId: p.messageId || `uid:${msg.uid}` });
         if (r.ok && r.lead_id) leads++;
       }
-      CRM.saveConfig(storeId, { email: { ...cfg(storeId), ultimo_uid: maxUid, ultimo_check: new Date().toISOString(), erro: '' } });
+      // Sem e-mail novo e sem erro a limpar: só atualiza a hora do check, sem disparar cópia do banco.
+      const nada = maxUid === (c.ultimo_uid || 0) && !c.erro;
+      CRM.saveConfig(storeId, { email: { ...cfg(storeId), ultimo_uid: maxUid, ultimo_check: new Date().toISOString(), erro: '' } }, { quiet: nada });
     } finally { lock.release(); }
     await client.logout();
   } catch (e) {
     const msg = /auth|login|credentials|invalid/i.test(e.responseText || e.message) ? 'O e-mail recusou o login. Confira o e-mail e a senha de app.' : (e.responseText || e.message || 'Falha ao ler a caixa de e-mail.');
-    CRM.saveConfig(storeId, { email: { ...cfg(storeId), erro: msg, ultimo_check: new Date().toISOString() } });
+    CRM.saveConfig(storeId, { email: { ...cfg(storeId), erro: msg, ultimo_check: new Date().toISOString() } }, { quiet: cfg(storeId).erro === msg });
     try { await client.logout(); } catch { /* conexão já fechada */ }
     throw httpError(400, msg);
   }
