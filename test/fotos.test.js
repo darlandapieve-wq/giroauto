@@ -248,3 +248,23 @@ test('comando da IA: fidelidade e ângulo novo', () => {
   assert.match(n, /1080x1920/);
   assert.deepEqual(M.plano([{ id: 1, tipo: 'exterior' }, { id: 2, tipo: 'exterior' }], 4, false).map((x) => x.original_id), [1, 2, 1, 2]);
 });
+
+test('Pollinations: Nano Banana 2 Lite por padrão, várias fotos e nova tentativa sem tamanho', async () => {
+  const pedidos = [];
+  const P = express();
+  P.post('/v1/images/edits', require('multer')().any(), (req, res) => {
+    pedidos.push({ model: req.body.model, size: req.body.size, n: req.files.length, auth: req.headers.authorization });
+    if (req.body.size) return res.status(400).json({ error: { message: 'size not supported' } });
+    res.json({ data: [{ b64_json: Buffer.from('img').toString('base64') }] });
+  });
+  const srv = await new Promise((r) => { const s = P.listen(0, '127.0.0.1', () => r(s)); });
+  process.env.POLLINATIONS_URL = `http://127.0.0.1:${srv.address().port}`;
+  try {
+    const ia = require('../src/fotos/ia');
+    const r = await ia.pollinationsEditar({ chave: 'sk_teste', modelo: 'kontext', fotos: [Buffer.from('a'), Buffer.from('b')], prompt: 'x', w: 1080, h: 1350 });
+    assert.equal(r.modelo, 'google/gemini-3.1-flash-lite-image');
+    assert.equal(r.imagem.toString(), 'img');
+    assert.deepEqual(pedidos.map((p) => [p.size || '', p.n]), [['1080x1350', 2], ['', 2]]);
+    assert.equal(pedidos[0].auth, 'Bearer sk_teste');
+  } finally { srv.close(); delete process.env.POLLINATIONS_URL; }
+});

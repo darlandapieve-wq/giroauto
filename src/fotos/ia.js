@@ -65,19 +65,32 @@ async function geminiTestar(chave) {
 
 /* ---------------- Pollinations ---------------- */
 const POLLI = () => (process.env.POLLINATIONS_URL || 'https://gen.pollinations.ai').replace(/\/+$/, '');
-async function pollinationsEditar({ chave, modelo, foto, prompt }) {
+// Edição pela Pollinations (endpoint compatível com a OpenAI). Várias fotos: o campo "image" se repete.
+// Padrão: Nano Banana 2 Lite (Gemini 3.1 Flash-Lite Image), o melhor custo para manter o carro fiel.
+const POLLI_PADRAO = 'google/gemini-3.1-flash-lite-image';
+async function pollinationsEditar({ chave, modelo, foto, fotos, prompt, w, h }) {
+  const m = !modelo || modelo === 'kontext' ? POLLI_PADRAO : modelo;
   const fd = new FormData();
-  fd.append('model', modelo || 'kontext');
+  fd.append('model', m);
   fd.append('prompt', prompt);
-  fd.append('image', new Blob([foto], { type: 'image/jpeg' }), 'carro.jpg');
-  const r = await fetch(`${POLLI()}/v1/images/edits`, { method: 'POST', headers: { Authorization: `Bearer ${chave}` }, body: fd, signal: AbortSignal.timeout(180000) });
-  if (!r.ok) { const t = await r.text().catch(() => ''); throw new IAErro(`Pollinations: ${t.slice(0, 200) || r.status}`, r.status); }
+  if (w && h) fd.append('size', `${w}x${h}`);
+  (fotos || [foto]).forEach((f, i) => fd.append('image', new Blob([f], { type: 'image/jpeg' }), `carro-${i + 1}.jpg`));
+  let r = await fetch(`${POLLI()}/v1/images/edits`, { method: 'POST', headers: { Authorization: `Bearer ${chave}` }, body: fd, signal: AbortSignal.timeout(180000) });
+  if (r.status === 400 && w && h) { // tamanho não aceito pelo modelo: tenta sem (o GiroAuto recorta no formato depois)
+    fd.delete('size');
+    r = await fetch(`${POLLI()}/v1/images/edits`, { method: 'POST', headers: { Authorization: `Bearer ${chave}` }, body: fd, signal: AbortSignal.timeout(180000) });
+  }
+  if (!r.ok) {
+    const t = await r.text().catch(() => '');
+    let msg = t; try { const j = JSON.parse(t); msg = j?.error?.message || j?.error || j?.message || t; } catch { /* texto */ }
+    throw new IAErro(`Pollinations: ${String(msg).slice(0, 200) || r.status}`, r.status);
+  }
   const tipo = r.headers.get('content-type') || '';
-  if (tipo.startsWith('image/')) return { imagem: Buffer.from(await r.arrayBuffer()), modelo: modelo || 'kontext' };
+  if (tipo.startsWith('image/')) return { imagem: Buffer.from(await r.arrayBuffer()), modelo: m };
   const j = await r.json().catch(() => ({}));
   const it = j?.data?.[0] || {};
-  if (it.b64_json) return { imagem: Buffer.from(it.b64_json, 'base64'), modelo: modelo || 'kontext' };
-  if (it.url) { const i = await fetch(it.url); if (i.ok) return { imagem: Buffer.from(await i.arrayBuffer()), modelo: modelo || 'kontext' }; }
+  if (it.b64_json) return { imagem: Buffer.from(it.b64_json, 'base64'), modelo: m };
+  if (it.url) { const i2 = await fetch(it.url); if (i2.ok) return { imagem: Buffer.from(await i2.arrayBuffer()), modelo: m }; }
   throw new IAErro('A Pollinations não devolveu imagem.', 502);
 }
 
@@ -149,7 +162,8 @@ function amigavel(e, provedor) {
     if (e?.status === 401 || e?.status === 403 || /api key/i.test(msg)) return 'A chave da IA do Google foi recusada. Confira em Configurações.';
     if (/billing|free tier/i.test(msg)) return 'A IA de imagens do Google exige faturamento ativo na chave (Google AI Studio > Faturamento).';
   }
-  if (provedor === 'pollinations' && (e?.status === 402 || e?.status === 429 || /pollen|balance|insufficient/i.test(msg))) return 'Os créditos (Pollen) da Pollinations acabaram.';
+  if (provedor === 'pollinations' && (e?.status === 402 || /pollen|balance|insufficient|credit/i.test(msg))) return 'Os créditos (Pollen) da Pollinations acabaram. Recarregue em enter.pollinations.ai.';
+  if (provedor === 'pollinations' && (e?.status === 401 || e?.status === 403)) return 'A chave da Pollinations foi recusada. Use uma chave secreta (começa com sk_) em Configurações > Imagens com IA.';
   return msg.slice(0, 300);
 }
 

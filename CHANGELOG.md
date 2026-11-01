@@ -2,6 +2,10 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.16.4 — 01/11/2026
+
+- GiroAuto Fotos pela **Pollinations** agora usa o **Nano Banana 2 Lite** (Gemini 3.1 Flash-Lite Image, `google/gemini-3.1-flash-lite-image`) por padrão, no lugar do antigo "kontext": mais fiel ao carro, cerca de US$ 0,03 por foto. Envia todas as fotos de referência nos ângulos novos e o tamanho do formato escolhido. Mensagens claras para crédito esgotado e chave recusada (a Pollinations agora exige chave secreta `sk_`).
+
 ## v2.16.3 — 01/11/2026
 
 - GiroAuto Fotos: o botão **Entrar no Puter e gerar** aparece assim que a página percebe que falta entrar; "Refazer" some enquanto a foto está sendo gerada na página; aviso para manter a aba aberta.

@@ -308,7 +308,7 @@ async function gerarUma(g) {
     }
     let r;
     if (p.nome === 'gemini') r = await ia.geminiEditar({ chave: p.chave, modelo: p.modelo, fotos, referencia, prompt, formato: e.formato, resolucao: e.resolucao });
-    else if (p.nome === 'pollinations') r = await ia.pollinationsEditar({ chave: p.chave, modelo: p.modelo, foto: fotos[0], prompt });
+    else if (p.nome === 'pollinations') r = await ia.pollinationsEditar({ chave: p.chave, modelo: p.modelo, fotos, prompt, w: f.w, h: f.h });
     else if (p.semCota) throw new ia.IAErro('Quota exceeded for this project.', 429);
     else r = await ia.simuladoEditar({ foto: fotos[0], cores: M.doId(e.modelo)?.cores, w: f.w, h: f.h, rotulo: `${e.modelo} · ${g.ordem}${g.angulo ? ' · ' + g.angulo : ''}` });
     const k = e.resolucao === '2K' ? 2 : 1;
