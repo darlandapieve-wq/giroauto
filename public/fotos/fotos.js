@@ -342,7 +342,7 @@ function blocoResultado(e, gerando, prontas) {
     <div class="linha entre"><div class="passo" style="margin:0"><span class="n">5</span><h2>Ensaio · ${esc(e.modelo_nome)}</h2></div>
       <div class="linha">${prontas ? `<a class="btn prim" href="/api/fotos/ensaios/${e.id}/zip">⬇ Baixar tudo (ZIP)</a>` : ''}
       ${e.origem === 'loja' && s.origens.podeEnviarLoja && aprovadas ? `<button id="bLoja">Pôr ${aprovadas} aprovada(s) nas fotos do carro</button>` : ''}</div></div>
-    ${gerando ? `<div class="progresso"><div style="width:${Math.round(((total - gerando) / total) * 100)}%"></div></div><p class="small muted">Gerando ${total - gerando + 1} de ${total}… pode sair desta tela, o ensaio continua.</p>` : ''}
+    ${gerando ? `<div class="progresso"><div style="width:${Math.round(((total - gerando) / total) * 100)}%"></div></div><p class="small muted">Gerando ${total - gerando + 1} de ${total}… ${e.geradas.some((g) => g.status === 'navegador') ? 'mantenha esta aba aberta.' : 'pode sair desta tela, o ensaio continua.'}</p>` : ''}
     ${e.geradas.some((g) => g.status === 'navegador') ? `<div class="aviso info" id="puterAviso">${PU.precisaEntrar
       ? `Para gerar aqui mesmo com o Gemini, conecte uma conta <b>Puter</b> (gratuita, só na primeira vez). <button class="mini prim" id="bPuter">Entrar no Puter e gerar</button>`
       : `Gerando com o Gemini nesta página. Mantenha esta aba aberta até terminar.`}${PU.erro ? `<br><span class="selo bad">${esc(PU.erro)}</span>` : ''}</div>` : ''}
@@ -381,7 +381,7 @@ function cardGerada(g, origUrl) {
       ${pronta && g.status !== 'aprovada' ? `<button class="mini" data-acao="aprovada">✓ Aprovar</button>` : ''}
       ${g.status === 'aprovada' ? `<button class="mini" data-acao="pronta">Desfazer</button>` : ''}
       ${pronta && g.status !== 'descartada' ? `<button class="mini" data-acao="descartada">Descartar</button>` : ''}
-      ${!['pendente', 'gerando'].includes(g.status) && g.status !== 'manual' ? `<button class="mini" data-acao="refazer">↻ Refazer</button>` : ''}
+      ${!['pendente', 'gerando', 'navegador', 'manual'].includes(g.status) ? `<button class="mini" data-acao="refazer">↻ Refazer</button>` : ''}
       ${g.url && g.status !== 'gerando' ? `<a class="btn mini" href="${g.url}" download="foto-${g.ordem}.jpg">Baixar</a>` : ''}
       ${g.prompt_pt ? `<button class="mini prim" data-acao="copiar">1. Copiar texto e baixar foto</button><a class="btn mini" href="https://gemini.google.com/app" target="_blank" rel="noopener">2. Abrir o Gemini</a><label class="btn mini">3. Enviar imagem<input type="file" accept="image/*" data-manual hidden></label>` : ''}
     </div></div>`;
@@ -521,7 +521,7 @@ async function puterRodar() {
   PU.rodando = true;
   try {
     const puter = await puterCarregar();
-    if (!puter.auth.isSignedIn()) { PU.precisaEntrar = true; return; }
+    if (!puter.auth.isSignedIn()) { const antes = PU.precisaEntrar; PU.precisaEntrar = true; if (!antes) desenharEnsaio(); return; }
     PU.precisaEntrar = false;
     for (;;) {
       const e = S.ensaio;

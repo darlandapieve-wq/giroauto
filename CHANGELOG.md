@@ -2,6 +2,10 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.16.3 — 01/11/2026
+
+- GiroAuto Fotos: o botão **Entrar no Puter e gerar** aparece assim que a página percebe que falta entrar; "Refazer" some enquanto a foto está sendo gerada na página; aviso para manter a aba aberta.
+
 ## v2.16.2 — 01/11/2026
 
 - **GiroAuto Fotos automático, sem chave de IA**: nova opção **Gemini direto nesta página (conta Puter)** em "Como gerar" (e padrão quando o painel não tem chave de IA). A própria página gera as fotos com o Gemini (Nano Banana) pelo Puter.js e envia o resultado ao GiroAuto, duas fotos por vez, sem copiar, baixar ou colar nada. Na primeira vez o Puter pede para entrar (conta grátis, com uso mensal gratuito; depois, recarga na própria conta Puter). Basta manter a aba aberta até terminar.
