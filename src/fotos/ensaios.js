@@ -37,6 +37,7 @@ function salvarCfg(b) {
 // Provedor efetivo: FOTOS_IA=simulado (testes) ou o de Configurações > Imagens com IA.
 function provedor() {
   if (process.env.FOTOS_IA === 'simulado') return { nome: 'simulado' };
+  if (process.env.FOTOS_IA === 'sem-cota') return { nome: 'simulado', semCota: true }; // testes: a IA responde "cota esgotada"
   const a = settings.ai();
   if (a.provider === 'gemini') return { nome: 'gemini', chave: a.gemini.key, modelo: a.gemini.model };
   if (a.provider === 'pollinations') return { nome: 'pollinations', chave: a.pollinations.key, modelo: a.pollinations.model };
@@ -141,6 +142,7 @@ function opcoes(b, atual = {}) {
   if (b.placa_modo !== undefined) { if (!M.PLACA[b.placa_modo]) throw erro(400, 'Opção de placa inválida.'); o.placa_modo = b.placa_modo; }
   if (b.novos_angulos !== undefined) o.novos_angulos = b.novos_angulos ? 1 : 0;
   if (b.arte !== undefined) o.arte = b.arte ? 1 : 0;
+  if (b.provedor !== undefined) o.provedor = b.provedor === 'manual' ? 'manual' : '';
   if (b.veiculo !== undefined) o.veiculo = JSON.stringify(V.limpar({ ...(atual.veiculo || {}), ...b.veiculo }));
   if (b.loja !== undefined) o.loja = JSON.stringify({ nome: String(b.loja.nome || '').slice(0, 40), whatsapp: String(b.loja.whatsapp || '').slice(0, 30), cidade: String(b.loja.cidade || '').slice(0, 40) });
   if (b.personalizado_texto !== undefined) o.personalizado = JSON.stringify({ ...(atual.personalizado || {}), texto: String(b.personalizado_texto || '').slice(0, 500) });
@@ -207,9 +209,10 @@ function iniciar(id, espacos) {
   const originais = all('SELECT id, tipo FROM fotos_originais WHERE ensaio_id = ? ORDER BY ordem, id', e.id);
   if (!originais.length) throw erro(400, 'Envie ao menos uma foto do veículo.');
   if (e.modelo === 'P' && !e.personalizado.texto && !e.personalizado.referencia) throw erro(400, 'No modelo personalizado, descreva o cenário ou envie uma foto de referência.');
-  const falta = faltaIa();
-  if (falta) throw erro(400, falta);
-  const p = provedor().nome;
+  // 'manual' no ensaio = grátis pelo app do Gemini (ou ChatGPT): o GiroAuto prepara o texto e a foto, a pessoa gera e envia.
+  const p = e.provedor === 'manual' ? 'manual' : provedor().nome;
+  const falta = p === 'manual' ? '' : faltaIa();
+  if (falta) throw erro(400, `${falta} Ou escolha "Grátis pelo app do Gemini" em Como gerar.`);
   const velhas = [...all('SELECT arquivo FROM fotos_geradas WHERE ensaio_id = ?', e.id), ...all('SELECT arquivo FROM fotos_artes WHERE ensaio_id = ?', e.id)].map((r) => r.arquivo);
   run('DELETE FROM fotos_geradas WHERE ensaio_id = ?', e.id);
   run('DELETE FROM fotos_artes WHERE ensaio_id = ?', e.id);
@@ -218,13 +221,13 @@ function iniciar(id, espacos) {
   for (const x of M.plano(originais, e.quantidade, e.novos_angulos)) {
     run('INSERT INTO fotos_geradas (ensaio_id, ordem, original_id, angulo, variacao, status) VALUES (?,?,?,?,?,?)', e.id, x.ordem, x.original_id, x.angulo, x.variacao, st);
   }
-  run("UPDATE fotos_ensaios SET status = ?, provedor = ?, updated_at = datetime('now') WHERE id = ?", p === 'manual' ? 'manual' : 'gerando', p, e.id);
+  run("UPDATE fotos_ensaios SET status = ?, updated_at = datetime('now') WHERE id = ?", p === 'manual' ? 'manual' : 'gerando', e.id);
   fila.acordar();
 }
 
 function refazer(id, espacos, gid, instrucao = '') {
   const e = doEspaco(id, espacos);
-  const manual = provedor().nome === 'manual';
+  const manual = e.provedor === 'manual' || provedor().nome === 'manual';
   const r = run(`UPDATE fotos_geradas SET status = ?, instrucao = ?, erro = '', fidelidade = NULL, updated_at = datetime('now') WHERE id = ? AND ensaio_id = ? AND status <> 'gerando'`,
     manual ? 'manual' : 'pendente', String(instrucao || '').slice(0, 300), Number(gid), e.id);
   if (!r.changes) throw erro(409, 'Esta foto já está sendo gerada.');
@@ -285,6 +288,7 @@ async function gerarUma(g) {
     let r;
     if (p.nome === 'gemini') r = await ia.geminiEditar({ chave: p.chave, modelo: p.modelo, fotos, referencia, prompt, formato: e.formato, resolucao: e.resolucao });
     else if (p.nome === 'pollinations') r = await ia.pollinationsEditar({ chave: p.chave, modelo: p.modelo, foto: fotos[0], prompt });
+    else if (p.semCota) throw new ia.IAErro('Quota exceeded for this project.', 429);
     else r = await ia.simuladoEditar({ foto: fotos[0], cores: M.doId(e.modelo)?.cores, w: f.w, h: f.h, rotulo: `${e.modelo} · ${g.ordem}${g.angulo ? ' · ' + g.angulo : ''}` });
     const k = e.resolucao === '2K' ? 2 : 1;
     const jpg = await card.normalizar(r.imagem, f.w * k, f.h * k);
@@ -302,9 +306,18 @@ async function gerarUma(g) {
     }
   } catch (err) {
     console.error(`Fotos ${g.id}:`, err.message);
-    falhar(ia.amigavel(err, p.nome));
+    const msg = ia.amigavel(err, p.nome);
+    // Cota ou crédito da IA acabou: em vez de erro, a foto (e as que estão na fila) passam para o modo grátis pelo app.
+    if (semCota(err, msg)) {
+      const aviso = `${msg} Termine grátis pelo app do Gemini: copie o texto, gere lá e envie a imagem aqui.`;
+      run(`UPDATE fotos_geradas SET status = 'manual', erro = ?, updated_at = datetime('now') WHERE ensaio_id = ? AND (id = ? OR status = 'pendente')`, aviso.slice(0, 300), g.ensaio_id, g.id);
+      return;
+    }
+    falhar(msg);
   }
 }
+
+const semCota = (err, msg) => [402, 429].includes(err?.status) || /cota|limite|quota|billing|faturamento|pollen|insufficient|exhausted/i.test(`${err?.message} ${msg}`);
 
 function concluirSeTerminou(ensaioId) {
   const r = get(`SELECT sum(status IN ('pendente','gerando')) AS fila, sum(status = 'manual') AS manual,

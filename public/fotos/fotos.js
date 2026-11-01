@@ -303,6 +303,7 @@ function desenharEnsaio() {
       <div><label>Quantidade de fotos</label><div class="chips" style="margin-top:4px">${s.quantidades.map((q) => `<button class="mini ${e.quantidade === q ? 'on' : ''}" data-qtd="${q}">${q}</button>`).join('')}</div></div>
       <label>Formato<select data-op="formato">${Object.entries(s.formatos).map(([k, t]) => `<option value="${k}" ${e.formato === k ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
       <label>Resolução<select data-op="resolucao"><option value="1K" ${e.resolucao === '1K' ? 'selected' : ''}>Padrão (1080 px)</option><option value="2K" ${e.resolucao === '2K' ? 'selected' : ''}>Alta (2160 px)</option></select></label>
+      <label>Como gerar<select data-op="provedor"><option value="" ${e.provedor !== 'manual' ? 'selected' : ''}>IA automática (${esc(s.provedor_nome)})</option><option value="manual" ${e.provedor === 'manual' ? 'selected' : ''}>Grátis pelo app do Gemini (você gera e envia)</option></select></label>
       <label>Placa<select data-op="placa_modo">${Object.entries(s.placa).map(([k, t]) => `<option value="${k}" ${e.placa_modo === k ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
     </div>
     <label class="check" style="margin-top:10px"><input type="checkbox" data-op="arte" ${e.arte ? 'checked' : ''}> Gerar a arte com as informações do veículo (4:5 e stories 9:16)</label>
@@ -319,7 +320,7 @@ function desenharEnsaio() {
       </form></details>
 
     <div class="fixo linha entre" style="margin-top:18px">
-      <span class="small muted">${s.falta_ia ? `<span class="selo warn">${esc(s.falta_ia)}</span>` : `IA: ${esc(s.provedor_nome)}. Cada foto é uma chamada à IA.`}</span>
+      <span class="small muted">${e.provedor === 'manual' ? 'Grátis: o GiroAuto prepara o texto e as fotos; você gera cada imagem no app do Gemini e envia.' : s.falta_ia ? `<span class="selo warn">${esc(s.falta_ia)}</span> Ou escolha "Grátis pelo app do Gemini" em Como gerar.` : `IA: ${esc(s.provedor_nome)}. Cada foto é uma chamada à IA. Se a cota acabar, as fotos que faltam passam para o modo grátis pelo app.`}</span>
       <button class="prim grande" id="bGerar" ${e.originais.length ? '' : 'disabled'}>${temGeracao ? 'Gerar o ensaio de novo' : `Gerar ensaio com ${e.quantidade} fotos`}</button>
     </div>
   </div></details>`;
@@ -338,7 +339,11 @@ function blocoResultado(e, gerando, prontas) {
       <div class="linha">${prontas ? `<a class="btn prim" href="/api/fotos/ensaios/${e.id}/zip">⬇ Baixar tudo (ZIP)</a>` : ''}
       ${e.origem === 'loja' && s.origens.podeEnviarLoja && aprovadas ? `<button id="bLoja">Pôr ${aprovadas} aprovada(s) nas fotos do carro</button>` : ''}</div></div>
     ${gerando ? `<div class="progresso"><div style="width:${Math.round(((total - gerando) / total) * 100)}%"></div></div><p class="small muted">Gerando ${total - gerando + 1} de ${total}… pode sair desta tela, o ensaio continua.</p>` : ''}
-    ${e.status === 'manual' ? `<p class="aviso info">Modo manual: para cada foto, copie o texto, abra o ChatGPT ou o Gemini, anexe a foto original, cole o texto e envie aqui a imagem que voltar.</p>` : ''}
+    ${e.geradas.some((g) => g.status === 'manual') ? `<div class="aviso info"><b>Grátis pelo app do Gemini</b> (conta Google gratuita), em 3 passos para cada foto:
+      <ol style="margin:6px 0 4px 18px;padding:0"><li><b>Copiar texto e baixar foto</b>: o texto vai para a área de transferência e a foto do carro é baixada.</li>
+      <li><b>Abrir o Gemini</b>, anexar a foto baixada, colar o texto (Ctrl+V) e enviar.</li>
+      <li>Baixe ou copie a imagem que o Gemini criar e clique em <b>Enviar imagem</b> (ou cole aqui com Ctrl+V).</li></ol>
+      <span class="small">Também funciona no ChatGPT. O app do Gemini tem um limite diário de imagens para contas gratuitas.</span></div>` : ''}
     ${!gerando && prontas ? `<p class="small muted">Aprove as melhores (vão para o ZIP e para a arte), descarte as que não ficaram boas ou peça para refazer com uma instrução. A miniatura no canto é a foto original.</p>` : ''}
     <div class="resultado">${e.geradas.map((g) => cardGerada(g, orig[g.original_id])).join('')}</div>
     ${e.arte ? `<h3 style="margin-top:20px">Artes com as informações do veículo</h3>
@@ -356,7 +361,7 @@ function cardGerada(g, origUrl) {
   let img;
   if (g.url && g.status !== 'gerando') img = `<img src="${g.url}" data-zoom="${g.url}" data-orig="${origUrl || ''}" alt="">${origUrl ? `<img class="orig-mini" src="${origUrl}" alt="original">` : ''}`;
   else if (g.status === 'pendente' || g.status === 'gerando') img = `<div class="estado"><div class="giro"></div>${g.status === 'gerando' ? 'A IA está trabalhando nesta foto…' : 'Na fila'}</div>`;
-  else if (g.status === 'manual') img = `<div class="estado">${origUrl ? `<img src="${origUrl}" style="max-height:130px;margin:0 auto 8px;border-radius:4px">` : ''}Gere fora e envie a imagem.</div>`;
+  else if (g.status === 'manual') img = `<div class="estado">${origUrl ? `<img src="${origUrl}" style="max-height:130px;margin:0 auto 8px;border-radius:4px">` : ''}${g.erro ? `<span class="small">${esc(g.erro)}</span>` : 'Gere no app do Gemini e envie a imagem.'}</div>`;
   else img = `<div class="estado"><span class="selo bad">Erro</span><br>${esc(g.erro)}</div>`;
   const pronta = g.url && ['pronta', 'aprovada', 'descartada'].includes(g.status);
   return `<div class="ger ${g.status}" data-g="${g.id}">
@@ -370,7 +375,7 @@ function cardGerada(g, origUrl) {
       ${pronta && g.status !== 'descartada' ? `<button class="mini" data-acao="descartada">Descartar</button>` : ''}
       ${!['pendente', 'gerando'].includes(g.status) && g.status !== 'manual' ? `<button class="mini" data-acao="refazer">↻ Refazer</button>` : ''}
       ${g.url && g.status !== 'gerando' ? `<a class="btn mini" href="${g.url}" download="foto-${g.ordem}.jpg">Baixar</a>` : ''}
-      ${g.prompt_pt ? `<button class="mini" data-acao="copiar">Copiar texto</button>${origUrl ? `<a class="btn mini" href="${origUrl}" download="original-${g.ordem}.jpg">Original</a>` : ''}<label class="btn mini">Enviar imagem<input type="file" accept="image/*" data-manual hidden></label>` : ''}
+      ${g.prompt_pt ? `<button class="mini prim" data-acao="copiar">1. Copiar texto e baixar foto</button><a class="btn mini" href="https://gemini.google.com/app" target="_blank" rel="noopener">2. Abrir o Gemini</a><label class="btn mini">3. Enviar imagem<input type="file" accept="image/*" data-manual hidden></label>` : ''}
     </div></div>`;
 }
 
@@ -423,7 +428,15 @@ function ligarEnsaio() {
     $$('[data-acao]', c).forEach((b) => {
       b.onclick = tenta(async () => {
         const a = b.dataset.acao;
-        if (a === 'copiar') { await navigator.clipboard.writeText(g.prompt_pt); toast('Texto copiado. Cole no ChatGPT ou no Gemini junto com a foto original.'); return; }
+        if (a === 'copiar') {
+          try { await navigator.clipboard.writeText(g.prompt_pt); } catch { prompt('Copie o texto:', g.prompt_pt); }
+          // Ângulo novo: todas as fotos reais (até 4) como referência; senão, a foto de origem.
+          const refs = g.angulo ? e.originais.slice(0, 4) : e.originais.filter((o) => o.id === g.original_id);
+          refs.forEach((o, i) => setTimeout(() => { const a2 = document.createElement('a'); a2.href = o.url; a2.download = `foto-${g.ordem}${refs.length > 1 ? '-ref' + (i + 1) : ''}.jpg`; document.body.append(a2); a2.click(); a2.remove(); }, i * 400));
+          S.colarEm = gid;
+          toast(`Texto copiado e ${refs.length > 1 ? refs.length + ' fotos baixadas' : 'foto baixada'}. Agora abra o Gemini, anexe e cole o texto.`);
+          return;
+        }
         if (a === 'refazer') {
           const instrucao = prompt('Refazer esta foto. Quer pedir algo? (opcional)\nEx.: mais luz no carro, menos reflexo, céu mais azul', g.instrucao || '');
           if (instrucao === null) return;
@@ -447,6 +460,21 @@ async function atualizar() {
     else S.timer = setTimeout(atualizar, 2500);
   } catch { S.timer = setTimeout(atualizar, 5000); }
 }
+
+// Colar (Ctrl+V) a imagem gerada no app: vai para a foto escolhida em "Copiar texto" ou para a primeira que aguarda imagem.
+document.addEventListener('paste', tenta(async (ev) => {
+  const e = S.ensaio;
+  if (!e || !location.hash.startsWith(`#/ensaio/${e.id}`) || ev.target.closest('input, textarea')) return;
+  const file = [...(ev.clipboardData?.files || [])].find((f) => f.type.startsWith('image/'));
+  if (!file) return;
+  const alvo = e.geradas.find((g) => String(g.id) === String(S.colarEm) && g.status === 'manual') || e.geradas.find((g) => g.status === 'manual');
+  if (!alvo) return toast('Nenhuma foto aguardando imagem neste ensaio.', true);
+  ev.preventDefault();
+  const fd = new FormData(); fd.append('foto', file, 'colada.png');
+  toast(`Enviando a imagem colada para a foto ${alvo.ordem}…`);
+  S.ensaio = await api(`/ensaios/${e.id}/fotos/${alvo.id}/manual`, { metodo: 'POST', form: fd });
+  S.colarEm = null; desenharEnsaio();
+}));
 
 // Ampliar (com a original ao lado, para conferir a fidelidade)
 document.addEventListener('click', (ev) => {

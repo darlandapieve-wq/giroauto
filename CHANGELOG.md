@@ -2,6 +2,12 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.16.1 — 01/11/2026
+
+- **GiroAuto Fotos grátis pelo app do Gemini**: em "Como gerar", escolha **Grátis pelo app do Gemini**. Cada foto tem 3 botões: **Copiar texto e baixar foto** (para ângulos novos baixa as fotos de referência), **Abrir o Gemini** e **Enviar imagem**. Também dá para colar a imagem com Ctrl+V na tela do ensaio. Funciona com uma conta Google gratuita (o app tem limite diário) e também no ChatGPT.
+- **Quando a cota ou o crédito da IA acaba** (Pollinations, Google), as fotos que faltam passam sozinhas para o modo grátis pelo app, com o texto pronto, em vez de dar erro.
+- Mensagem da Pollinations atualizada: o crédito grátis que renovava a cada hora foi encerrado pela Pollinations em julho/2026; agora o uso é com crédito (Pollen) comprado.
+
 ## v2.16.0 — 01/11/2026
 
 - **GiroAuto Fotos, dentro do GiroAuto** (endereço `/fotos`, item **Fotos com IA** no menu e **Mais > Ensaio de fotos com IA** em cada carro). Usa o mesmo login, o mesmo banco, o mesmo armazenamento de fotos (Supabase) e a mesma chave de IA de Configurações > Imagens com IA. Nada novo para criar no Render ou no Supabase.

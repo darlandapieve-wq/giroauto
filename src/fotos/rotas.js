@@ -99,7 +99,7 @@ function register(app) {
     res.json({
       nome: req.user?.name || rp?.usuario || '', admin: isAdmin(req), espacos, editar: req.q.editar,
       origens: { loja: !!req.user, repasse: !!rp, podeEnviarLoja: !!req.user?.perms?.has('cadastrar') },
-      provedor: p, provedor_nome: E.NOMES_IA[p] || p, falta_ia: E.faltaIa(), versao: require('../../package.json').version,
+      provedor: p, provedor_nome: E.NOMES_IA[p] || p, falta_ia: p === 'manual' ? '' : E.faltaIa(), versao: require('../../package.json').version,
       ...M.publico(), carrocerias: VF.CARROCERIAS, cambios: VF.CAMBIOS, combustiveis: VF.COMBUSTIVEIS, cores: VF.CORES, selos: VF.SELOS,
     });
   }));

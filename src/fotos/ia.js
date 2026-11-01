@@ -149,7 +149,7 @@ function amigavel(e, provedor) {
     if (e?.status === 401 || e?.status === 403 || /api key/i.test(msg)) return 'A chave da IA do Google foi recusada. Confira em Configurações.';
     if (/billing|free tier/i.test(msg)) return 'A IA de imagens do Google exige faturamento ativo na chave (Google AI Studio > Faturamento).';
   }
-  if (provedor === 'pollinations' && (e?.status === 402 || e?.status === 429)) return 'A cota grátis do dia da Pollinations acabou. Tente mais tarde.';
+  if (provedor === 'pollinations' && (e?.status === 402 || e?.status === 429 || /pollen|balance|insufficient/i.test(msg))) return 'Os créditos (Pollen) da Pollinations acabaram.';
   return msg.slice(0, 300);
 }
 

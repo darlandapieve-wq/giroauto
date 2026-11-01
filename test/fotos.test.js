@@ -201,6 +201,28 @@ test('usuário da loja conecta o Repasse; modo manual com o texto pronto', async
   assert.equal(e.geradas.filter((g) => g.status === 'pronta').length, 10);
 });
 
+test('grátis pelo app do Gemini no ensaio e troca automática quando a cota da IA acaba', async () => {
+  const c = lojaC;
+  const { id } = (await c('POST', '/api/fotos/ensaios', { origem: 'loja', origem_id: String(vid) })).body;
+  // cota esgotada: as fotos viram "aguardando imagem" com o texto pronto, não erro
+  process.env.FOTOS_IA = 'sem-cota';
+  await c('PUT', `/api/fotos/ensaios/${id}`, { quantidade: 7 });
+  await c('POST', `/api/fotos/ensaios/${id}/gerar`);
+  let e = await esperar(c, id, (x) => x.status === 'manual');
+  assert.ok(e.geradas.every((g) => g.status === 'manual'), JSON.stringify(e.geradas.map((g) => g.status)));
+  assert.match(e.geradas[0].erro, /Gemini/);
+  assert.ok(e.geradas[0].prompt_pt.length > 50);
+  // escolha no próprio ensaio, mesmo sem chave nenhuma
+  process.env.FOTOS_IA = '';
+  e = (await c('PUT', `/api/fotos/ensaios/${id}`, { provedor: 'manual' })).body;
+  assert.equal(e.provedor, 'manual');
+  e = (await c('POST', `/api/fotos/ensaios/${id}/gerar`)).body;
+  assert.equal(e.status, 'manual');
+  assert.ok(e.geradas.every((g) => g.status === 'manual' && !g.erro));
+  process.env.FOTOS_IA = 'simulado';
+  await c('DELETE', `/api/fotos/ensaios/${id}`);
+});
+
 test('comando da IA: fidelidade e ângulo novo', () => {
   const M = require('../src/fotos/modelos');
   const ens = { modelo: '04', formato: '9:16', placa_modo: 'manter', loja: { nome: 'Topcar' } };
