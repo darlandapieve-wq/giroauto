@@ -211,3 +211,9 @@ public/              painel (HTML, CSS, JS sem build)
 extension/           extensão do Chrome (Manifest V3)
 test/                testes automatizados e Meta simulada
 ```
+
+## GiroAuto Fotos (v2.16)
+
+Ensaios fotográficos com IA e artes de divulgação em `/fotos`, com o mesmo login, banco e armazenamento do GiroAuto.
+Código em `src/fotos/` (modelos e comandos da IA, ensaios e fila, API do Repasse, rotas) e `public/fotos/`.
+Variáveis opcionais: `REPASSE_URL` (endereço do GiroAuto Repasse), `ANTHROPIC_API_KEY` (nota de fidelidade pelo Claude), `FOTOS_IA=simulado` (teste sem IA).

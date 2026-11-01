@@ -862,3 +862,8 @@ body:has(.form-foot) #vozFab{bottom:86px}
 .karqbtn:hover{color:var(--ink)}
 .kcol.karq.over{border-color:var(--accent);background:var(--accent-soft)}
 @media (min-width:1000px){.kanban{grid-template-columns:var(--cols)}}
+
+/* v2.16: link do GiroAuto Fotos no menu lateral (mesmo visual dos botões) */
+.nav a.nav-link{display:flex;align-items:center;gap:7px;padding:4px 9px;border-radius:6px;font-size:13px;line-height:1.25;color:var(--muted);font-weight:500;text-decoration:none;white-space:nowrap}
+.nav a.nav-link:hover{background:var(--sunken);color:var(--ink)}
+.nav a.nav-link svg{width:16px;height:16px;flex:none}

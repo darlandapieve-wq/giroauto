@@ -590,6 +590,65 @@ db.exec(`CREATE TABLE IF NOT EXISTS preparacao (
 db.exec('CREATE INDEX IF NOT EXISTS preparacao_vehicle ON preparacao(vehicle_id, status)');
 db.exec('CREATE INDEX IF NOT EXISTS preparacao_store ON preparacao(store_id, status)');
 
+/* v2.16: GiroAuto Fotos (ensaios fotográficos com IA). espaco = 'loja:<id>' ou 'repasse:<conta>' (GiroAuto Repasse). */
+db.exec(`CREATE TABLE IF NOT EXISTS fotos_ensaios (
+  id INTEGER PRIMARY KEY,
+  espaco TEXT NOT NULL,
+  origem TEXT NOT NULL,
+  origem_id TEXT,
+  veiculo TEXT NOT NULL DEFAULT '{}',
+  loja TEXT NOT NULL DEFAULT '{}',
+  modelo TEXT NOT NULL DEFAULT '01',
+  personalizado TEXT NOT NULL DEFAULT '{}',
+  quantidade INTEGER NOT NULL DEFAULT 8,
+  formato TEXT NOT NULL DEFAULT '4:5',
+  resolucao TEXT NOT NULL DEFAULT '1K',
+  placa_modo TEXT NOT NULL DEFAULT 'manter',
+  novos_angulos INTEGER NOT NULL DEFAULT 1,
+  arte INTEGER NOT NULL DEFAULT 1,
+  provedor TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'rascunho',
+  criado_por TEXT DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS fotos_ensaios_espaco ON fotos_ensaios(espaco, id)');
+db.exec(`CREATE TABLE IF NOT EXISTS fotos_originais (
+  id INTEGER PRIMARY KEY,
+  ensaio_id INTEGER NOT NULL REFERENCES fotos_ensaios(id) ON DELETE CASCADE,
+  ordem INTEGER NOT NULL DEFAULT 0,
+  arquivo TEXT NOT NULL,
+  tipo TEXT NOT NULL DEFAULT 'auto',
+  largura INTEGER, altura INTEGER
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS fotos_geradas (
+  id INTEGER PRIMARY KEY,
+  ensaio_id INTEGER NOT NULL REFERENCES fotos_ensaios(id) ON DELETE CASCADE,
+  ordem INTEGER NOT NULL,
+  original_id INTEGER,
+  angulo TEXT NOT NULL DEFAULT '',
+  variacao INTEGER NOT NULL DEFAULT 0,
+  instrucao TEXT NOT NULL DEFAULT '',
+  arquivo TEXT,
+  status TEXT NOT NULL DEFAULT 'pendente',
+  erro TEXT NOT NULL DEFAULT '',
+  fidelidade TEXT,
+  tentativas INTEGER NOT NULL DEFAULT 0,
+  modelo_ia TEXT DEFAULT '',
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS fotos_geradas_ensaio ON fotos_geradas(ensaio_id, ordem)');
+db.exec(`CREATE TABLE IF NOT EXISTS fotos_artes (
+  ensaio_id INTEGER NOT NULL REFERENCES fotos_ensaios(id) ON DELETE CASCADE,
+  formato TEXT NOT NULL,
+  arquivo TEXT,
+  status TEXT NOT NULL DEFAULT 'pendente',
+  erro TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (ensaio_id, formato)
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS fotos_uso (dia TEXT NOT NULL, espaco TEXT NOT NULL, imagens INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (dia, espaco))`);
+
 function tx(fn) {
   db.exec('BEGIN');
   try { const r = fn(); db.exec('COMMIT'); markDirty(); return r; }

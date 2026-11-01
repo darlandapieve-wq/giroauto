@@ -18,6 +18,8 @@ function loadFonts() {
 
 const W = 1080;
 const H = 1350;
+// v2.16 (GiroAuto Fotos): a arte também sai em stories 9:16 e quadrada 1:1.
+const ALTURAS = { '4:5': 1350, '9:16': 1920, '1:1': 1080 };
 const GOLD = '#E3B341';
 const GOLD_2 = '#F6D77A';
 const INK = '#0B0C0F';
@@ -136,12 +138,14 @@ function engineOf(versao) {
 
 /**
  * @param {object} v veículo (linha do banco)
- * @param {string[]} photoFiles caminhos das fotos no disco, na ordem (a primeira é a capa)
+ * @param {(string|Buffer)[]} photoFiles fotos (caminho no disco ou conteúdo), na ordem (a primeira é a capa)
  * @param {object} store loja (nome, whatsapp, phone, city)
- * @returns {Promise<Buffer>} JPEG 1080x1350
+ * @param {string} formato '4:5' (padrão, 1080x1350), '9:16' (1080x1920) ou '1:1' (1080x1080)
+ * @returns {Promise<Buffer>} JPEG
  */
-async function renderCard(v, photoFiles, store = {}) {
+async function renderCard(v, photoFiles, store = {}, formato = '4:5') {
   loadFonts();
+  const H = ALTURAS[formato] || ALTURAS['4:5'];
   const canvas = createCanvas(W, H);
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = INK; ctx.fillRect(0, 0, W, H);
@@ -151,7 +155,7 @@ async function renderCard(v, photoFiles, store = {}) {
   if (!imgs.length) throw new Error('Nenhuma foto legível para montar a arte.');
 
   /* Foto principal */
-  const HERO_H = 1000;
+  const HERO_H = H - 350;
   drawCover(ctx, imgs[0], 0, 0, W, HERO_H, 0.55);
   let g = ctx.createLinearGradient(0, 0, 0, 380);
   g.addColorStop(0, 'rgba(11,12,15,0.92)'); g.addColorStop(0.55, 'rgba(11,12,15,0.55)'); g.addColorStop(1, 'rgba(11,12,15,0)');
@@ -205,7 +209,7 @@ async function renderCard(v, photoFiles, store = {}) {
   const headerBottom = y;
 
   /* Frase à direita */
-  const tag = TAGLINE[v.carroceria] || 'Qualidade e confiança para você rodar tranquilo.';
+  const tag = v.frase || TAGLINE[v.carroceria] || 'Qualidade e confiança para você rodar tranquilo.';
   ctx.font = '25px "GA Mont Semi"';
   const tagLines = wrapLines(ctx, tag.toUpperCase(), 300);
   const tx = W - 52 - 300;
@@ -239,7 +243,9 @@ async function renderCard(v, photoFiles, store = {}) {
 
   /* Itens do veículo (coluna à esquerda) */
   let specs = specsOf(v);
-  const SPEC_MAX = 960; // abaixo disso começam as fotos menores
+  const quadrado = H <= 1080;
+  if (quadrado) specs = specs.slice(0, 4);
+  const SPEC_MAX = HERO_H - 40; // abaixo disso começam as fotos menores
   let step = 74;
   const room = SPEC_MAX - (headerBottom + 60);
   while (specs.length > 3 && specs.length * step > room) specs = specs.slice(0, -1);
@@ -249,7 +255,7 @@ async function renderCard(v, photoFiles, store = {}) {
   specs.forEach(([kind, label], i) => {
     const cy = specTop + i * step;
     iconBadge(ctx, 84, cy, kind, COLOR_SWATCH[v.cor]);
-    ctx.font = '29px "GA Mont Semi"'; ctx.fillStyle = '#FFFFFF';
+    ctx.font = `${quadrado ? 24 : 29}px "GA Mont Semi"`; ctx.fillStyle = '#FFFFFF';
     ctx.shadowColor = 'rgba(0,0,0,0.7)'; ctx.shadowBlur = 8;
     ctx.fillText(label.toUpperCase(), 126, cy + 1);
     ctx.shadowColor = 'transparent';
@@ -258,7 +264,7 @@ async function renderCard(v, photoFiles, store = {}) {
   /* Preço (com oferta: preço normal riscado e selo OFERTA) */
   const oferta = !!(v.preco_oferta && v.preco && v.preco_oferta < v.preco);
   const price = fmtInt(oferta ? v.preco_oferta : v.preco);
-  const PX = 440; const PY = 742; const PW = 590; const PH = 150;
+  const PX = 440; const PY = HERO_H - 258; const PW = 590; const PH = 150;
   ctx.save();
   ctx.translate(PX, PY);
   ctx.transform(1, 0, -0.14, 1, 0, 0);
@@ -294,13 +300,13 @@ async function renderCard(v, photoFiles, store = {}) {
   ctx.restore();
   ctx.font = '40px "GA Mont Italic"'; ctx.fillStyle = GOLD_2; ctx.textBaseline = 'alphabetic';
   ctx.shadowColor = 'rgba(0,0,0,0.7)'; ctx.shadowBlur = 10;
-  const cta = marcados.includes('revisoes') ? 'Revisado e pronto para rodar!' : oferta ? 'Oferta por tempo limitado!' : 'Agende sua visita!';
+  const cta = v.chamada || marcados.includes('revisoes') ? 'Revisado e pronto para rodar!' : oferta ? 'Oferta por tempo limitado!' : 'Agende sua visita!';
   ctx.fillText(cta, W - 52 - ctx.measureText(cta).width, PY + PH + 66);
   ctx.shadowColor = 'transparent';
 
   /* Três fotos menores */
   const thumbs = [imgs[1], imgs[2], imgs[3]].map((im, i) => im || imgs[(i + 1) % imgs.length] || imgs[0]);
-  const TY = 1010; const TH = 268; const GAP = 14; const TW = (W - 2 * 24 - 2 * GAP) / 3;
+  const TY = HERO_H + 10; const TH = 268; const GAP = 14; const TW = (W - 2 * 24 - 2 * GAP) / 3;
   thumbs.forEach((im, i) => {
     const tx2 = 24 + i * (TW + GAP);
     ctx.save(); roundRect(ctx, tx2, TY, TW, TH, 14); ctx.clip(); drawCover(ctx, im, tx2, TY, TW, TH); ctx.restore();
@@ -313,7 +319,7 @@ async function renderCard(v, photoFiles, store = {}) {
     ctx.font = '26px "GA Mont Semi"'; ctx.fillStyle = '#E8E8E8'; ctx.textBaseline = 'middle';
     fitFont(ctx, contato, 'GA Mont Semi', 26, 18, W - 80);
     const cw = ctx.measureText(contato).width;
-    ctx.fillText(contato, (W - cw) / 2, 1316);
+    ctx.fillText(contato, (W - cw) / 2, H - 34);
   }
 
   return canvas.encode('jpeg', 90);
@@ -348,4 +354,12 @@ async function normalizeJpeg(buffer) {
   return canvas.encode('jpeg', 90);
 }
 
-module.exports = { renderCard, toPortraitJpeg, normalizeJpeg, engineOf, W, H };
+// Ajusta qualquer imagem ao tamanho pedido (cobre a área, corta o excesso centralizado).
+async function normalizar(buffer, w, h) {
+  const img = await loadImage(buffer);
+  const canvas = createCanvas(w, h);
+  drawCover(canvas.getContext('2d'), img, 0, 0, w, h);
+  return canvas.encode('jpeg', 90);
+}
+
+module.exports = { renderCard, toPortraitJpeg, normalizeJpeg, normalizar, engineOf, W, H, ALTURAS };

@@ -497,6 +497,7 @@
       can('publicar') && v.status !== 'vendido' && ['repasse', 'Enviar para grupo de repasse'],
       (can('vender') || can('gestao')) && ['pend', 'Registrar pendência (multa, IPVA…)'],
       ['ficha', 'Ficha rápida do veículo'],
+      (can('cadastrar') || can('publicar')) && v.status !== 'vendido' && ['fotos-ia', 'Ensaio de fotos com IA e arte'],
     ].filter(Boolean);
     const r = anchor.getBoundingClientRect();
     document.body.insertAdjacentHTML('beforeend', `<div class="menu" id="moreMenu" style="top:${r.bottom + window.scrollY + 4}px;left:${Math.max(8, r.right + window.scrollX - 260)}px">${items.map(([k, l]) => `<button type="button" data-mi="${k}">${esc(l)}</button>`).join('')}</div>`);
@@ -517,6 +518,7 @@
         if (k === 'sale') saleEditModal(v.id);
         if (k === 'repasse') X.repasseModal(v, (t) => { S.chanTab = t; $$(`[data-act="divulgar"][data-id="${v.id}"]`)[0]?.click(); });
         if (k === 'ficha') vehiclePop(v.id);
+        if (k === 'fotos-ia') location.href = `/fotos#/carro/${v.id}`;
       };
     });
   }

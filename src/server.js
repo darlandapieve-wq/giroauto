@@ -28,6 +28,7 @@ app.use(auth.loadUser);
 require('./routes2').register(app);
 require('./routes3').register(app);
 require('./routes4').register(app);
+require('./fotos/rotas').register(app); // v2.16: GiroAuto Fotos em /fotos
 
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const fail = (status, message) => Object.assign(new Error(message), { status });

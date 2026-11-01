@@ -2,6 +2,17 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.16.0 — 01/11/2026
+
+- **GiroAuto Fotos, dentro do GiroAuto** (endereço `/fotos`, item **Fotos com IA** no menu e **Mais > Ensaio de fotos com IA** em cada carro). Usa o mesmo login, o mesmo banco, o mesmo armazenamento de fotos (Supabase) e a mesma chave de IA de Configurações > Imagens com IA. Nada novo para criar no Render ou no Supabase.
+- **Ensaio fotográfico com IA**: 7 a 10 fotos do carro em um de 8 cenários (estacionamento com cidade, natureza, coberto premium, showroom, arquitetura moderna, estrada cênica, estúdio fundo infinito, noturno urbano) ou **personalizado** (texto e foto do pátio ou da fachada da loja). Formatos 4:5, 1:1, 9:16, 4:3 e 16:9, resolução padrão ou alta, placa mantida, borrada ou com o nome da loja.
+- **Ângulos novos**: com poucas fotos (até uma só), a IA cria os ângulos que faltam (frente 3/4, traseira 3/4, lateral, frente, traseira, detalhes) a partir das fotos enviadas. Interior só é criado se houver ao menos uma foto real do interior. Essas fotos vêm marcadas "IA: …" para conferir.
+- **Revisão**: aprovar, descartar ou refazer com um pedido ("mais luz"), com a foto original ao lado e nota de fidelidade (0 a 10) feita pela IA de texto.
+- **Arte com as informações do veículo** (mesmo padrão da arte com preço) para cada ensaio, em 4:5 e em stories 9:16, refeita sozinha quando preço, selos ou contato mudam. A arte com preço também aceita os formatos 9:16 e 1:1.
+- **Baixar** cada imagem ou o ZIP (fotos aprovadas, artes e texto do anúncio). As fotos aprovadas podem ir direto para as fotos do carro no estoque.
+- **GiroAuto Repasse**: quem entra com o login do Repasse (ou conecta o Repasse estando na loja) faz ensaios dos anúncios da fila e em circulação, pela API do Repasse (`REPASSE_URL`, padrão `https://giroauto-repasse.onrender.com`).
+- Modo manual (texto pronto para o ChatGPT ou o Gemini e envio da imagem), limite diário de imagens por loja e geração em segundo plano.
+
 ## v2.15.4 — 28/10/2026
 
 - **Economia de banda (plano gratuito do Render, 5 GB/mês)**: o servidor estava enviando o banco inteiro ao Supabase a cada minuto, porque cada consulta da extensão gravava o "último acesso". Agora o último acesso da extensão e dos usuários, e a hora do check de e-mail sem mensagens novas, não disparam cópia — vão junto na próxima alteração de verdade ou no desligamento.
