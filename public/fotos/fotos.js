@@ -261,7 +261,7 @@ function desenharEnsaio() {
   if (!$('#main')) moldura('');
   const rolagem = window.scrollY;
   const temGeracao = e.geradas.length > 0;
-  const gerando = e.geradas.filter((g) => ['pendente', 'gerando'].includes(g.status)).length;
+  const gerando = e.geradas.filter((g) => ['pendente', 'gerando', 'navegador'].includes(g.status)).length;
   const prontas = e.geradas.filter((g) => ['pronta', 'aprovada'].includes(g.status)).length;
   const modelos = s.modelos;
   $('#main').innerHTML = `
@@ -303,7 +303,10 @@ function desenharEnsaio() {
       <div><label>Quantidade de fotos</label><div class="chips" style="margin-top:4px">${s.quantidades.map((q) => `<button class="mini ${e.quantidade === q ? 'on' : ''}" data-qtd="${q}">${q}</button>`).join('')}</div></div>
       <label>Formato<select data-op="formato">${Object.entries(s.formatos).map(([k, t]) => `<option value="${k}" ${e.formato === k ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
       <label>Resolução<select data-op="resolucao"><option value="1K" ${e.resolucao === '1K' ? 'selected' : ''}>Padrão (1080 px)</option><option value="2K" ${e.resolucao === '2K' ? 'selected' : ''}>Alta (2160 px)</option></select></label>
-      <label>Como gerar<select data-op="provedor"><option value="" ${e.provedor !== 'manual' ? 'selected' : ''}>IA automática (${esc(s.provedor_nome)})</option><option value="manual" ${e.provedor === 'manual' ? 'selected' : ''}>Grátis pelo app do Gemini (você gera e envia)</option></select></label>
+      <label>Como gerar<select data-op="provedor">
+        ${s.servidor_ia ? `<option value="" ${!e.provedor ? 'selected' : ''}>${esc(s.provedor_nome)}</option>` : ''}
+        <option value="navegador" ${e.provedor === 'navegador' || (!e.provedor && !s.servidor_ia) ? 'selected' : ''}>Gemini direto nesta página (conta Puter)</option>
+        ${e.provedor === 'manual' ? '<option value="manual" selected>Manual (app do Gemini)</option>' : ''}</select></label>
       <label>Placa<select data-op="placa_modo">${Object.entries(s.placa).map(([k, t]) => `<option value="${k}" ${e.placa_modo === k ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
     </div>
     <label class="check" style="margin-top:10px"><input type="checkbox" data-op="arte" ${e.arte ? 'checked' : ''}> Gerar a arte com as informações do veículo (4:5 e stories 9:16)</label>
@@ -320,12 +323,13 @@ function desenharEnsaio() {
       </form></details>
 
     <div class="fixo linha entre" style="margin-top:18px">
-      <span class="small muted">${e.provedor === 'manual' ? 'Grátis: o GiroAuto prepara o texto e as fotos; você gera cada imagem no app do Gemini e envia.' : s.falta_ia ? `<span class="selo warn">${esc(s.falta_ia)}</span> Ou escolha "Grátis pelo app do Gemini" em Como gerar.` : `IA: ${esc(s.provedor_nome)}. Cada foto é uma chamada à IA. Se a cota acabar, as fotos que faltam passam para o modo grátis pelo app.`}</span>
+      <span class="small muted">${e.provedor === 'navegador' || (!e.provedor && !s.servidor_ia) ? 'Automático: a própria página gera as fotos com o Gemini (Nano Banana) pela sua conta Puter. Na primeira vez, o Puter pede para entrar (conta grátis). Mantenha a página aberta até terminar.' : `IA: ${esc(s.provedor_nome)}. Se a cota ou o crédito acabar, a página continua sozinha pelo Gemini da conta Puter.`}</span>
       <button class="prim grande" id="bGerar" ${e.originais.length ? '' : 'disabled'}>${temGeracao ? 'Gerar o ensaio de novo' : `Gerar ensaio com ${e.quantidade} fotos`}</button>
     </div>
   </div></details>`;
   window.scrollTo(0, rolagem);
   ligarEnsaio();
+  if (e.geradas.some((g) => g.status === 'navegador')) puterRodar();
   if (gerando || e.artes.some((a) => a.status === 'gerando') || (e.status === 'pronto' && e.arte && !e.artes.length)) S.timer = setTimeout(atualizar, 2500);
 }
 
@@ -339,6 +343,9 @@ function blocoResultado(e, gerando, prontas) {
       <div class="linha">${prontas ? `<a class="btn prim" href="/api/fotos/ensaios/${e.id}/zip">⬇ Baixar tudo (ZIP)</a>` : ''}
       ${e.origem === 'loja' && s.origens.podeEnviarLoja && aprovadas ? `<button id="bLoja">Pôr ${aprovadas} aprovada(s) nas fotos do carro</button>` : ''}</div></div>
     ${gerando ? `<div class="progresso"><div style="width:${Math.round(((total - gerando) / total) * 100)}%"></div></div><p class="small muted">Gerando ${total - gerando + 1} de ${total}… pode sair desta tela, o ensaio continua.</p>` : ''}
+    ${e.geradas.some((g) => g.status === 'navegador') ? `<div class="aviso info" id="puterAviso">${PU.precisaEntrar
+      ? `Para gerar aqui mesmo com o Gemini, conecte uma conta <b>Puter</b> (gratuita, só na primeira vez). <button class="mini prim" id="bPuter">Entrar no Puter e gerar</button>`
+      : `Gerando com o Gemini nesta página. Mantenha esta aba aberta até terminar.`}${PU.erro ? `<br><span class="selo bad">${esc(PU.erro)}</span>` : ''}</div>` : ''}
     ${e.geradas.some((g) => g.status === 'manual') ? `<div class="aviso info"><b>Grátis pelo app do Gemini</b> (conta Google gratuita), em 3 passos para cada foto:
       <ol style="margin:6px 0 4px 18px;padding:0"><li><b>Copiar texto e baixar foto</b>: o texto vai para a área de transferência e a foto do carro é baixada.</li>
       <li><b>Abrir o Gemini</b>, anexar a foto baixada, colar o texto (Ctrl+V) e enviar.</li>
@@ -357,9 +364,10 @@ function blocoResultado(e, gerando, prontas) {
 function cardGerada(g, origUrl) {
   const fid = g.fidelidade;
   const selFid = fid ? `<span class="selo ${fid.nota >= 8 ? 'ok' : fid.nota >= 7 ? 'warn' : 'bad'}" title="${esc((fid.diferencas || []).join('; ') || 'Nenhuma diferença no carro')}">Fidelidade ${fid.nota}/10</span>` : '';
-  const ST = { pendente: 'Na fila', gerando: 'Gerando', pronta: 'Pronta', aprovada: 'Aprovada', descartada: 'Descartada', erro: 'Erro', manual: 'Aguardando imagem' };
+  const ST = { navegador: 'Gerando nesta página', pendente: 'Na fila', gerando: 'Gerando', pronta: 'Pronta', aprovada: 'Aprovada', descartada: 'Descartada', erro: 'Erro', manual: 'Aguardando imagem' };
   let img;
   if (g.url && g.status !== 'gerando') img = `<img src="${g.url}" data-zoom="${g.url}" data-orig="${origUrl || ''}" alt="">${origUrl ? `<img class="orig-mini" src="${origUrl}" alt="original">` : ''}`;
+  else if (g.status === 'navegador') img = `<div class="estado"><div class="giro"></div>${PU.ativos.has(g.id) ? 'O Gemini está criando esta foto…' : PU.precisaEntrar ? 'Aguardando entrar no Puter' : 'Na fila desta página'}</div>`;
   else if (g.status === 'pendente' || g.status === 'gerando') img = `<div class="estado"><div class="giro"></div>${g.status === 'gerando' ? 'A IA está trabalhando nesta foto…' : 'Na fila'}</div>`;
   else if (g.status === 'manual') img = `<div class="estado">${origUrl ? `<img src="${origUrl}" style="max-height:130px;margin:0 auto 8px;border-radius:4px">` : ''}${g.erro ? `<span class="small">${esc(g.erro)}</span>` : 'Gere no app do Gemini e envie a imagem.'}</div>`;
   else img = `<div class="estado"><span class="selo bad">Erro</span><br>${esc(g.erro)}</div>`;
@@ -412,9 +420,12 @@ function ligarEnsaio() {
     if (e.geradas.length && !confirm('Gerar de novo apaga as fotos geradas deste ensaio (as originais continuam). Continuar?')) return;
     if ($('#tPers') && $('#tPers').value !== e.personalizado.texto) await api(`/ensaios/${e.id}`, { metodo: 'PUT', corpo: { personalizado_texto: $('#tPers').value } });
     ev.target.disabled = true;
+    const naPagina = e.provedor === 'navegador' || (!e.provedor && !S.sessao.servidor_ia);
+    if (naPagina) { try { await puterEntrar(); } catch (er) { toast(er.message, true); } } // o Puter abre a janela de login no clique
     S.ensaio = await api(`/ensaios/${e.id}/gerar`, { metodo: 'POST' });
     desenharEnsaio(); window.scrollTo({ top: 0, behavior: 'smooth' });
   });
+  if ($('#bPuter')) $('#bPuter').onclick = tenta(async () => { PU.erro = ''; await puterEntrar(); puterRodar(); desenharEnsaio(); });
   if ($('#bArtes')) $('#bArtes').onclick = tenta(async () => { S.ensaio = await api(`/ensaios/${e.id}/artes`, { metodo: 'POST' }); desenharEnsaio(); setTimeout(atualizar, 1500); });
   if ($('#bLoja')) $('#bLoja').onclick = tenta(async (ev) => {
     if (!confirm('Colocar as fotos aprovadas no cadastro deste carro no estoque? Elas entram depois das fotos que já estão lá (limite de 20).')) return;
@@ -459,6 +470,81 @@ async function atualizar() {
     if (mudou && !document.activeElement?.closest('#fArte, #tPers')) desenharEnsaio();
     else S.timer = setTimeout(atualizar, 2500);
   } catch { S.timer = setTimeout(atualizar, 5000); }
+}
+
+/* ---------------- Gemini direto nesta página (Puter.js) ----------------
+   A página gera as fotos com o Gemini (Nano Banana) pela conta Puter da pessoa (modelo "o usuário paga",
+   com uso grátis mensal) e envia o resultado ao GiroAuto. Sem chave de API no servidor. */
+const PU = { ativos: new Set(), rodando: false, precisaEntrar: false, erro: '', carregado: null };
+const PUTER_MODELOS = ['gemini-3.1-flash-image', 'google/gemini-nano-banana-2.1', 'gemini-2.5-flash-image'];
+function puterCarregar() {
+  return (PU.carregado ||= new Promise((ok, falha) => {
+    if (window.puter) return ok(window.puter);
+    const sc = document.createElement('script');
+    sc.src = 'https://js.puter.com/v2/';
+    sc.onload = () => ok(window.puter);
+    sc.onerror = () => { PU.carregado = null; falha(new Error('Não foi possível carregar o Puter. Confira a internet.')); };
+    document.head.append(sc);
+  }));
+}
+async function puterEntrar() {
+  const puter = await puterCarregar();
+  if (!puter.auth.isSignedIn()) await puter.auth.signIn();
+  PU.precisaEntrar = !puter.auth.isSignedIn();
+  return puter;
+}
+const puterMsg = (er) => {
+  const m = String(er?.error?.message || er?.message || er?.error || er || '');
+  if (/insufficient|funds|credit|limit|quota|upgrade|usage/i.test(m)) return 'O uso grátis da conta Puter acabou neste mês. Recarregue em puter.com (configurações > uso) ou use outra conta.';
+  return m.slice(0, 200) || 'O Gemini não devolveu a imagem.';
+};
+async function puterGerarFoto(e, g) {
+  const puter = await puterCarregar();
+  const imgs = await Promise.all(g.refs.map(async (u) => (await fetch(u)).blob()));
+  let ultimo;
+  for (const model of PUTER_MODELOS) {
+    try {
+      const el = await puter.ai.txt2img(g.prompt_ia, { model, input_images: imgs });
+      const blob = await (await fetch(el.src)).blob();
+      const fd = new FormData(); fd.append('foto', blob, `foto-${g.ordem}.png`);
+      return await api(`/ensaios/${e.id}/fotos/${g.id}/manual?origem=puter`, { metodo: 'POST', form: fd });
+    } catch (er) {
+      ultimo = er;
+      if (/model|not found|unsupported|404/i.test(puterMsg(er)) && !/funds|credit|limit/i.test(puterMsg(er))) continue; // tenta o próximo modelo
+      throw er;
+    }
+  }
+  throw ultimo;
+}
+async function puterRodar() {
+  if (PU.rodando) return;
+  PU.rodando = true;
+  try {
+    const puter = await puterCarregar();
+    if (!puter.auth.isSignedIn()) { PU.precisaEntrar = true; return; }
+    PU.precisaEntrar = false;
+    for (;;) {
+      const e = S.ensaio;
+      if (!e || !location.hash.startsWith(`#/ensaio/${e.id}`)) break;
+      const fila = e.geradas.filter((g) => g.status === 'navegador' && !PU.ativos.has(g.id)).slice(0, Math.max(0, 2 - PU.ativos.size));
+      if (!fila.length && !PU.ativos.size) break;
+      await Promise.race([
+        ...fila.map(async (g) => {
+          PU.ativos.add(g.id); desenharEnsaio();
+          try { S.ensaio = await puterGerarFoto(e, g); }
+          catch (er) {
+            const msg = puterMsg(er);
+            S.ensaio = await api(`/ensaios/${e.id}/fotos/${g.id}/erro`, { metodo: 'POST', corpo: { erro: msg } }).catch(() => S.ensaio);
+            if (/acabou/.test(msg)) PU.erro = msg;
+          } finally { PU.ativos.delete(g.id); }
+          if (S.ensaio?.id === e.id) desenharEnsaio();
+        }),
+        new Promise((r) => setTimeout(r, fila.length ? 600000 : 1500)),
+      ]);
+      if (PU.erro) break;
+    }
+  } catch (er) { PU.erro = puterMsg(er); }
+  finally { PU.rodando = false; }
 }
 
 // Colar (Ctrl+V) a imagem gerada no app: vai para a foto escolhida em "Copiar texto" ou para a primeira que aguarda imagem.

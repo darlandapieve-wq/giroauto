@@ -99,7 +99,7 @@ function register(app) {
     res.json({
       nome: req.user?.name || rp?.usuario || '', admin: isAdmin(req), espacos, editar: req.q.editar,
       origens: { loja: !!req.user, repasse: !!rp, podeEnviarLoja: !!req.user?.perms?.has('cadastrar') },
-      provedor: p, provedor_nome: E.NOMES_IA[p] || p, falta_ia: p === 'manual' ? '' : E.faltaIa(), versao: require('../../package.json').version,
+      provedor: p, provedor_nome: E.NOMES_IA[p] || p, falta_ia: '', servidor_ia: p !== 'manual', versao: require('../../package.json').version,
       ...M.publico(), carrocerias: VF.CARROCERIAS, cambios: VF.CAMBIOS, combustiveis: VF.COMBUSTIVEIS, cores: VF.CORES, selos: VF.SELOS,
     });
   }));
@@ -188,9 +188,10 @@ function register(app) {
   app.put('/api/fotos/ensaios/:id/fotos/:gid', exigir, w(async (req, res) => { E.marcar(req.params.id, req.q.editar, req.params.gid, req.body?.status); res.json(det(req)); }));
   app.post('/api/fotos/ensaios/:id/fotos/:gid/manual', exigir, upload.single('foto'), w(async (req, res) => {
     if (!req.file) throw falha(400, 'Envie a imagem gerada.');
-    await E.enviarManual(req.params.id, req.q.editar, req.params.gid, req.file.buffer);
+    await E.enviarManual(req.params.id, req.q.editar, req.params.gid, req.file.buffer, req.query.origem);
     res.json(det(req));
   }));
+  app.post('/api/fotos/ensaios/:id/fotos/:gid/erro', exigir, w(async (req, res) => { E.erroNavegador(req.params.id, req.q.editar, req.params.gid, req.body?.erro); res.json(det(req)); }));
   app.post('/api/fotos/ensaios/:id/artes', exigir, w(async (req, res) => { E.refazerArtes(req.params.id, req.q.editar); res.json(det(req)); }));
 
   // ZIP: fotos aprovadas (ou todas as prontas), artes e texto do anúncio.

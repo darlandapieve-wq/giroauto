@@ -185,10 +185,10 @@ test('usuário da loja conecta o Repasse; modo manual com o texto pronto', async
   fd.append('fotos', new Blob([await foto('#a01818')], { type: 'image/jpeg' }), 'b.jpg');
   e = (await c('POST', `/api/fotos/ensaios/${id}/originais`, fd)).body;
   await c('PUT', `/api/fotos/ensaios/${id}/originais/${e.originais[1].id}`, { tipo: 'interior' });
-  await c('PUT', `/api/fotos/ensaios/${id}`, { quantidade: 10, modelo: 'P', personalizado_texto: 'pátio da loja com fachada azul' });
+  await c('PUT', `/api/fotos/ensaios/${id}`, { quantidade: 10, modelo: 'P', personalizado_texto: 'pátio da loja com fachada azul', provedor: 'manual' });
 
   process.env.FOTOS_IA = '';
-  e = (await c('POST', `/api/fotos/ensaios/${id}/gerar`)).body; // sem chave: provedor manual
+  e = (await c('POST', `/api/fotos/ensaios/${id}/gerar`)).body; // modo manual escolhido no ensaio
   assert.equal(e.status, 'manual');
   assert.ok(e.geradas.some((g) => ['painel', 'bancos'].includes(g.angulo)), 'com foto do interior, também cria interior');
   assert.ok(e.geradas.every((g) => /fachada azul/.test(g.prompt_pt)));
@@ -201,24 +201,38 @@ test('usuário da loja conecta o Repasse; modo manual com o texto pronto', async
   assert.equal(e.geradas.filter((g) => g.status === 'pronta').length, 10);
 });
 
-test('grátis pelo app do Gemini no ensaio e troca automática quando a cota da IA acaba', async () => {
+test('Gemini direto na página (Puter): sem chave ou com a cota esgotada, a página recebe as tarefas', async () => {
   const c = lojaC;
   const { id } = (await c('POST', '/api/fotos/ensaios', { origem: 'loja', origem_id: String(vid) })).body;
-  // cota esgotada: as fotos viram "aguardando imagem" com o texto pronto, não erro
+  // cota esgotada no servidor: as fotos passam para a página, com o comando e as fotos de referência
   process.env.FOTOS_IA = 'sem-cota';
   await c('PUT', `/api/fotos/ensaios/${id}`, { quantidade: 7 });
   await c('POST', `/api/fotos/ensaios/${id}/gerar`);
-  let e = await esperar(c, id, (x) => x.status === 'manual');
-  assert.ok(e.geradas.every((g) => g.status === 'manual'), JSON.stringify(e.geradas.map((g) => g.status)));
-  assert.match(e.geradas[0].erro, /Gemini/);
-  assert.ok(e.geradas[0].prompt_pt.length > 50);
-  // escolha no próprio ensaio, mesmo sem chave nenhuma
+  let e = await esperar(c, id, (x) => x.geradas.every((g) => g.status === 'navegador'));
+  assert.equal(e.status, 'gerando');
+  assert.match(e.geradas[0].prompt_ia, /exact same vehicle/);
+  assert.equal(e.geradas[0].refs.length, 1);
+  const ang = e.geradas.find((g) => g.angulo);
+  assert.match(ang.prompt_ia, /NEW, realistic photograph/);
+  assert.ok(ang.refs.length >= 1);
+  // sem chave nenhuma no servidor: já começa pela página
   process.env.FOTOS_IA = '';
-  e = (await c('PUT', `/api/fotos/ensaios/${id}`, { provedor: 'manual' })).body;
-  assert.equal(e.provedor, 'manual');
   e = (await c('POST', `/api/fotos/ensaios/${id}/gerar`)).body;
-  assert.equal(e.status, 'manual');
-  assert.ok(e.geradas.every((g) => g.status === 'manual' && !g.erro));
+  assert.ok(e.geradas.every((g) => g.status === 'navegador' && g.refs[0].startsWith('/media/')));
+  assert.equal((await c('GET', '/api/fotos/sessao')).body.servidor_ia, false);
+  // a página envia o resultado de cada foto (e um erro numa delas)
+  for (const g of e.geradas.slice(1)) {
+    const f = new FormData(); f.append('foto', new Blob([await foto('#555')], { type: 'image/png' }), 'x.png');
+    e = (await c('POST', `/api/fotos/ensaios/${id}/fotos/${g.id}/manual?origem=puter`, f)).body;
+  }
+  assert.equal(e.status, 'gerando');
+  e = (await c('POST', `/api/fotos/ensaios/${id}/fotos/${e.geradas[0].id}/erro`, { erro: 'O uso grátis da conta Puter acabou neste mês.' })).body;
+  assert.equal(e.geradas[0].status, 'erro');
+  e = await esperar(c, id, (x) => x.status === 'pronto' && x.artes.length === 2);
+  // refazer volta para a página
+  e = (await c('POST', `/api/fotos/ensaios/${id}/fotos/${e.geradas[0].id}/refazer`, { instrucao: 'mais luz' })).body;
+  assert.equal(e.geradas[0].status, 'navegador');
+  assert.match(e.geradas[0].prompt_ia, /mais luz/);
   process.env.FOTOS_IA = 'simulado';
   await c('DELETE', `/api/fotos/ensaios/${id}`);
 });

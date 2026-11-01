@@ -2,6 +2,11 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.16.2 — 01/11/2026
+
+- **GiroAuto Fotos automático, sem chave de IA**: nova opção **Gemini direto nesta página (conta Puter)** em "Como gerar" (e padrão quando o painel não tem chave de IA). A própria página gera as fotos com o Gemini (Nano Banana) pelo Puter.js e envia o resultado ao GiroAuto, duas fotos por vez, sem copiar, baixar ou colar nada. Na primeira vez o Puter pede para entrar (conta grátis, com uso mensal gratuito; depois, recarga na própria conta Puter). Basta manter a aba aberta até terminar.
+- Quando a cota ou o crédito da IA do servidor acaba, as fotos que faltam continuam sozinhas pela página (antes passavam para o modo manual).
+
 ## v2.16.1 — 01/11/2026
 
 - **GiroAuto Fotos grátis pelo app do Gemini**: em "Como gerar", escolha **Grátis pelo app do Gemini**. Cada foto tem 3 botões: **Copiar texto e baixar foto** (para ângulos novos baixa as fotos de referência), **Abrir o Gemini** e **Enviar imagem**. Também dá para colar a imagem com Ctrl+V na tela do ensaio. Funciona com uma conta Google gratuita (o app tem limite diário) e também no ChatGPT.

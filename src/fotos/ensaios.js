@@ -48,7 +48,7 @@ function faltaIa() {
   if ((p.nome === 'gemini' || p.nome === 'pollinations') && !p.chave) return 'Falta a chave da IA de imagens. O administrador cadastra em Configurações > Imagens com IA.';
   return '';
 }
-const NOMES_IA = { gemini: 'Google Gemini', pollinations: 'Pollinations', manual: 'manual (você gera no ChatGPT ou no Gemini e envia a imagem)', simulado: 'simulada (teste)' };
+const NOMES_IA = { gemini: 'Google Gemini (chave do painel)', pollinations: 'Pollinations (chave do painel)', manual: 'Gemini direto nesta página (conta Puter)', simulado: 'simulada (teste)' };
 
 /* ---------------- Arquivos (mesmo armazenamento das fotos dos carros) ---------------- */
 const mediaDir = () => path.join(config.dataDir, 'media');
@@ -109,9 +109,21 @@ function detalhe(id, espacos) {
       id: g.id, ordem: g.ordem, original_id: g.original_id, angulo: g.angulo, angulo_nome: nomesAng[g.angulo] || '',
       variacao: g.variacao, instrucao: g.instrucao, status: g.status, erro: g.erro, fidelidade: J(g.fidelidade, null), url: url(g.arquivo),
       prompt_pt: g.status === 'manual' || g.status === 'erro' ? M.promptPt({ ensaio: e, variacao: g.variacao, instrucao: g.instrucao, angulo: g.angulo }) : '',
+      ...(g.status === 'navegador' ? tarefaNavegador(e, g, originais) : {}),
     })),
     artes: artes.map((a) => ({ formato: a.formato, status: a.status, erro: a.erro, url: url(a.arquivo) })),
   };
+}
+
+// O que a página precisa para gerar a foto com o Gemini (Puter.js): o comando e as fotos de referência.
+function tarefaNavegador(e, g, originais) {
+  const o = originais.find((x) => x.id === g.original_id) || originais[0];
+  const refs = g.angulo ? originais.slice(0, 4) : o ? [o] : [];
+  const prompt = g.angulo
+    ? M.promptNovoAngulo({ ensaio: e, angulo: g.angulo, variacao: g.variacao, instrucao: g.instrucao, nRef: refs.length })
+    : M.prompt({ ensaio: e, variacao: g.variacao, tipo: o?.tipo, instrucao: g.instrucao });
+  const extra = e.modelo === 'P' && e.personalizado.referencia ? [url(e.personalizado.referencia)] : [];
+  return { prompt_ia: prompt, refs: [...refs.map((x) => url(x.arquivo)), ...extra] };
 }
 
 function listar(espacos) {
@@ -142,7 +154,7 @@ function opcoes(b, atual = {}) {
   if (b.placa_modo !== undefined) { if (!M.PLACA[b.placa_modo]) throw erro(400, 'Opção de placa inválida.'); o.placa_modo = b.placa_modo; }
   if (b.novos_angulos !== undefined) o.novos_angulos = b.novos_angulos ? 1 : 0;
   if (b.arte !== undefined) o.arte = b.arte ? 1 : 0;
-  if (b.provedor !== undefined) o.provedor = b.provedor === 'manual' ? 'manual' : '';
+  if (b.provedor !== undefined) o.provedor = ['manual', 'navegador'].includes(b.provedor) ? b.provedor : '';
   if (b.veiculo !== undefined) o.veiculo = JSON.stringify(V.limpar({ ...(atual.veiculo || {}), ...b.veiculo }));
   if (b.loja !== undefined) o.loja = JSON.stringify({ nome: String(b.loja.nome || '').slice(0, 40), whatsapp: String(b.loja.whatsapp || '').slice(0, 30), cidade: String(b.loja.cidade || '').slice(0, 40) });
   if (b.personalizado_texto !== undefined) o.personalizado = JSON.stringify({ ...(atual.personalizado || {}), texto: String(b.personalizado_texto || '').slice(0, 500) });
@@ -210,14 +222,15 @@ function iniciar(id, espacos) {
   if (!originais.length) throw erro(400, 'Envie ao menos uma foto do veículo.');
   if (e.modelo === 'P' && !e.personalizado.texto && !e.personalizado.referencia) throw erro(400, 'No modelo personalizado, descreva o cenário ou envie uma foto de referência.');
   // 'manual' no ensaio = grátis pelo app do Gemini (ou ChatGPT): o GiroAuto prepara o texto e a foto, a pessoa gera e envia.
-  const p = e.provedor === 'manual' ? 'manual' : provedor().nome;
-  const falta = p === 'manual' ? '' : faltaIa();
-  if (falta) throw erro(400, `${falta} Ou escolha "Grátis pelo app do Gemini" em Como gerar.`);
+  // 'navegador' = a própria página gera, com o Gemini pela conta Puter da pessoa (Puter.js), sem chave no servidor.
+  const p = ['manual', 'navegador'].includes(e.provedor) ? e.provedor : provedor().nome === 'manual' ? 'navegador' : provedor().nome;
+  const falta = ['manual', 'navegador'].includes(p) ? '' : faltaIa();
+  if (falta) throw erro(400, `${falta} Ou escolha "Gemini direto nesta página (conta Puter)" em Como gerar.`);
   const velhas = [...all('SELECT arquivo FROM fotos_geradas WHERE ensaio_id = ?', e.id), ...all('SELECT arquivo FROM fotos_artes WHERE ensaio_id = ?', e.id)].map((r) => r.arquivo);
   run('DELETE FROM fotos_geradas WHERE ensaio_id = ?', e.id);
   run('DELETE FROM fotos_artes WHERE ensaio_id = ?', e.id);
   apagar(velhas);
-  const st = p === 'manual' ? 'manual' : 'pendente';
+  const st = p === 'manual' ? 'manual' : p === 'navegador' ? 'navegador' : 'pendente';
   for (const x of M.plano(originais, e.quantidade, e.novos_angulos)) {
     run('INSERT INTO fotos_geradas (ensaio_id, ordem, original_id, angulo, variacao, status) VALUES (?,?,?,?,?,?)', e.id, x.ordem, x.original_id, x.angulo, x.variacao, st);
   }
@@ -227,9 +240,10 @@ function iniciar(id, espacos) {
 
 function refazer(id, espacos, gid, instrucao = '') {
   const e = doEspaco(id, espacos);
-  const manual = e.provedor === 'manual' || provedor().nome === 'manual';
+  const manual = e.provedor === 'manual';
+  const naPagina = e.provedor === 'navegador' || (!e.provedor && provedor().nome === 'manual');
   const r = run(`UPDATE fotos_geradas SET status = ?, instrucao = ?, erro = '', fidelidade = NULL, updated_at = datetime('now') WHERE id = ? AND ensaio_id = ? AND status <> 'gerando'`,
-    manual ? 'manual' : 'pendente', String(instrucao || '').slice(0, 300), Number(gid), e.id);
+    manual ? 'manual' : naPagina ? 'navegador' : 'pendente', String(instrucao || '').slice(0, 300), Number(gid), e.id);
   if (!r.changes) throw erro(409, 'Esta foto já está sendo gerada.');
   run("UPDATE fotos_ensaios SET status = ?, updated_at = datetime('now') WHERE id = ?", manual ? 'manual' : 'gerando', e.id);
   fila.acordar();
@@ -243,14 +257,21 @@ function marcar(id, espacos, gid, status) {
   if (e.arte && e.status === 'pronto') agendarArtes(e.id);
 }
 
-async function enviarManual(id, espacos, gid, buffer) {
+async function enviarManual(id, espacos, gid, buffer, origem = 'manual') {
   const e = doEspaco(id, espacos);
   const g = get('SELECT arquivo FROM fotos_geradas WHERE id = ? AND ensaio_id = ?', Number(gid), e.id);
   if (!g) throw erro(404, 'Foto não encontrada.');
   const f = M.FORMATOS[e.formato] || M.FORMATOS['4:5'];
   const arquivo = await salvar(await card.normalizar((await prepararFoto(buffer, 2400)).buffer, f.w, f.h));
-  run(`UPDATE fotos_geradas SET arquivo = ?, status = 'pronta', erro = '', modelo_ia = 'manual', updated_at = datetime('now') WHERE id = ?`, arquivo, Number(gid));
+  run(`UPDATE fotos_geradas SET arquivo = ?, status = 'pronta', erro = '', modelo_ia = ?, updated_at = datetime('now') WHERE id = ?`, arquivo, origem === 'puter' ? 'puter' : 'manual', Number(gid));
   if (g.arquivo) apagar(g.arquivo);
+  concluirSeTerminou(e.id);
+}
+
+// A página não conseguiu gerar (ex.: limite da conta Puter): marca o erro na foto.
+function erroNavegador(id, espacos, gid, msg) {
+  const e = doEspaco(id, espacos);
+  run(`UPDATE fotos_geradas SET status = 'erro', erro = ?, updated_at = datetime('now') WHERE id = ? AND ensaio_id = ? AND status = 'navegador'`, String(msg || 'Falha ao gerar no navegador.').slice(0, 300), Number(gid), e.id);
   concluirSeTerminou(e.id);
 }
 
@@ -309,8 +330,8 @@ async function gerarUma(g) {
     const msg = ia.amigavel(err, p.nome);
     // Cota ou crédito da IA acabou: em vez de erro, a foto (e as que estão na fila) passam para o modo grátis pelo app.
     if (semCota(err, msg)) {
-      const aviso = `${msg} Termine grátis pelo app do Gemini: copie o texto, gere lá e envie a imagem aqui.`;
-      run(`UPDATE fotos_geradas SET status = 'manual', erro = ?, updated_at = datetime('now') WHERE ensaio_id = ? AND (id = ? OR status = 'pendente')`, aviso.slice(0, 300), g.ensaio_id, g.id);
+      const aviso = `${msg} Continuando pelo Gemini direto nesta página (conta Puter).`;
+      run(`UPDATE fotos_geradas SET status = 'navegador', erro = ?, updated_at = datetime('now') WHERE ensaio_id = ? AND (id = ? OR status = 'pendente')`, aviso.slice(0, 300), g.ensaio_id, g.id);
       return;
     }
     falhar(msg);
@@ -320,7 +341,7 @@ async function gerarUma(g) {
 const semCota = (err, msg) => [402, 429].includes(err?.status) || /cota|limite|quota|billing|faturamento|pollen|insufficient|exhausted/i.test(`${err?.message} ${msg}`);
 
 function concluirSeTerminou(ensaioId) {
-  const r = get(`SELECT sum(status IN ('pendente','gerando')) AS fila, sum(status = 'manual') AS manual,
+  const r = get(`SELECT sum(status IN ('pendente','gerando','navegador')) AS fila, sum(status = 'manual') AS manual,
       sum(arquivo IS NOT NULL AND status IN ('pronta','aprovada')) AS ok FROM fotos_geradas WHERE ensaio_id = ?`, ensaioId);
   if (r.fila) return;
   const status = r.manual ? 'manual' : r.ok ? 'pronto' : 'erro';
@@ -451,5 +472,5 @@ function retomar() {
 
 module.exports = {
   cfg, salvarCfg, provedor, faltaIa, NOMES_IA, listar, detalhe, criar, atualizar, adicionarOriginais, editarOriginal, apagarOriginal,
-  definirReferencia, iniciar, refazer, marcar, enviarManual, refazerArtes, pacote, excluir, retomar, fila, ler, doEspaco, prepararFoto,
+  definirReferencia, iniciar, refazer, marcar, enviarManual, erroNavegador, refazerArtes, pacote, excluir, retomar, fila, ler, doEspaco, prepararFoto,
 };
