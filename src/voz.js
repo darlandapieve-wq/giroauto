@@ -180,7 +180,7 @@ function validar(user, acoes) {
   const PD = require('./pendencias');
   const out = [];
   const obj = (x) => (x && typeof x === 'object' && !Array.isArray(x) ? x : {});
-  for (const a0 of Array.isArray(acoes) ? acoes.slice(0, 8) : []) {
+  for (const a0 of (Array.isArray(acoes) ? acoes : obj(acoes).tipo ? [acoes] : []).slice(0, 8)) {
     // A tela devolve a ação já conferida (com "dados" e "lead_novo" montados) para executar: aceita as duas formas.
     const a = { ...obj(a0.lead_novo), ...obj(a0.dados), ...obj(a0) };
     const tipo = TIPOS[a?.tipo] ? a.tipo : null;
@@ -385,6 +385,9 @@ async function interpretar(user, { texto, audio }, { prazoMs } = {}) {
     if (!j.acoes.length && !j.duvida) throw e;
   }
   const acoes = validar(user, j.acoes);
+  // Ação que a IA inventou (tipo fora da lista) some na validação: fica no log para ajustar o prompt.
+  if (Array.isArray(j.acoes) && j.acoes.length > acoes.length) console.error('voz: ações descartadas', JSON.stringify(j.acoes).slice(0, 600));
+  else if (!Array.isArray(j.acoes) && j.acoes) console.error('voz: acoes fora do formato', JSON.stringify(j.acoes).slice(0, 600));
   return { transcricao: str(j.transcricao || t, 1000), resposta: str(j.resposta, 400), duvida: str(j.duvida, 400), acoes, fonte: j.fonte || 'ia' };
 }
 
