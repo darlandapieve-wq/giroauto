@@ -2,6 +2,22 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.19.0 — 08/11/2026
+
+Usabilidade e leveza (propostas da análise de 08/11):
+
+- **Novo veículo mais rápido:** "+ Novo veículo" abre o cadastro curto (placa → busca automática → km → preço → fotos), no computador e no celular, com área para arrastar as fotos. O link "Formulário completo" leva o que já foi digitado.
+- **Formulário completo mais curto (de ~4 para ~2 telas):** começa pelos dados do carro, tem uma só PLACA (a da busca) e as seções secundárias (proprietário, custos, destaques, gestão, arte) vêm recolhidas; o painel lembra quais você deixou abertas.
+- **Menu em grupos:** Vender, Acompanhar, Documentos e Loja. "Primeiros passos" sai do menu quando as etapas principais estão concluídas (continua em Configurações).
+- **Celular:** barra inferior com Estoque, CRM, Painel e "Mais" (menu completo); o botão de voz e os avisos sobem acima da barra.
+- **Busca rápida:** botão "Buscar", Ctrl+K ou "/" acham carro (placa, modelo) ou cliente do CRM (nome, telefone) de qualquer tela.
+- **Ações em lote no Estoque:** selecione vários carros e marque como pronto, republique, gere a arte ou marque como vendidos de uma vez.
+- **Aviso de lead novo no celular:** no CRM, "Ativar avisos neste aparelho". Chega notificação quando um lead entra sozinho (site, QR, portais, assistente). No iPhone, com o GiroAuto instalado na tela de início.
+- **Painel enxuto:** 4 indicadores principais (Vendidos, Lucro, Estoque, Parados) e o restante em "Mais indicadores"; nada mais cortado.
+- **Correções visuais:** nomes das etapas do funil do CRM inteiros, tabela da Gestão com a 1ª coluna fixa ao rolar, cabeçalho do GiroAuto Fotos no celular.
+- **Mais leve:** fotos reduzidas por padrão (lado maior 1600 px; uma foto de 9 MB vira ~300 KB) respeitando a rotação da câmera; miniaturas WebP de 400 px nas listas, na Gestão e na vitrine (cache só no disco do servidor, sem ocupar o Supabase); sharp sem cache e com 1 thread, MALLOC_ARENA_MAX=2 e canvas carregado só quando gera arte (a Loja sobe com ~50 MB); log de memória a cada 30 min.
+- **Atualizações chegam na hora:** o painel e o service worker levam a versão da app, e o código do painel é sempre revalidado (o navegador não fica com versão antiga).
+
 ## v2.18.0 — 08/11/2026
 
 - Integração com o GiroAuto Repasse (por ora só para o administrador do sistema):

@@ -3336,6 +3336,39 @@
     $('.side')?.addEventListener('click', (e) => { if (e.target.closest('.nav button, .nav a')) document.body.classList.remove('menu-aberto'); });
   }
 
+  /* ======================= Avisos de lead novo no celular (Web Push, v2.19) ======================= */
+  const b64 = (s) => { const p = '='.repeat((4 - (s.length % 4)) % 4); const r = atob((s + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from([...r].map((c) => c.charCodeAt(0))); };
+  async function pushBanner() {
+    if (!$('.head') || $('#pushBox')) return;
+    const iOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    const instalado = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+    const dispensado = (() => { try { return localStorage.getItem('push-dispensado') === '1'; } catch { return false; } })();
+    const pode = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+    const box = (html) => { $('.head')?.insertAdjacentHTML('afterend', `<div class="infobox push-box" id="pushBox">${html}</div>`); };
+    if (!pode) { if (iOS && !instalado && !dispensado) { box('🔔 Para receber aviso de lead novo no iPhone, instale o GiroAuto: no Safari, toque em <b>Compartilhar → Adicionar à Tela de Início</b> e abra por lá. <button class="linkbtn" type="button" id="pushNao">Agora não</button>'); $('#pushNao').onclick = () => { try { localStorage.setItem('push-dispensado', '1'); } catch {} $('#pushBox').remove(); }; } return; }
+    const reg = await navigator.serviceWorker.ready.catch(() => null); if (!reg) return;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      box('🔔 Avisos de lead novo ativados neste aparelho. <button class="linkbtn" type="button" id="pushTeste">Testar</button> · <button class="linkbtn" type="button" id="pushSair">Desativar</button>');
+      $('#pushTeste').onclick = async () => { const r = await api('POST', '/api/push/teste').catch((e) => ({ erro: e.message })); toast(r.enviados ? 'Aviso de teste enviado.' : `Não foi possível enviar${r.erro ? ': ' + r.erro : ''}.`); };
+      $('#pushSair').onclick = async () => { await api('POST', '/api/push/sair', { endpoint: sub.endpoint }).catch(() => {}); await sub.unsubscribe().catch(() => {}); $('#pushBox').remove(); toast('Avisos desativados neste aparelho.'); };
+      return;
+    }
+    if (dispensado || Notification.permission === 'denied') return;
+    box('🔔 Receba um aviso no celular (ou no computador) quando chegar lead novo. <button class="btn sm primary" type="button" id="pushSim">Ativar avisos neste aparelho</button> <button class="linkbtn" type="button" id="pushNao">Agora não</button>');
+    $('#pushNao').onclick = () => { try { localStorage.setItem('push-dispensado', '1'); } catch {} $('#pushBox').remove(); };
+    $('#pushSim').onclick = async () => {
+      try {
+        if (await Notification.requestPermission() !== 'granted') throw new Error('Permissão de notificação negada no navegador.');
+        const { publicKey } = await api('GET', '/api/push/chave');
+        const s = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(publicKey) });
+        await api('POST', '/api/push/assinar', { subscription: s.toJSON() });
+        await api('POST', '/api/push/teste').catch(() => {});
+        $('#pushBox').remove(); pushBanner(); toast('Pronto: avisos de lead novo ativados neste aparelho.');
+      } catch (e) { toast(e.message, 7000); }
+    };
+  }
+
   /* ======================= Estoque: ações em lote (v2.19) ======================= */
   const LOTE = new Set();
   function loteEstoque() {
@@ -3465,6 +3498,7 @@
     $$('[data-bv]').forEach((b) => { if (b.dataset.bv === atual) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
     if (view === 'novo') enhanceForm();
     if (view === 'estoque') { enhanceStock(); loteEstoque(); } else $('#loteBar')?.remove();
+    if (view === 'crm' && podeCrm()) setTimeout(() => pushBanner().catch(() => {}), 300);
     if (view === 'config') enhanceConfig();
   };
 

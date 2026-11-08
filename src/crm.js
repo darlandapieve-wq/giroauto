@@ -95,7 +95,7 @@ function createLead(storeId, b, { userId = null, origem } = {}) {
   const org = ORIGENS[origem || b.origem] ? (origem || b.origem) : 'outro';
   const veic = veiculoDaLoja(storeId, b.vehicle_id);
   const msg = str(b.mensagem, 2000);
-  return tx(() => {
+  const r = tx(() => {
     const aberto = (tel && get(`SELECT * FROM leads WHERE store_id = ? AND telefone = ? AND etapa IN (${ABERTAS.map(() => '?').join(',')}) ORDER BY id DESC LIMIT 1`, storeId, tel, ...ABERTAS))
       || (email && get(`SELECT * FROM leads WHERE store_id = ? AND email = ? AND etapa IN (${ABERTAS.map(() => '?').join(',')}) ORDER BY id DESC LIMIT 1`, storeId, email, ...ABERTAS));
     if (aberto) {
@@ -119,6 +119,9 @@ function createLead(storeId, b, { userId = null, origem } = {}) {
     logEvent(storeId, `Novo lead: ${nome || tel || email} (${ORIGENS[org]})`);
     return { id, novo: true };
   });
+  // v2.19: aviso no celular quando o lead chega sozinho (site, portais, assistente…), não quando alguém da equipe digitou
+  if (r.novo && !userId) setImmediate(() => require('./push').avisarLead(storeId, r.id).catch((e) => console.error('Aviso de lead:', e.message)));
+  return r;
 }
 
 function find(storeId, id) {
