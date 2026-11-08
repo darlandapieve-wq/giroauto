@@ -11,7 +11,7 @@ const ETAPA = Object.fromEntries(ETAPAS);
 const ABERTAS = ['novo', 'atendimento', 'qualificado', 'visita', 'visitou', 'proposta'];
 const ORIGENS = {
   vitrine: 'Site da loja', qr: 'QR code no carro', bot: 'Assistente do site', whatsapp: 'WhatsApp', instagram: 'Instagram',
-  facebook: 'Facebook', marketplace: 'Marketplace', webmotors: 'Webmotors', olx: 'OLX', icarros: 'iCarros', mobiauto: 'Mobiauto',
+  facebook: 'Facebook', messenger: 'Messenger', marketplace: 'Marketplace', webmotors: 'Webmotors', olx: 'OLX', icarros: 'iCarros', mobiauto: 'Mobiauto',
   mercadolivre: 'Mercado Livre', napista: 'NaPista', portal: 'Outro portal', loja: 'Visita na loja', telefone: 'Telefone',
   indicacao: 'Indicação', cliente: 'Cliente antigo', outro: 'Outro',
 };

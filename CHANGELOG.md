@@ -2,6 +2,11 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.20.0 — 08/11/2026
+
+- **CRM:** conversas do Messenger e do Direct do Instagram, e comentários nas publicações e anúncios da Página e do Instagram, viram leads no CRM. Cada pessoa vira um lead só por canal, com a campanha de origem (quando veio de anúncio), o carro (campanha de um carro só) e o telefone, se a pessoa digitar na conversa. Nada é respondido automaticamente. Para ligar: App da Meta > "Mensagens e comentários no CRM", Reconectar o Facebook e "Ativar / conferir" em Configurações > Facebook e Instagram.
+- **Campanhas de WhatsApp:** o erro "This WhatsApp phone number is not linked to your account" agora explica como vincular o número à Página.
+
 ## v2.19.3 — 08/11/2026
 
 - **Campanhas:** saiu o posicionamento "Explorar do Instagram", que a Meta descontinuou na API v25 (ela recusava a campanha com "O posicionamento Explorar do Instagram está obsoleto"). Campanhas salvas antes com ele marcado são criadas normalmente, sem esse posicionamento.

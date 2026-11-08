@@ -242,6 +242,7 @@
         m.innerHTML = '<div class="loading">Carregando…</div>';
         await Promise.all([loadMeta(), loadExt()]);
         if (S.meta.connected && !S.meta.expired && S.meta.configured) S.assets = await api('GET', '/api/meta/assets').catch((e) => ({ error: e.message }));
+        S.inbox = S.meta.connected && !S.meta.expired ? await api('GET', '/api/meta/inbox').catch(() => null) : null;
         S.metaApp = S.me.user.is_admin ? await api('GET', '/api/admin/meta-app').catch(() => null) : null;
         S.storage = S.me.user.is_admin ? await api('GET', '/api/admin/storage').catch(() => null) : null;
         S.ai = S.me.user.is_admin ? await api('GET', '/api/admin/ai').catch(() => null) : null;
@@ -1080,7 +1081,8 @@
         <div class="f w3"><label for="m-wa">WhatsApp da loja</label><input id="m-wa" value="${esc(m.whatsapp_number || s.whatsapp)}" placeholder="5544999990000" inputmode="tel"><span class="hint">Com DDI e DDD. Deve estar vinculado à Página.</span></div>
       </div>
       <div class="err" id="mErr2" hidden></div>
-      <div class="form-foot"><button class="btn ghost danger" id="mDisc" type="button">Desconectar</button><a class="btn" href="/api/meta/connect">Reconectar</a><button class="btn primary" id="mSave" type="button">Salvar</button></div>`;
+      <div class="form-foot"><button class="btn ghost danger" id="mDisc" type="button">Desconectar</button><a class="btn" href="/api/meta/connect">Reconectar</a><button class="btn primary" id="mSave" type="button">Salvar</button></div>
+      ${S.inbox ? inboxBox(S.inbox) : ''}`;
     const pair = S.pairCode;
     return `
     <div class="head"><div><h1>Configurações</h1><p>Dados da loja, extensão do Chrome e conexão com o Facebook e o Instagram.</p></div></div>
@@ -1405,6 +1407,23 @@
   function copyRow(label, value, id) {
     return `<div class="cf"><span class="k">${esc(label)}</span><span class="v" style="font-family:var(--f-mono);font-size:12.5px;font-weight:500">${esc(value)}</span><button class="btn sm" type="button" data-cp="${id}">Copiar</button></div>`;
   }
+  // v2.20: Messenger, Direct do Instagram e comentários entrando no CRM
+  function inboxBox(i) {
+    const fmt = (s) => s === 'ok' ? '<span class="pill p-ok">ok</span>' : s ? `<span class="pill p-bad">${esc(s)}</span>` : '<span class="muted">—</span>';
+    let corpo;
+    if (!i.permissao_ligada) corpo = `<p class="sub">Falta liberar a permissão: ${S.me.user.is_admin ? 'em <b>App da Meta</b> (mais abaixo), marque <b>Mensagens e comentários no CRM</b>, salve e clique em <b>Reconectar</b> aqui.' : 'peça ao administrador do GiroAuto para ligar "Mensagens e comentários no CRM" no App da Meta.'}</p>`;
+    else corpo = `
+      <div class="${i.ativo ? 'okbox' : 'infobox'}">${i.ativo ? `Recebendo da Página <b>${esc(i.page_name)}</b>${i.ig_username ? ` e do <b>@${esc(i.ig_username)}</b>` : ''}. ${i.conversas_7d} conversa(s) nos últimos 7 dias${i.ultima ? ` · última em ${new Date(i.ultima.replace(' ', 'T') + 'Z').toLocaleString('pt-BR')}` : ''}.` : i.mudou_pagina ? 'A Página mudou: clique em Ativar de novo.' : 'Ainda não ativado nesta Página.'}</div>
+      <div class="sub">Webhook: ${fmt(i.app_page)} · Página: ${fmt(i.pagina)} · Instagram: ${fmt(i.app_instagram)}</div>
+      ${i.faltam?.length ? `<div class="err">Permissões que o Facebook não concedeu: ${esc(i.faltam.join(', '))}. Clique em Reconectar e, na janela do Facebook, em "Editar acesso", marque tudo.</div>` : ''}`;
+    return `<div class="inbox-box" style="margin-top:14px;border-top:1px solid var(--line, #e5e7eb);padding-top:12px">
+      <h3 style="margin:0 0 6px;font-size:15px">Mensagens e comentários no CRM</h3>
+      <p class="sub" style="margin:0 0 8px">Conversas do Messenger e do Direct, e comentários nas publicações e anúncios, viram leads no CRM (com a campanha de origem). O GiroAuto só registra: não responde nada sozinho.</p>
+      ${corpo}
+      ${i.permissao_ligada ? '<div class="form-foot"><button class="btn" id="inboxAtivar" type="button">Ativar / conferir</button></div>' : ''}
+    </div>`;
+  }
+
   function metaAppPanel(a) {
     const ok = a.configured;
     const rows = [
@@ -1541,6 +1560,12 @@
           } catch (e) { toast(e.message); }
         };
       });
+      const ia = $('#inboxAtivar');
+      if (ia) ia.onclick = async () => {
+        ia.disabled = true; ia.textContent = 'Ativando…';
+        try { S.inbox = await api('POST', '/api/meta/inbox/ativar'); toast(S.inbox.ativo ? 'Mensagens e comentários ligados ao CRM' : 'A Meta recusou uma parte: veja os detalhes', 6000); render(); }
+        catch (e) { toast(e.message, 8000); ia.disabled = false; ia.textContent = 'Ativar / conferir'; }
+      };
       const ms = $('#mSave');
       if (ms) ms.onclick = async () => {
         ms.disabled = true; $('#mErr2').hidden = true;

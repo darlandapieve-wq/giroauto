@@ -27,7 +27,7 @@ require('./repasse-proxy').register(app);
 app.use(require('compression')());
 app.disable('x-powered-by');
 app.set('trust proxy', true);
-app.use(express.json({ limit: '6mb', verify: (req, _res, buf) => { if (req.url.startsWith('/api/wa/webhook')) req.rawBody = buf; } }));
+app.use(express.json({ limit: '6mb', verify: (req, _res, buf) => { if (req.url.startsWith('/api/wa/webhook') || req.url.startsWith('/api/meta/webhook')) req.rawBody = buf; } }));
 app.use(auth.loadUser);
 require('./routes2').register(app);
 require('./routes3').register(app);
@@ -37,6 +37,7 @@ require('./repasse-integracao').register(app); // v2.18: Loja ↔ GiroAuto Repas
 require('./push').register(app); // v2.19: aviso de lead novo no celular
 
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+require('./meta/inbox').register(app, { team, wrap }); // v2.20: Messenger, Direct e comentários no CRM
 const fail = (status, message) => Object.assign(new Error(message), { status });
 
 /* ------------------------------------------------------------------ */
@@ -864,6 +865,8 @@ app.get('/api/meta/callback', wrap(async (req, res) => {
   try {
     const conn = await meta.exchangeCode(String(req.query.code));
     meta.saveConnection(st.store_id, conn);
+    // v2.20: com a permissão de mensagens ligada, reconectar já inscreve a Página no webhook
+    if (config.meta.extraScopes.includes('mensagens')) require('./meta/inbox').ativar(st.store_id).catch((e) => console.error('inbox ativar', e.message));
     res.redirect('/#config?meta=ok');
   } catch (e) {
     console.error('Meta OAuth:', e.message);

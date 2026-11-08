@@ -143,6 +143,7 @@ async function saveSettings(storeId, body) {
     acc?.id || '', acc?.name || '', acc?.currency || 'BRL', page?.id || '', page?.name || '',
     page?.ig_user_id || '', page?.ig_username || '', biz?.id || '', wa, storeId);
   if (page && !page.ig_user_id) await refreshInstagram(storeId).catch(() => '');
+  if (page && (config.meta.extraScopes || []).includes('mensagens')) require('./inbox').ativar(storeId).catch((e) => console.error('inbox ativar', e.message));
   return publicStatus(storeId);
 }
 
@@ -468,7 +469,12 @@ async function launchCampaign(storeId, campaignId, { activate }) {
     // Desfaz o que foi criado (apagar a campanha remove conjunto e anúncio).
     if (created.campaign) await graph.del(`/${created.campaign}`, token).catch(() => {});
     if (created.productSet) await graph.del(`/${created.productSet}`, token).catch(() => {});
-    const msg = err.title ? `${err.title}: ${err.message}` : err.message;
+    let msg = err.title ? `${err.title}: ${err.message}` : err.message;
+    // v2.20: o anúncio de WhatsApp exige o número vinculado à Página (vínculo feito pelo dono, no Facebook)
+    if (mode === 'whatsapp' && /not linked|não está vinculado|nao esta vinculado|whatsapp.*(link|vincul)/i.test(`${msg} ${err.raw?.error_user_msg || ''}`)) {
+      err.message = msg = `O WhatsApp ${conn.whatsapp_number} não está vinculado à Página ${conn.page_name || ''}. No Facebook, entre como a Página > Configurações > Contas vinculadas > WhatsApp, informe esse número e confirme o código que chega nele. Depois crie a campanha de novo.`;
+      err.title = '';
+    }
     run(`UPDATE campaigns SET status='erro', error=? WHERE id=?`, msg, c.id);
     logEvent(storeId, `Falha ao criar a campanha "${c.name}": ${msg}`);
     throw err;
