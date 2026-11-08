@@ -12,9 +12,10 @@ const CIRCULACAO = ['aprovado', 'circulando', 'enviado'];
 
 class RepasseErro extends Error { constructor(msg, status) { super(msg); this.status = status; } }
 
-async function chamar(caminho, { sessao, metodo = 'GET', corpo, binario = false, timeout = 30000 } = {}) {
+async function chamar(caminho, { sessao, sso, metodo = 'GET', corpo, binario = false, timeout = 30000 } = {}) {
   const headers = { Accept: binario ? 'image/*' : 'application/json' };
   if (sessao) headers.Cookie = `sessao=${sessao}`;
+  if (sso) headers['x-giro-sso'] = require('../sso').token(sso); // v2.19.1: login único pela Loja
   if (corpo) headers['Content-Type'] = 'application/json';
   let r;
   try {
@@ -62,7 +63,7 @@ function doAnuncio(a) {
 
 async function anuncios(s, grupo = 'todos') {
   const st = grupo === 'fila' ? FILA : grupo === 'circulacao' ? CIRCULACAO : [...FILA, ...CIRCULACAO];
-  const { data } = await chamar(`/api/anuncios?status=${st.join(',')}&limite=300`, { sessao: s.sessao, timeout: 45000 });
+  const { data } = await chamar(`/api/anuncios?status=${st.join(',')}&limite=300`, { sessao: s.sessao, sso: s.sso, timeout: 45000 });
   return (Array.isArray(data) ? data : []).map((a) => {
     const v = doAnuncio(a);
     const capa = (a.fotos || []).find((f) => f.capa) || (a.fotos || [])[0];
@@ -76,7 +77,7 @@ async function anuncios(s, grupo = 'todos') {
 
 async function anuncio(s, id) {
   if (!/^[0-9a-f-]{36}$/.test(String(id))) return null;
-  const { data } = await chamar(`/api/anuncios?status=${[...FILA, ...CIRCULACAO].join(',')}&limite=300`, { sessao: s.sessao, timeout: 45000 });
+  const { data } = await chamar(`/api/anuncios?status=${[...FILA, ...CIRCULACAO].join(',')}&limite=300`, { sessao: s.sessao, sso: s.sso, timeout: 45000 });
   const a = (Array.isArray(data) ? data : []).find((x) => x.id === id);
   if (!a) return null;
   const fotos = [...(a.fotos || [])].sort((x, y) => (y.capa ? 1 : 0) - (x.capa ? 1 : 0) || x.ordem - y.ordem);
@@ -84,6 +85,6 @@ async function anuncio(s, id) {
 }
 
 // Foto original (o painel do Repasse guarda a original; a versão com a placa borrada é só para fora).
-const foto = (s, id) => (/^[0-9a-f-]{36}$/.test(String(id)) ? chamar(`/fotos/${id}`, { sessao: s.sessao, binario: true }) : null);
+const foto = (s, id) => (/^[0-9a-f-]{36}$/.test(String(id)) ? chamar(`/fotos/${id}`, { sessao: s.sessao, sso: s.sso, binario: true }) : null);
 
 module.exports = { entrar, gravar, ler, anuncios, anuncio, foto, chamar, URL_REPASSE, RepasseErro };

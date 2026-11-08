@@ -39,6 +39,10 @@ function repassar(req, res) {
   headers['x-forwarded-host'] = req.get('host') || '';
   headers['x-forwarded-for'] = [req.headers['x-forwarded-for'], req.socket.remoteAddress].filter(Boolean).join(', ');
   headers['x-forwarded-prefix'] = PREFIXO;
+  // v2.19.1: login único. Nunca repassa um x-giro-sso vindo do navegador; só a Loja o gera, para o administrador logado.
+  delete headers['x-giro-sso'];
+  const sso = require('./sso');
+  if (sso.ativo() && sso.podeRepasse(req.user)) headers['x-giro-sso'] = sso.token(`loja${req.user.id}`);
 
   const cliente = destino.protocol === 'http:' ? http : https;
   const pr = cliente.request(destino, { method: req.method, headers }, (up) => {
@@ -62,7 +66,7 @@ function register(app) {
     if (caminho === PREFIXO) return res.redirect(302, PREFIXO + '/' + (consulta ? '?' + consulta : ''));
     // eventos em tempo real sem buffer (o SSE do Repasse precisa chegar na hora)
     res.setHeader('X-Accel-Buffering', 'no');
-    repassar(req, res);
+    require('./auth').loadUser(req, res, () => repassar(req, res)); // quem está logado na Loja (para o login único)
   });
 }
 

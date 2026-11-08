@@ -924,3 +924,37 @@ body:has(.form-foot) #vozFab{bottom:86px}
 .lote-ck input{width:17px;height:17px;margin:0;cursor:pointer;accent-color:var(--accent)}
 .lote-bar{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:55;display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 24px);background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 12px;box-shadow:0 8px 28px rgba(0,0,0,.18)}
 @media (max-width:760px){.lote-bar{bottom:calc(68px + env(safe-area-inset-bottom,0px))}}
+/* v2.19.1: menu lateral sem barra de rolagem: sai o quadro da extensão (o status continua em Republicação e
+   Configurações), o nome da loja/usuário quando há logo, e o "Comando de voz" (vira o botão flutuante). */
+@media (min-width:761px){
+  .side #extBox{display:none}
+  .side-foot:has(#storeLogo) .store{display:none}
+  #vozSide{display:none}
+  #vozFab{display:grid!important;place-items:center}
+  .side{gap:14px;padding-top:16px;padding-bottom:12px}
+  .side-foot{gap:6px}
+}
+@media (min-width:761px) and (max-height:860px){
+  .nav button,.nav a{padding:6px 12px}
+  .nav-g{padding:8px 12px 2px}
+  .side{gap:10px}
+  .store-logo{max-height:34px}
+}
+@media (min-width:761px) and (max-height:700px){
+  .nav button,.nav a{padding:4px 12px;font-size:13px}
+  .nav-g{padding:5px 12px 1px;font-size:9.5px}
+  .side #appVersion{display:none}
+}
+@media (min-width:761px) and (max-height:760px){
+  .side{gap:8px;padding-top:12px;padding-bottom:8px}
+  .side .brand{transform:scale(.92);transform-origin:left center}
+  .busca-btn{padding:5px 9px}
+  .nav{gap:1px}
+  .nav button,.nav a,.nav a.nav-link{padding:3px 12px;font-size:13px;line-height:18px}
+  .nav-g{padding:6px 12px 1px;font-size:9.5px}
+  .side-foot{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px 8px}
+  .side-foot .store-logo{max-height:28px;max-width:90px;order:-1}
+  .side-foot .store{font-size:11px;line-height:1.2}
+  .side-foot #fbLink{padding:2px 6px}
+  .side #appVersion{display:none}
+}

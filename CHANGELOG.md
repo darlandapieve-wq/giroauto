@@ -2,6 +2,12 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.19.1 — 08/11/2026
+
+- **Repasse sem segundo login:** o administrador logado no GiroAuto abre o Repasse pelo menu direto, sem a tela de login do Repasse, e a integração (Do Repasse, Enviar para a Fila) também dispensa o login. Usa um segredo compartilhado entre os dois serviços (GIRO_SSO_SEGREDO); o endereço próprio do Repasse continua com o login de sempre.
+- **Menu lateral sem barra de rolagem:** sai o quadro da extensão (o status continua em Republicação e Configurações) e o nome da loja/usuário quando há logo; itens mais compactos em telas baixas.
+- **Comando de voz** agora é o botão flutuante no canto inferior direito também no computador.
+
 ## v2.19.0 — 08/11/2026
 
 Usabilidade e leveza (propostas da análise de 08/11):

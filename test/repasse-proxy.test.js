@@ -15,7 +15,7 @@ test('proxy do Repasse: redireciona, repassa corpo, cookies, Location e eventos'
   falso.get('/', (req, res) => res.redirect('/login'));
   falso.get('/login', (req, res) => res.send('login ' + req.get('x-forwarded-prefix')));
   falso.post('/api/login', (req, res) => { res.setHeader('Set-Cookie', 'sessao=abc; Path=/; HttpOnly'); res.json({ ok: req.body.senha === 'x' }); });
-  falso.get('/api/eco', (req, res) => res.json({ cookie: req.headers.cookie || '', q: req.query.q }));
+  falso.get('/api/eco', (req, res) => res.json({ cookie: req.headers.cookie || '', q: req.query.q, sso: req.headers['x-giro-sso'] || '' }));
   falso.get('/api/events', (req, res) => { res.set({ 'Content-Type': 'text/event-stream' }); res.flushHeaders(); res.write('event: oi\ndata: 1\n\n'); });
   const up = await servidor(falso);
   process.env.REPASSE_URL = `http://127.0.0.1:${up.address().port}`;
@@ -41,7 +41,7 @@ test('proxy do Repasse: redireciona, repassa corpo, cookies, Location e eventos'
   assert.deepEqual(await r.json(), { ok: true }, 'corpo JSON chega intacto');
   assert.match(r.headers.get('set-cookie'), /^sessao=abc/);
 
-  assert.deepEqual(await (await fetch(L + '/repasse/api/eco?q=1', { headers: { cookie: 'sessao=abc' } })).json(), { cookie: 'sessao=abc', q: '1' });
+  assert.deepEqual(await (await fetch(L + '/repasse/api/eco?q=1', { headers: { cookie: 'sessao=abc', 'x-giro-sso': 'forjado.pelo.navegador' } })).json(), { cookie: 'sessao=abc', q: '1', sso: '' }, 'x-giro-sso do navegador nunca passa');
 
   // eventos chegam antes de a resposta terminar (sem buffer da compressão)
   await new Promise((ok, erro) => {

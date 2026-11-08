@@ -22,7 +22,10 @@ const SEM_LOGIN = 'Entre no GiroAuto Repasse (item Repasse do menu) e tente de n
 
 function sessao(req) {
   const s = RP.ler(req)?.sessao || auth.parseCookies(req.headers.cookie).sessao;
-  return s ? { sessao: s } : null;
+  if (s) return { sessao: s };
+  // v2.19.1: login único: o administrador logado na Loja fala com o Repasse sem entrar nele
+  const sso = require('./sso');
+  return sso.ativo() && sso.podeRepasse(req.user) ? { sso: `loja${req.user.id}` } : null;
 }
 function exigirSessao(req) {
   const s = sessao(req);
@@ -122,7 +125,7 @@ function register(app) {
       veiculo: { id: v.id, marca: v.marca, modelo: v.modelo, versao: v.versao, ano_fab: v.ano_fab, ano_modelo: v.ano_modelo, km: v.km, preco: v.preco_repasse, fipe: v.fipe, cambio: v.cambio, combustivel: v.combustivel, cor: v.cor },
     };
     let data;
-    try { ({ data } = await RP.chamar('/api/da-loja/anuncio', { sessao: s.sessao, metodo: 'POST', corpo, timeout: 90000 })); } catch (e) { throw traduzir(e); }
+    try { ({ data } = await RP.chamar('/api/da-loja/anuncio', { sessao: s.sessao, sso: s.sso, metodo: 'POST', corpo, timeout: 90000 })); } catch (e) { throw traduzir(e); }
     if (!data.jaExistia) {
       repasse.record(v.id, 'GiroAuto Repasse (Fila)', req.user.id);
       logEvent(req.user.storeId, `${v.marca} ${v.modelo} enviado para a Fila do GiroAuto Repasse`);
