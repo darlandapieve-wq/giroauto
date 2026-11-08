@@ -10,7 +10,7 @@ Um só repositório e um só serviço no Render para toda a família:
 - GitHub: darlandapieve-wq/giroauto (branch main)
 - Render: UM serviço web "giroauto", Docker, plano free, Virginia, auto-deploy na main
 - O serviço antigo "giroauto-repasse" será desativado depois que o monorepo estiver validado
-- Supabase: hoje são dois projetos (o da Loja/Fotos e o "giroauto-repasse"); o destino é o projeto único "giroauto" (ver "Banco de dados único"), e o "giroauto-repasse" será pausado após a validação
+- Supabase: desde 08/11/2026 (15:56 UTC) o Repasse também usa o projeto único "giroauto" (ver "Banco de dados único"). O projeto "giroauto-repasse" ficou congelado como referência e será pausado após a validação.
 - Variáveis de ambiente dos dois apps ficam no mesmo serviço, com prefixos (LOJA_*, REPASSE_*)
 
 ## Regras sobre dados (obrigatórias)
@@ -39,8 +39,10 @@ O schema "public" dos dois projetos está vazio. Supabase Auth não é usado (0 
 - Serviços externos: Meta (Marketplace, Instagram, anúncios, WhatsApp oficial), caixa IMAP da loja (leads dos portais), Pollinations/Gemini/Anthropic (só geram, não guardam), placa/FIPE/CNPJ.
 - O Fotos fala com o Repasse pela API HTTP (REPASSE_URL, hoje giroauto-repasse.onrender.com), sem acessar o banco dele.
 
-### Repasse — projeto giroauto-repasse (qbwifhvfohujejqfjqsj)
+### Repasse — projeto giroauto (ahltyukhyvkawtzvxwmq), schema "repasse"
+- Desde 08/11/2026 15:56 UTC. Antes ficava no projeto giroauto-repasse (qbwifhvfohujejqfjqsj), que está congelado desde 15:48 UTC: mantido intacto, sem nenhum servidor conectado, até ser pausado.
 - Tudo fica no Postgres, schema "repasse", via DATABASE_URL (src/db.js do repo giroauto-repasse). Sem DATABASE_URL, usa PGlite local (data/pglite); na nuvem, nesse caso, só mostra a página de erro.
+- Números abaixo: levantamento inicial de 08/11/2026 (no corte: 286 anúncios, 560 fotos, 12.945 linhas de wa_auth).
 - fotos: 595 fotos em bytea (cerca de 121 MB); anuncios: 298; mensagens: 782; grupos: 115; contatos: 54; envios: 34; poucos registros em leads, conversas, compradores e contas (1).
 - wa_auth: 12.899 linhas. É a sessão Baileys do WhatsApp do número particular, com o prefixo "c1:".
 - kv: a configuração da conta fica em "config:1" (fontes, destino, redução de preço, filtros).
@@ -73,8 +75,10 @@ O schema "public" dos dois projetos está vazio. Supabase Auth não é usado (0 
 ## Memória no Render (medido em 08/11/2026)
 - Limite: 512 MB por serviço (plano free).
 - Loja/Fotos: de 60 a 130 MB no uso normal, com pico de 450 MB em 02 e 03/11/2026.
-- Repasse: cresce sem parar, de cerca de 100 MB para 340 MB em uma semana, com picos de 430 MB. Provável vazamento de memória.
-- Juntos, hoje, não cabem com segurança num serviço só.
+- Repasse: cresce sem parar, de cerca de 100 MB para 340 MB em uma semana, com picos de 430 MB.
+- Análise (08/11): a RSS sobe em degraus nas rajadas de anúncios com foto da manhã (~12h UTC) e fica plana de madrugada, mesmo com reconexões a cada 40 min. Causa provável (não comprovada): memória nativa do sharp/libvips fragmentada na glibc, não vazamento no JS.
+- Mitigação na v0.8.0 do Repasse: sharp.cache(false), sharp.concurrency(1), MALLOC_ARENA_MAX=2 no Dockerfile. O log "Memória: rss · heap JS · externa · buffers" a cada 30 min serve para confirmar: se a RSS subir com heap e externa estáveis, é memória nativa.
+- Juntos, hoje, não cabem com segurança num serviço só. Medir de novo depois de uns dias com a v0.8.0.
 
 ## Plano da migração (revisado em 08/11/2026)
 1. Etapa 0: backup completo e números de referência.
@@ -121,18 +125,35 @@ O schema "public" dos dois projetos está vazio. Supabase Auth não é usado (0 
 
 ## Estado atual / Pendências
 - Levantamento de dados concluído (ver "Onde estão os dados hoje").
-- 1ª tentativa de unificar o banco (08/11/2026, 14:43–15:05 UTC): ABORTADA, Repasse de volta ao estado original (banco antigo, WhatsApp reconectou sem QR code). A cópia e a conferência funcionaram (31 medidas idênticas), mas o Render não deixa aplicar a DATABASE_URL nova sem subir dois servidores (ver "Lições do Render").
-- O schema repasse no projeto giroauto é uma cópia de 15:00 UTC, JÁ DEFASADA (o serviço voltou a gravar no banco antigo). Nada usa essa cópia. Na próxima tentativa ela precisa ser apagada e refeita (pedir autorização ao Darlan).
-- Migrations da cópia: supabase/migrations/20261108150000_repasse_estrutura.sql e 20261108150100_repasse_indices.sql (geradas do pg_dump; os dados entram entre as duas com pg_restore --data-only).
-- Backups e conferências do corte: C:\Backups\giroauto\2026-11-08\corte.
+- BANCO UNIFICADO (etapa 2 do plano) em 08/11/2026: o Repasse usa o schema repasse do projeto giroauto desde 15:56 UTC. WhatsApp reconectou sem QR code; conferência da cópia: 31 medidas idênticas (linhas e md5 de todas as tabelas, wa_auth, c1:creds, fotos, sequências, estrutura). Schema repasse não exposto pela API (anon/authenticated sem acesso). Projeto giroauto com 183 MB.
+- Serviços continuam SEPARADOS no Render (giroauto e giroauto-repasse). O Fotos segue falando com o Repasse por HTTP (REPASSE_URL sem mudança).
+- 1ª tentativa (14:43–15:05 UTC): abortada sem perda; o resume do Render ignora variável nova e não existe deploy de serviço suspenso.
+- 2ª tentativa (15:45–15:57 UTC), com a v0.8.0 do Repasse e o interruptor WHATSAPP_DESLIGADO (ver "Lições do Render").
+- Durante a 2ª tentativa, o servidor reativado no banco antigo (WhatsApp desligado, ~1,5 min) rodou a limpeza automática do app e apagou lá 16 mensagens com mais de 4 dias. Estão preservadas no dump C:\Backups\giroauto\2026-11-08\corte2\repasse-final.dump e na cópia. Nenhuma exclusão foi feita à mão no banco antigo.
+- Migrations: supabase/migrations/20261108150000_repasse_estrutura.sql e 20261108150100_repasse_indices.sql (geradas do pg_dump; os dados entram entre as duas com pg_restore --data-only).
+- Backups e conferências: C:\Backups\giroauto\2026-11-08\corte (1ª tentativa) e \corte2 (troca efetiva).
+- PENDENTE: validar alguns dias e, com ordem do Darlan, pausar o projeto giroauto-repasse (nunca excluir).
 - Etapa 0 (backup) concluída em 08/11/2026: C:\Backups\giroauto\2026-11-08 (repasse.dump, SQLite da Loja + 12 cópias diárias, 367 fotos, variaveis.txt, relatorio-etapa0.txt). Todas as cópias passaram no PRAGMA integrity_check; a queda de tamanho das cópias depois de 28/10 foi só a compressão (o banco cresceu).
 - Cliente PostgreSQL 17.11 em C:\Ferramentas\pgsql.
-- PRÓXIMA TAREFA: implementar a trava de conexão única do WhatsApp no Repasse, para então tentar de novo trocando a DATABASE_URL com um deploy normal.
-- Pendente também: proteção contra sobrescrita no deploy (Loja/Fotos).
-- Segurança: o Baileys escreve chaves privadas da sessão do WhatsApp nos logs do Render ("Closing session: SessionEntry"). Corrigir o nível de log.
+- Repasse v0.8.0 (08/11/2026, repo giroauto-repasse, commits 23d8d29 e d00f505): trava de conexão única do WhatsApp, end() sem logout() no SIGTERM, logs da libsignal sem chaves da sessão (corrigido; os logs antigos do Render ainda contêm chaves), mitigação de memória e interruptor WHATSAPP_DESLIGADO=1.
+- Pendente: proteção contra sobrescrita no deploy (Loja/Fotos).
+- Pendente: medir a memória do Repasse com a v0.8.0 antes de pensar em unificar os serviços.
 
 ## Lições do Render (verificadas em 08/11/2026)
 - "Resume" reinicia o deploy existente com as variáveis daquele deploy: uma variável alterada com o serviço suspenso NÃO entra no resume.
 - Não dá para fazer deploy de serviço suspenso ("cannot deploy suspended service").
 - Logo, trocar uma variável do Repasse exige um deploy com o serviço no ar, e o Render sobe o servidor novo antes de derrubar o antigo. Sem a trava de conexão única, isso põe dois servidores no WhatsApp.
 - Na partida, o Repasse roda a limpeza (arquivados e mensagens antigas) e o Baileys atualiza c1:creds: qualquer subida no banco antigo invalida uma cópia já feita.
+- Mudar variável pela API do Render (PUT env-var) NÃO dispara deploy sozinho.
+
+## Trava do WhatsApp e troca de banco (Repasse v0.8.0)
+- Trava em repasse.kv, chave wa_lock:c<conta>: sinal de vida a cada 20 s, expira com 90 s sem sinal; sem banco por 60 s, o servidor solta o WhatsApp. No SIGTERM: end() (nunca logout()) e a trava é marcada "liberada". Deploys normais são seguros: o servidor novo espera o antigo liberar.
+- A trava vive NO BANCO: numa troca de DATABASE_URL os dois servidores olham bancos diferentes e ela não protege. Para trocar de banco, usar o roteiro abaixo.
+- Roteiro testado em 08/11/2026:
+  1. WHATSAPP_DESLIGADO=1 e deploy: o novo sobe sem WhatsApp e o antigo libera ao sair.
+  2. Suspender.
+  3. Copiar e conferir.
+  4. Trocar a DATABASE_URL e remover WHATSAPP_DESLIGADO.
+  5. Resume: volta o deploy anterior, banco antigo e sem WhatsApp.
+  6. Deploy: só o novo conecta.
+- Se a linha da trava não existe, o servidor espera WA_ESPERA_SEM_TRAVA_MS (3 min) antes de criá-la (transição de versão sem trava).
