@@ -149,6 +149,11 @@ O schema "public" dos dois projetos está vazio. Supabase Auth não é usado (0 
   - Fotos reduzidas por padrão (sharp, 1600 px) e miniaturas WebP ?w=400 só em cache no disco.
   - Memória: sharp sem cache, MALLOC_ARENA_MAX=2, canvas sob demanda (sobe com ~60 MB em produção).
   - Painel e service worker versionados; JS e CSS com Cache-Control no-cache.
+- Loja v2.19.1 + Repasse v0.9.1 (08/11/2026): login único Loja → Repasse.
+  - O proxy /repasse e a integração mandam x-giro-sso (HMAC com GIRO_SSO_SEGREDO, válido 2 min) só para o administrador do sistema logado na Loja. O proxy sempre descarta um x-giro-sso vindo do navegador.
+  - O Repasse aceita como sessão de desenvolvedor, conta 1. O cookie "sessao", se existir, tem prioridade.
+  - GIRO_SSO_SEGREDO tem o mesmo valor nos dois serviços (cópia em C:\Backups\giroauto\2026-11-08\variaveis.txt). Se mudar num, mudar no outro.
+  - Menu lateral sem rolagem (sem quadro da extensão e sem nome da loja quando há logo); comando de voz flutuante também no computador.
 - Limpeza do giro_private (08/11/2026, autorizada pelo Darlan): apagados 13.823 registros removidos e vazios (~1,5 MB).
   - Backup em C:\Backups\giroauto\2026-11-08\limpeza-giro_private\removidos-vazios.csv. Os 385 arquivos ativos conferidos idênticos antes e depois.
   - Eles voltam a se acumular: giro_commit marca a linha temporária como removida em vez de apagá-la. Corrigir com uma migration (pedir ordem).
