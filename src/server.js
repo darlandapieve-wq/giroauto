@@ -19,6 +19,10 @@ const instagram = require('./instagram');
 const team = require('./team');
 
 const app = express();
+app.set('trust proxy', true);
+// v2.17: GiroAuto Repasse em /repasse (proxy em streaming para o serviço do Repasse). Antes da compressão e do
+// leitor de JSON: o corpo e os eventos em tempo real passam intactos.
+require('./repasse-proxy').register(app);
 // Respostas comprimidas (gzip): reduz a banda de saída do painel, da API e das páginas.
 app.use(require('compression')());
 app.disable('x-powered-by');

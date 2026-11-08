@@ -3199,6 +3199,8 @@
       <button data-view="gestao"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v16"/></svg>Gestão</button>
       ${can('gestao') ? '<button data-view="resultados"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Resultados</button>' : ''}
       ${owner() ? '<button data-view="equipe"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.2"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2A5 5 0 0 1 21 19"/></svg>Equipe</button>' : ''}`);
+    // v2.17: GiroAuto Repasse (serviço próprio, com login próprio) em /repasse/. Por ora só para o administrador.
+    if (S.me.user.is_admin && !nav.querySelector('a[href="/repasse/"]')) nav.querySelector('a.nav-link[href="/fotos"]')?.insertAdjacentHTML('afterend', '<a class="nav-link" href="/repasse/" title="Anúncios de repasse dos grupos do WhatsApp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 8h13l-3-3M20 16H7l3 3"/></svg>Repasse</a>');
     if (S.me.user.is_admin) cfg.insertAdjacentHTML('afterend', '<button data-view="dev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></svg>Desenvolvedor</button>');
     if (!$('#fbLink')) $('.side-foot .store')?.insertAdjacentHTML('beforebegin', '<button class="btn ghost sm" id="fbLink" type="button" title="Informar erros e sugerir melhorias">💬 Sugestões e erros</button>');
     if ($('#fbLink')) $('#fbLink').onclick = () => feedbackModal();

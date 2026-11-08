@@ -2,6 +2,11 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.17.0 — 08/11/2026
+
+- Repasse dentro do GiroAuto: novo item **Repasse** no menu lateral (por ora só para o administrador do sistema) abre o GiroAuto Repasse em `/repasse/`, com o mesmo login de sempre do Repasse e um botão "← GiroAuto" para voltar.
+- O Repasse continua sendo um serviço separado no Render; a Loja só repassa as requisições de `/repasse/*` para ele, em streaming (sem guardar nada em memória), inclusive a atividade em tempo real. Se ele estiver ligando, aparece uma página que tenta de novo sozinha.
+
 ## v2.16.4 — 01/11/2026
 
 - GiroAuto Fotos pela **Pollinations** agora usa o **Nano Banana 2 Lite** (Gemini 3.1 Flash-Lite Image, `google/gemini-3.1-flash-lite-image`) por padrão, no lugar do antigo "kontext": mais fiel ao carro, cerca de US$ 0,03 por foto. Envia todas as fotos de referência nos ângulos novos e o tamanho do formato escolhido. Mensagens claras para crédito esgotado e chave recusada (a Pollinations agora exige chave secreta `sk_`).
