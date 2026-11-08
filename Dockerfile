@@ -1,6 +1,8 @@
 FROM node:22-slim
 WORKDIR /app
 ENV NODE_ENV=production DATA_DIR=/data PORT=3333
+# menos arenas do malloc da glibc: evita a RSS crescer em degraus com o sharp/libvips (ver src/memoria.js)
+ENV MALLOC_ARENA_MAX=2
 COPY package*.json ./
 RUN npm ci --omit=dev --no-audit --no-fund || npm install --omit=dev --no-audit --no-fund
 COPY src ./src

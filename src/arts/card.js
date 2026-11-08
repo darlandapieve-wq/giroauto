@@ -1,7 +1,12 @@
 // Arte de divulgação do veículo (imagem 1 do pacote): foto principal, marca, modelo, ano,
 // preço, itens do veículo e três fotos menores. Feita no servidor, sem custo.
 const path = require('node:path');
-const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
+// v2.19: o canvas (memória nativa) só carrega quando uma imagem é gerada de fato
+let canvasMod = null;
+const cv = () => (canvasMod ||= require("@napi-rs/canvas"));
+const createCanvas = (...a) => cv().createCanvas(...a);
+const loadImage = (...a) => cv().loadImage(...a);
+const GlobalFonts = { registerFromPath: (...a) => cv().GlobalFonts.registerFromPath(...a) };
 
 const FONTS = path.join(__dirname, '..', '..', 'assets', 'fonts');
 let fontsReady = false;

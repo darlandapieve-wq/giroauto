@@ -54,6 +54,20 @@ app.get('/media/:file', wrap(async (req, res) => {
   res.type(storage.MIME[path.extname(file)] || 'image/jpeg').sendFile(file);
 }));
 
+// v2.19: o painel e o service worker levam a versão da app, então cada versão nova chega ao navegador na hora
+// (antes o navegador podia continuar com o app.js antigo e o cache do service worker tinha nome fixo).
+const VERSAO_APP = require('../package.json').version;
+let shellHtml = null;
+app.get('/sw.js', (req, res) => {
+  const t = require('node:fs').readFileSync(path.join(__dirname, '..', 'public', 'sw.js'), 'utf8')
+    .replace(/giroauto-v[\d.]+/, `giroauto-v${VERSAO_APP}`).replace(/'\/(app\.css|app\.js|app2\.js|guia\.js)'/g, `'/$1?v=${VERSAO_APP}'`);
+  res.set({ 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'no-cache' }).send(t);
+});
+app.get('/', (req, res) => {
+  shellHtml ||= require('node:fs').readFileSync(path.join(__dirname, '..', 'public', 'app.html'), 'utf8')
+    .replace(/(href|src)="\/(app\.css|app\.js|app2\.js|guia\.js)"/g, `$1="/$2?v=${VERSAO_APP}"`);
+  res.set('Cache-Control', 'no-cache').type('html').send(shellHtml);
+});
 app.use(express.static(path.join(__dirname, '..', 'public'), { index: false }));
 
 const VERSION = require('../package.json').version;
@@ -84,7 +98,6 @@ app.get('/privacidade', (req, res) => res.send(pages.privacy()));
 app.get('/exclusao-de-dados', (req, res) => res.send(pages.deletion()));
 app.get('/termos', (req, res) => res.send(pages.terms()));
 
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'app.html')));
 
 // Feed do catálogo de veículos (lido pela Meta a cada hora).
 app.get('/feed/:slug.csv', (req, res) => {

@@ -1,6 +1,8 @@
 // Ponto de entrada: restaura os dados do Supabase (se configurado), abre o banco e inicia o servidor.
+const memoria = require('./memoria'); // primeiro: configura o sharp antes de qualquer uso
 const config = require('./config');
 const storage = require('./storage');
+memoria.iniciarMonitor();
 
 (async () => {
   if (storage.enabled()) {

@@ -2006,16 +2006,21 @@
         </div>
         <div class="ptiles">
           ${tile('Vendidos', Vd.qtd, `${fmtDate(d.periodo.from)}–${fmtDate(d.periodo.to)}`, 'resultados')}
-          ${fin ? tile('Faturamento', bk(Vd.faturamento), `ticket ${brl(Vd.ticket)}`, 'resultados') : ''}
-          ${fin ? tile('Lucro', bk(Vd.lucro), `${pct(Vd.margem)}% de margem`, 'resultados', Vd.lucro < 0 ? 'bad' : 'ok') : ''}
-          ${fin ? tile('Resultado', bk(Vd.resultado), 'lucro − despesas', 'resultados', Vd.resultado < 0 ? 'bad' : '') : ''}
-          ${tile('Dias p/ vender', Vd.dias, fin ? `desconto médio ${pct(Vd.desconto)}%` : 'média', 'resultados')}
+          ${fin ? tile('Lucro', bk(Vd.lucro), `${pct(Vd.margem)}% de margem`, 'resultados', Vd.lucro < 0 ? 'bad' : 'ok') : tile('Dias p/ vender', Vd.dias, 'média', 'resultados')}
           ${tile('Estoque', E.qtd, fin ? bk(E.valor) : `${E.idade} dias de idade média`, 'estoque')}
-          ${fin ? tile('Investido', bk(E.investido), `previsto ${bk(E.lucro_previsto)}`, 'gestao:estoque') : ''}
           ${tile('Parados', E.parados_qtd, `${d.loja.parado_dias}+ dias`, 'parados', E.parados_qtd ? 'warn' : '')}
+        </div>
+        <details class="pmais" id="pn-mais" ${(() => { try { return localStorage.getItem('pn-mais') === '1' ? 'open' : ''; } catch { return ''; } })()}>
+          <summary>Mais indicadores</summary>
+          <div class="ptiles2">
+          ${fin ? tile('Faturamento', bk(Vd.faturamento), `ticket ${brl(Vd.ticket)}`, 'resultados') : ''}
+          ${fin ? tile('Resultado', bk(Vd.resultado), 'lucro − despesas', 'resultados', Vd.resultado < 0 ? 'bad' : '') : ''}
+          ${fin ? tile('Dias p/ vender', Vd.dias, `desconto médio ${pct(Vd.desconto)}%`, 'resultados') : ''}
+          ${fin ? tile('Investido', bk(E.investido), `previsto ${bk(E.lucro_previsto)}`, 'gestao:estoque') : ''}
           ${tile('Docs pendentes', d.docs.pendentes, `${d.docs.atrasados} com 30+ dias`, 'gestao:docs', d.docs.atrasados ? 'bad' : '')}
           ${fin ? tile('Contas 15 dias', bk(d.financeiro.contas_total), `${d.financeiro.contas.length} em aberto`, 'gestao:desp', d.financeiro.contas.some((c) => c.vencida) ? 'bad' : '') : ''}
-        </div>
+          </div>
+        </details>
         <div class="pgrid">
           ${box('Onde atuar agora', '', d.alertas.length ? d.alertas.map((a) => `<button class="palert ${a.nivel}" type="button" data-go2="${a.alvo}"><span>${esc(a.texto)}</span><b>${esc(a.acao)} ›</b></button>`).join('') : '<p class="sub">Tudo em dia. 👍</p>', 'span2')}
           ${d.visitas ? box(`Visitas · hoje ${d.visitas.qtd_hoje} · 7d ${d.visitas.qtd_semana}`, 'agenda', (() => {
@@ -2045,6 +2050,7 @@
       clearInterval(PN.timer);
       PN.timer = setInterval(() => { if (S.view === 'painel' && !$('#scrim') && !document.hidden) X.render(); else if (S.view !== 'painel') clearInterval(PN.timer); }, 60000);
       $$('[data-pp2]').forEach((b) => { b.onclick = () => { PN.periodo = b.dataset.pp2; X.render(); }; });
+      $('#pn-mais') && $('#pn-mais').addEventListener('toggle', (e) => { try { localStorage.setItem('pn-mais', e.target.open ? '1' : '0'); } catch {} });
       $('#pn-full') && ($('#pn-full').onclick = () => { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen?.(); });
       $$('[data-go2]').forEach((b) => {
         b.onclick = (e) => {

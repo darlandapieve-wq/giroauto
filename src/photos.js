@@ -1,7 +1,11 @@
 // Fotos prontas (v2.0): redução de tamanho e marca d'água com o logo da loja. Tudo opcional.
 const fs = require('node:fs');
 const path = require('node:path');
-const { createCanvas, loadImage } = require('@napi-rs/canvas');
+// v2.19: o canvas (memória nativa) só carrega quando uma imagem é gerada de fato
+let canvasMod = null;
+const cv = () => (canvasMod ||= require("@napi-rs/canvas"));
+const createCanvas = (...a) => cv().createCanvas(...a);
+const loadImage = (...a) => cv().loadImage(...a);
 
 const DEFAULTS = { reduzir: false, max_lado: 1600, qualidade: 85, marca_dagua: false, posicao: 'inferior_direita', opacidade: 70, tamanho: 18 };
 

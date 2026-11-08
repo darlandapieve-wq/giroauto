@@ -154,3 +154,10 @@ details>summary{cursor:pointer;font-weight:600;padding:4px 0}
   .zoom img{max-width:92vw;max-height:44vh}
   .fixo{margin:0 -14px -14px}
 }
+/* v2.19: cabeçalho cabe no celular */
+@media (max-width:640px){
+  .topo{flex-wrap:wrap;gap:8px;padding:8px 12px}
+  .marca{font-size:18px}
+  .marca img{width:24px;height:24px}
+  .topo .btn.mini,.topo button.mini{padding:5px 8px;font-size:12px}
+}
