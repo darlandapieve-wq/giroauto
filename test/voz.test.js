@@ -119,3 +119,9 @@ test('caminho da tela: a ação conferida volta do navegador e é executada igua
   assert.equal(get("SELECT vehicle_id FROM leads WHERE nome = 'Ana'").vehicle_id, 13);
   assert.ok(get("SELECT 1 FROM lead_events WHERE lead_id = 6 AND texto = 'vem sábado'"));
 });
+
+test('ação sem "tipo" vinda da IA: deduz pelos campos', () => {
+  const [a, b] = VZ.validar(dono, [{ lead_id: 6, etapa: 'arquivado' }, { vehicle_id: 11, status: 'comunicacao' }]);
+  assert.equal(a.tipo, 'lead_etapa'); assert.ok(a.ok, a.erro);
+  assert.equal(b.tipo, 'doc'); assert.ok(b.ok, b.erro);
+});

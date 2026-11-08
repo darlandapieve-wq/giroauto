@@ -125,6 +125,7 @@ Regras:
 - Quando um carro volta pronto da oficina, se a fala indicar o serviço feito e ele existir em preparacao_aberta, inclua também "preparacao_feito".
 - Para "conta de energia/luz paga", procure a conta em aberto da categoria Energia; se houver mais de uma, a de vencimento mais próximo.
 - Datas relativas ("amanhã às 15h", "sábado de manhã" = 09:00) viram datas absolutas a partir de hoje.
+- TODA ação precisa do campo "tipo" (um dos acima), além dos seus campos. Ex.: {"tipo":"lead_etapa","lead_id":2,"etapa":"arquivado"}.
 - Não crie ações que o usuário não pediu. Valores em reais como número (ex.: 350).
 - Se for uma PERGUNTA sobre os dados (ex.: "quantos carros estão na oficina?", "qual o preço do Jetta?"), responda em "resposta" usando os dados e deixe acoes vazio.
 - "resposta": frase curta e natural, em português, dizendo o que será feito (ou a resposta da pergunta).
@@ -174,6 +175,22 @@ async function gemini(partes, { prazoMs = 60000 } = {}) {
 // Confere cada ação contra os dados da loja e as permissões, e escreve o que será feito em linguagem simples.
 const dataHora = (x) => { const m = String(x || '').match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})/); return m ? `${m[1]} ${m[2]}:${m[3]}` : null; };
 const dBr = (d) => String(d || '').slice(0, 10).split('-').reverse().join('/') + (String(d || '').length > 10 ? ` às ${String(d).slice(11, 16)}` : '');
+function tipoPelosCampos(a) {
+  if (a.lead_id && a.etapa) return 'lead_etapa';
+  if (a.lead_id && (a.nota || a.nota_tipo)) return 'lead_nota';
+  if (a.data_hora) return 'visita';
+  if (a.visita_id) return 'visita_status';
+  if (a.tarefa_id) return 'tarefa_feita';
+  if (a.campanha_id) return 'campanha';
+  if (a.expense_id) return 'conta_paga';
+  if (a.pendencia_id || a.pendencia_tipo) return 'pendencia';
+  if (a.item_ids) return 'preparacao_feito';
+  if (a.itens) return 'preparacao_add';
+  if (a.vehicle_id && G.LOCAL[a.status]) return 'local';
+  if (a.vehicle_id && G.DOC_STATUS[a.status]) return 'doc';
+  if (a.tela) return 'abrir';
+  return null;
+}
 function validar(user, acoes) {
   const sid = user.storeId;
   const CRM = require('./crm');
@@ -183,6 +200,8 @@ function validar(user, acoes) {
   for (const a0 of (Array.isArray(acoes) ? acoes : obj(acoes).tipo ? [acoes] : []).slice(0, 8)) {
     // A tela devolve a ação já conferida (com "dados" e "lead_novo" montados) para executar: aceita as duas formas.
     const a = { ...obj(a0.lead_novo), ...obj(a0.dados), ...obj(a0) };
+    // A IA às vezes esquece o "tipo" ({"lead_id":2,"etapa":"arquivado"}): deduz pelos campos que vieram.
+    if (!TIPOS[a.tipo]) a.tipo = tipoPelosCampos(a);
     const tipo = TIPOS[a?.tipo] ? a.tipo : null;
     if (!tipo) continue;
     const item = { tipo, tipo_label: TIPOS[tipo], ok: true, erro: '' };
