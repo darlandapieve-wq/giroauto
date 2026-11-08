@@ -918,3 +918,9 @@ body:has(.form-foot) #vozFab{bottom:86px}
 .busca-btn svg{width:16px;height:16px;flex:none}
 .busca-btn kbd{margin-left:auto;font-family:var(--f-mono);font-size:10.5px;border:1px solid var(--line);border-radius:4px;padding:0 4px}
 @media (max-width:760px){.busca-btn{padding:7px 10px}.busca-btn kbd{display:none}body.menu-aberto .busca-btn{display:none}}
+/* v2.19: ações em lote no Estoque */
+.row .thumb{position:relative}
+.lote-ck{position:absolute;top:4px;left:4px;z-index:2;background:var(--surface);border-radius:5px;padding:2px 3px;line-height:0;box-shadow:0 1px 3px rgba(0,0,0,.25);cursor:pointer}
+.lote-ck input{width:17px;height:17px;margin:0;cursor:pointer;accent-color:var(--accent)}
+.lote-bar{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:55;display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 24px);background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 12px;box-shadow:0 8px 28px rgba(0,0,0,.18)}
+@media (max-width:760px){.lote-bar{bottom:calc(68px + env(safe-area-inset-bottom,0px))}}

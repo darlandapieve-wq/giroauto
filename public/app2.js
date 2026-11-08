@@ -3336,6 +3336,58 @@
     $('.side')?.addEventListener('click', (e) => { if (e.target.closest('.nav button, .nav a')) document.body.classList.remove('menu-aberto'); });
   }
 
+  /* ======================= Estoque: ações em lote (v2.19) ======================= */
+  const LOTE = new Set();
+  function loteEstoque() {
+    $$('.list .row').forEach((r) => {
+      const id = Number(r.querySelector('[data-id]')?.dataset.id);
+      if (!id || r.querySelector('.lote-ck')) return;
+      r.dataset.loterow = id;
+      r.querySelector('.thumb')?.insertAdjacentHTML('afterbegin', `<label class="lote-ck" title="Selecionar para ações em lote"><input type="checkbox" data-lote="${id}" ${LOTE.has(id) ? 'checked' : ''}></label>`);
+    });
+    $$('[data-lote]').forEach((c) => { c.onclick = (e) => e.stopPropagation(); c.onchange = () => { const id = Number(c.dataset.lote); if (c.checked) LOTE.add(id); else LOTE.delete(id); barraLote(); }; });
+    barraLote();
+  }
+  function barraLote() {
+    const vs = (S.vehicles || []).filter((v) => LOTE.has(v.id));
+    let bar = $('#loteBar');
+    if (!vs.length || S.view !== 'estoque') { bar?.remove(); return; }
+    if (!bar) { document.body.insertAdjacentHTML('beforeend', '<div id="loteBar" class="lote-bar" role="toolbar" aria-label="Ações em lote"></div>'); bar = $('#loteBar'); }
+    const n = (f) => vs.filter(f).length;
+    const acoes = [
+      can('cadastrar') && ['pronto', `Marcar como pronto (${n((v) => v.status === 'rascunho')})`, (v) => v.status === 'rascunho'],
+      can('publicar') && ['republicar', `Republicar (${n((v) => v.status === 'publicado' && v.pode_republicar)})`, (v) => v.status === 'publicado' && v.pode_republicar],
+      can('cadastrar') && ['arte', `Gerar arte (${n((v) => v.status !== 'vendido')})`, (v) => v.status !== 'vendido'],
+      can('vender') && ['vendido', `Marcar vendido (${n((v) => v.status !== 'vendido' && v.status !== 'avaliacao')})`, (v) => v.status !== 'vendido' && v.status !== 'avaliacao'],
+    ].filter(Boolean);
+    bar.innerHTML = `<b>${vs.length} selecionado(s)</b>${acoes.map(([k, l, f]) => `<button class="btn sm" type="button" data-loteact="${k}" ${n(f) ? '' : 'disabled'}>${l}</button>`).join('')}<button class="btn sm ghost" type="button" id="loteLimpar">Limpar</button>`;
+    $('#loteLimpar').onclick = () => { LOTE.clear(); $$('[data-lote]').forEach((c) => { c.checked = false; }); barraLote(); };
+    $$('[data-loteact]').forEach((b) => {
+      b.onclick = async () => {
+        const [k, , f] = acoes.find(([x]) => x === b.dataset.loteact);
+        const alvo = vs.filter(f);
+        const rodar = async () => {
+          let ok = 0; const erros = [];
+          for (const v of alvo) {
+            b.textContent = `Processando ${ok + erros.length + 1}/${alvo.length}…`; b.disabled = true;
+            try {
+              if (k === 'pronto') await api('POST', `/api/vehicles/${v.id}/ready`);
+              if (k === 'republicar') await api('POST', `/api/vehicles/${v.id}/republish`, {});
+              if (k === 'arte') await api('POST', `/api/vehicles/${v.id}/arts/regenerate`, { slots: [1] });
+              if (k === 'vendido') await api('POST', `/api/vehicles/${v.id}/sold`, {});
+              ok++;
+            } catch (e) { erros.push(`${v.marca} ${v.modelo}: ${e.message}`); }
+          }
+          LOTE.clear();
+          await X.loadVehicles(); X.render();
+          toast(`${ok} de ${alvo.length} feito(s).${erros.length ? ' ' + erros.slice(0, 3).join(' · ') : ''}`, erros.length ? 9000 : 4000);
+        };
+        if (k === 'vendido') confirmBox(`Marcar ${alvo.length} carro(s) como vendido(s)?`, 'Os anúncios saem do Marketplace e da vitrine. Os dados da venda (cliente, valor, pagamento) você completa depois em cada carro.', 'Marcar vendido', rodar);
+        else rodar();
+      };
+    });
+  }
+
   /* ======================= Busca rápida: Ctrl+K (ou /) e lupa no celular (v2.19) ======================= */
   const semAcento = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
   async function buscaRapida() {
@@ -3412,7 +3464,7 @@
     $$('.nav button').forEach((b) => { if (b.dataset.view === atual) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
     $$('[data-bv]').forEach((b) => { if (b.dataset.bv === atual) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
     if (view === 'novo') enhanceForm();
-    if (view === 'estoque') enhanceStock();
+    if (view === 'estoque') { enhanceStock(); loteEstoque(); } else $('#loteBar')?.remove();
     if (view === 'config') enhanceConfig();
   };
 
