@@ -90,7 +90,7 @@ function storefront(store, vehicles) {
     const sel = (v.destaques || []).filter((k) => ['pericia_premium', 'pericia_aprovada', 'unico_dono', 'ipva_pago', 'garantia'].includes(k)).slice(0, 2);
     return `<a class="card" href="/v/${esc(store.slug)}/${v.id}" data-marca="${esc(slugKey(v.marca))}" data-cat="${esc(slugKey(v.carroceria || 'Outro'))}" data-cambio="${esc(slugKey(v.cambio))}" data-comb="${esc(slugKey(v.combustivel))}"
       data-preco="${preco(v)}" data-ano="${Number(v.ano_modelo) || 0}" data-km="${Number(v.km) || 0}" data-dest="${esc((v.destaques || []).join(' '))}" data-ord="${esc(v.updated_at || '')}" data-txt="${esc(slugKey(`${v.marca} ${v.modelo} ${v.versao || ''} ${v.cor || ''}`))}">
-    ${v.photos[0] ? `<img src="${esc(v.photos[0].url)}" alt="${esc(v.titulo)}" loading="lazy">` : '<span class="noph"></span>'}
+    ${v.photos[0] ? `<img src="${esc(v.photos[0].mini || v.photos[0].url)}" alt="${esc(v.titulo)}" loading="lazy">` : '<span class="noph"></span>'}
     <div><b>${esc(v.marca)} ${esc(v.modelo)}</b> <span class="muted">${esc(v.versao)}</span>
     <div class="muted">${esc(v.ano_fab || '')}/${esc(v.ano_modelo || '')} · ${km(v.km)}${v.cambio ? ` · ${esc(v.cambio)}` : ''}</div>
     ${sel.length ? `<div class="tags">${sel.map((k) => `<span>${esc(DEST[k]?.label || k)}</span>`).join('')}</div>` : ''}

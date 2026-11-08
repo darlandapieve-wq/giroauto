@@ -262,7 +262,7 @@
   }
   function thumb(v) {
     const n = v.photos.length;
-    return `<div class="thumb">${n ? `<img src="${esc(v.photos[0].url)}" alt="" loading="lazy">` : carSvg(v.cor)}${n ? `<span class="n">${n}</span>` : ''}</div>`;
+    return `<div class="thumb">${n ? `<img src="${esc(v.photos[0].mini || v.photos[0].url)}" alt="" loading="lazy">` : carSvg(v.cor)}${n ? `<span class="n">${n}</span>` : ''}</div>`;
   }
   function plate(p) {
     if (!p) return '';

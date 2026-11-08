@@ -90,7 +90,7 @@ function daysSince(iso) {
 
 function photosOf(vehicleId) {
   return all('SELECT id, filename, mime, position FROM photos WHERE vehicle_id = ? ORDER BY position, id', vehicleId)
-    .map((p) => ({ id: p.id, url: mediaUrl(p.filename), filename: p.filename, mime: p.mime }));
+    .map((p) => ({ id: p.id, url: mediaUrl(p.filename), mini: mediaUrl(p.filename) + '?w=400', filename: p.filename, mime: p.mime }));
 }
 
 function title(v) {

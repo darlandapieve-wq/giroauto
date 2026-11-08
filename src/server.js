@@ -51,6 +51,22 @@ app.get('/media/:file', wrap(async (req, res) => {
   const file = await storage.ensureLocal(req.params.file).catch(() => null);
   if (!file) return res.status(404).send('Foto não encontrada');
   res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+  // v2.19: miniatura (?w=200|400|800) em WebP, gerada na primeira vez e guardada só no disco do servidor
+  // (cache: não vai para o Supabase; num servidor novo é refeita). Listas, gestão e vitrine usam a de 400 px.
+  const w = Number(req.query.w);
+  if ([200, 400, 800].includes(w) && /\.(jpg|png|webp)$/.test(file)) {
+    const dir = path.join(config.dataDir, 'media', 'mini');
+    const mini = path.join(dir, `${path.basename(file).replace(/\.\w+$/, '')}-${w}.webp`);
+    try {
+      if (!require('node:fs').existsSync(mini)) {
+        require('node:fs').mkdirSync(dir, { recursive: true });
+        const tmp = `${mini}.tmp-${process.pid}-${Math.random().toString(36).slice(2, 7)}`;
+        await require('sharp')(file).rotate().resize({ width: w, height: w, fit: 'inside', withoutEnlargement: true }).webp({ quality: 72 }).toFile(tmp);
+        require('node:fs').renameSync(tmp, mini);
+      }
+      return res.type('image/webp').sendFile(mini);
+    } catch (e) { console.error('Miniatura:', e.message); } // se falhar, entrega a foto original
+  }
   res.type(storage.MIME[path.extname(file)] || 'image/jpeg').sendFile(file);
 }));
 

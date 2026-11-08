@@ -7,7 +7,9 @@ const cv = () => (canvasMod ||= require("@napi-rs/canvas"));
 const createCanvas = (...a) => cv().createCanvas(...a);
 const loadImage = (...a) => cv().loadImage(...a);
 
-const DEFAULTS = { reduzir: false, max_lado: 1600, qualidade: 85, marca_dagua: false, posicao: 'inferior_direita', opacidade: 70, tamanho: 18 };
+// v2.19: redução ligada por padrão (1600 px, qualidade 82): foto do celular de 4-6 MB vira ~300 KB, ocupando
+// menos Supabase, banda do Render e dados móveis. Quem já salvou uma escolha nas configurações mantém a sua.
+const DEFAULTS = { reduzir: true, max_lado: 1600, qualidade: 82, marca_dagua: false, posicao: 'inferior_direita', opacidade: 70, tamanho: 18 };
 
 function opts(store) {
   let o = {};
@@ -34,6 +36,18 @@ function clean(body) {
 async function processFile(dir, filename, o, logoFile) {
   if (!o.reduzir && !(o.marca_dagua && logoFile)) return filename;
   const src = path.join(dir, filename);
+  // Só reduzir (sem marca d'água): sharp, que respeita a rotação da câmera (EXIF) e gasta menos memória que o canvas.
+  if (!(o.marca_dagua && logoFile && fs.existsSync(logoFile))) {
+    const out = filename.replace(/\.(png|webp|jpg|jpeg)$/i, '.jpg');
+    const tmp = path.join(dir, `${out}.tmp-${process.pid}`);
+    await require('sharp')(src).rotate().resize({ width: o.max_lado, height: o.max_lado, fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: o.qualidade, mozjpeg: true }).toFile(tmp);
+    // foto já pequena (JPG): se a "reduzida" ficou maior, mantém a original
+    if (out === filename && fs.statSync(tmp).size >= fs.statSync(src).size) { fs.rmSync(tmp, { force: true }); return filename; }
+    if (out !== filename) fs.rmSync(src, { force: true });
+    fs.renameSync(tmp, path.join(dir, out));
+    return out;
+  }
   const img = await loadImage(src);
   let w = img.width; let h = img.height;
   if (o.reduzir) {
