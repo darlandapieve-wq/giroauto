@@ -142,6 +142,18 @@ O schema "public" dos dois projetos está vazio. Supabase Auth não é usado (0 
   - "Enviar para a Fila do Repasse" manda o carro para a Fila, sempre pendente e com o preço de repasse da loja (Repasse: POST /api/da-loja/anuncio; só baixa fotos /media/ de LOJA_URL).
   - Usa a sessão do Repasse de quem entrou por /repasse (cookie "sessao") ou a conexão do Fotos.
   - Testado localmente de ponta a ponta. Em produção, só conferido sem login (o fluxo logado cria dados reais).
+- Loja v2.19.0 (08/11/2026): rodada de usabilidade e leveza.
+  - Cadastro curto no "+ Novo veículo"; formulário completo com dados primeiro e seções recolhíveis.
+  - Menu em grupos; barra inferior no celular; busca Ctrl+K; ações em lote no Estoque; Painel com 4 indicadores.
+  - Aviso de lead novo por Web Push (src/push.js; chaves VAPID na tabela settings, inscrições em push_subs).
+  - Fotos reduzidas por padrão (sharp, 1600 px) e miniaturas WebP ?w=400 só em cache no disco.
+  - Memória: sharp sem cache, MALLOC_ARENA_MAX=2, canvas sob demanda (sobe com ~60 MB em produção).
+  - Painel e service worker versionados; JS e CSS com Cache-Control no-cache.
+- Limpeza do giro_private (08/11/2026, autorizada pelo Darlan): apagados 13.823 registros removidos e vazios (~1,5 MB).
+  - Backup em C:\Backups\giroauto\2026-11-08\limpeza-giro_private\removidos-vazios.csv. Os 385 arquivos ativos conferidos idênticos antes e depois.
+  - Eles voltam a se acumular: giro_commit marca a linha temporária como removida em vez de apagá-la. Corrigir com uma migration (pedir ordem).
+- Pendente (Fase 2): tirar as fotos do Repasse de dentro do banco (hoje original + versão com placa borrada, ~121 MB).
+- Pendente: juntar a tela Resultados ao Painel ou à Gestão (por ora ficou agrupada em "Acompanhar").
 - Pendente: proteção contra sobrescrita no deploy (Loja/Fotos).
 - Pendente: medir a memória do Repasse com a v0.8.0 antes de pensar em unificar os serviços.
 
