@@ -121,7 +121,18 @@ O schema "public" dos dois projetos está vazio. Supabase Auth não é usado (0 
 
 ## Estado atual / Pendências
 - Levantamento de dados concluído (ver "Onde estão os dados hoje").
-- Migração ainda não iniciada: Repasse segue no serviço e no projeto antigos.
+- 1ª tentativa de unificar o banco (08/11/2026, 14:43–15:05 UTC): ABORTADA, Repasse de volta ao estado original (banco antigo, WhatsApp reconectou sem QR code). A cópia e a conferência funcionaram (31 medidas idênticas), mas o Render não deixa aplicar a DATABASE_URL nova sem subir dois servidores (ver "Lições do Render").
+- O schema repasse no projeto giroauto é uma cópia de 15:00 UTC, JÁ DEFASADA (o serviço voltou a gravar no banco antigo). Nada usa essa cópia. Na próxima tentativa ela precisa ser apagada e refeita (pedir autorização ao Darlan).
+- Migrations da cópia: supabase/migrations/20261108150000_repasse_estrutura.sql e 20261108150100_repasse_indices.sql (geradas do pg_dump; os dados entram entre as duas com pg_restore --data-only).
+- Backups e conferências do corte: C:\Backups\giroauto\2026-11-08\corte.
 - Etapa 0 (backup) concluída em 08/11/2026: C:\Backups\giroauto\2026-11-08 (repasse.dump, SQLite da Loja + 12 cópias diárias, 367 fotos, variaveis.txt, relatorio-etapa0.txt). Todas as cópias passaram no PRAGMA integrity_check; a queda de tamanho das cópias depois de 28/10 foi só a compressão (o banco cresceu).
 - Cliente PostgreSQL 17.11 em C:\Ferramentas\pgsql.
-- Pendente antes da migração: proteção contra sobrescrita no deploy (Loja/Fotos) e trava de conexão única do WhatsApp (Repasse).
+- PRÓXIMA TAREFA: implementar a trava de conexão única do WhatsApp no Repasse, para então tentar de novo trocando a DATABASE_URL com um deploy normal.
+- Pendente também: proteção contra sobrescrita no deploy (Loja/Fotos).
+- Segurança: o Baileys escreve chaves privadas da sessão do WhatsApp nos logs do Render ("Closing session: SessionEntry"). Corrigir o nível de log.
+
+## Lições do Render (verificadas em 08/11/2026)
+- "Resume" reinicia o deploy existente com as variáveis daquele deploy: uma variável alterada com o serviço suspenso NÃO entra no resume.
+- Não dá para fazer deploy de serviço suspenso ("cannot deploy suspended service").
+- Logo, trocar uma variável do Repasse exige um deploy com o serviço no ar, e o Render sobe o servidor novo antes de derrubar o antigo. Sem a trava de conexão única, isso põe dois servidores no WhatsApp.
+- Na partida, o Repasse roda a limpeza (arquivados e mensagens antigas) e o Baileys atualiza c1:creds: qualquer subida no banco antigo invalida uma cópia já feita.
