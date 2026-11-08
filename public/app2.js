@@ -218,7 +218,9 @@
       $('#pbGo').onclick = () => { setField('placa', $('#pb-placa').value.toUpperCase().replace(/[^A-Z0-9]/g, '')); plateSearch($('#pb-placa').value, $('#pbGo')); };
       $('#pb-placa').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); $('#pbGo').click(); } };
       $('#pbFipe').onclick = () => fipeModal((f) => applyVehicleData(f));
-      const vp = $('#v-placa'); if (vp) vp.oninput = () => { $('#pb-placa').value = vp.value; };
+      const vp = $('#v-placa');
+      // v2.19: uma só PLACA no formulário (a da busca); o campo antigo fica escondido e sincronizado
+      if (vp) { vp.closest('.f').hidden = true; $('#pb-placa').oninput = () => { vp.value = $('#pb-placa').value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7); }; }
     }
     // Proprietário e identificação
     if (!$('#ownerPanel') && dados) {
@@ -249,6 +251,36 @@
       anchor.insertAdjacentHTML('afterend', '<div class="panel" id="salePanel" style="margin-top:12px"><div class="loading">Carregando…</div></div>');
       salePanel(d);
     }
+    recolhiveis();
+  }
+
+  // v2.19: seções secundárias do cadastro recolhidas (título vira botão). Dados e Fotos ficam sempre abertos.
+  // Lembra no navegador quais a pessoa deixou abertas.
+  const RECOLHE = ['ownerPanel', 'prepPanel', 'vfDest', 'gestaoPanel', 'artsPanel'];
+  const abertos = () => { try { return new Set(JSON.parse(localStorage.getItem('vf-abertos') || '[]')); } catch { return new Set(); } };
+  function recolhiveis() {
+    const ab = abertos();
+    for (const id of RECOLHE) {
+      const p = $('#' + id);
+      if (!p || p.dataset.rec) continue;
+      p.dataset.rec = '1';
+      p.classList.add('recolhe');
+      p.classList.toggle('fechado', !ab.has(id));
+    }
+  }
+  if (!X._recolheBind) {
+    X._recolheBind = true;
+    document.addEventListener('click', (e) => {
+      const h = e.target.closest('.panel.recolhe > h2');
+      if (!h || e.target.closest('button,a,input,select,label')) return;
+      const p = h.parentElement;
+      p.classList.toggle('fechado');
+      const ab = abertos();
+      if (p.classList.contains('fechado')) ab.delete(p.id); else ab.add(p.id);
+      try { localStorage.setItem('vf-abertos', JSON.stringify([...ab])); } catch {}
+    });
+    // o painel de gestão e a arte chegam depois (carregamento assíncrono): marca quando aparecerem
+    new MutationObserver(() => { if (S.view === 'novo') recolhiveis(); }).observe(document.getElementById('main') || document.body, { childList: true, subtree: true });
   }
   /* ---------- Gestão do veículo dentro do cadastro (v2.1) ---------- */
   const pct = (x) => String(x ?? 0).replace('.', ',');
@@ -420,7 +452,6 @@
     if (head && !$('#stockTools')) {
       head.querySelector('.btn.primary')?.insertAdjacentHTML('beforebegin', `<div class="btnrow" id="stockTools" style="gap:6px;flex-wrap:wrap">
         ${can('cadastrar') ? '<button class="btn" type="button" id="goAval" title="Cadastrar um carro que ainda está em avaliação (compra ou troca)">+ Avaliação</button><button class="btn" type="button" id="goImport">Importar planilha</button>' : ''}
-        ${can('cadastrar') && isMobile() ? '<button class="btn" type="button" id="goQuick">Cadastro rápido</button>' : ''}
         ${can('cadastrar') && S.me.user.is_admin ? '<button class="btn" type="button" id="goDoRepasse" title="Trazer para o estoque um carro da Fila ou em circulação no GiroAuto Repasse">Do Repasse</button>' : ''}
         <a class="btn" href="/tv/${esc(S.me.store.slug)}" target="_blank" rel="noopener" title="Abra no computador ligado à TV ou monitor da loja">Painel TV</a>
         <a class="btn" id="goVitrine" href="${esc(S.me.vitrine_url || `/v/${S.me.store.slug}`)}" target="_blank" rel="noopener" title="Site público da loja com os carros disponíveis: é o link para mandar aos clientes">Vitrine da loja</a></div>`);
@@ -957,7 +988,8 @@
       ${prepAddHtml(fin)}</div>`;
     const atual = $('#prepPanel');
     if (atual) { if (!atualizar) return; atual.outerHTML = html; }
-    else { const alvo = $('#vfDados'); if (!alvo) return; alvo.insertAdjacentHTML('beforebegin', html); }
+    // v2.19: custos e preparação depois dos dados do carro (e do proprietário), não antes
+    else { const alvo = $('#ownerPanel') || $('#vfDados'); if (!alvo) return; alvo.insertAdjacentHTML('afterend', html); }
     $$('input[name="v-entrada"]').forEach((r) => { r.onchange = () => { d.avaliacao = r.value === 'avaliacao' && r.checked; const sp = $('#salvarPub'); if (sp) sp.hidden = d.avaliacao; }; });
     if ($('#salvarPub')) $('#salvarPub').hidden = aval;
     $$('[data-prepnovo]').forEach((b) => { b.onclick = () => { novos.splice(Number(b.dataset.prepnovo), 1); prepFormPanel(true); gestaoSync(); }; });
@@ -1344,8 +1376,10 @@
   X.views.rapido = {
     async html() {
       Q = Q || { files: [] };
+      const cel = isMobile();
       return `<div class="quick">
-        <h1>Cadastro rápido</h1>
+        <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap"><h1 style="margin-right:auto">Novo veículo</h1><button class="linkbtn" type="button" id="q-full" title="Todos os campos de uma vez: custos, proprietário, destaques e gestão">Formulário completo ›</button></div>
+        <p class="note" style="margin-top:0">Placa, km, preço e fotos. O resto dá para completar depois, em <b>Completar cadastro</b>.</p>
         <div class="f"><label for="q-placa">1. Placa</label><div class="platebar" style="margin:0"><input id="q-placa" maxlength="8" placeholder="ABC1D23" style="text-transform:uppercase;font-size:22px;font-family:var(--f-mono)" value="${esc(Q.placa || '')}"><button class="btn primary" id="q-go" type="button">Buscar</button></div></div>
         <div id="plateInfo"></div>
         <div class="fields" id="q-fields">
@@ -1362,8 +1396,9 @@
           <div class="f"><label for="q-km">2. Quilometragem</label><input id="q-km" inputmode="numeric" style="font-size:20px" value="${esc(Q.km || '')}"></div>
           <div class="f"><label for="q-preco">3. Preço (R$)</label><input id="q-preco" inputmode="numeric" style="font-size:20px" value="${esc(Q.preco || '')}"></div>
         </div>
-        <label class="btn primary big" style="margin-top:12px">📷 4. Tirar fotos (${Q.files.length})<input type="file" id="q-cam" accept="image/*" capture="environment" multiple hidden></label>
-        <label class="btn" style="margin-top:6px">Escolher da galeria<input type="file" id="q-gal" accept="image/*" multiple hidden></label>
+        ${cel ? `<label class="btn primary big" style="margin-top:12px">📷 4. Tirar fotos (${Q.files.length})<input type="file" id="q-cam" accept="image/*" capture="environment" multiple hidden></label>
+        <label class="btn" style="margin-top:6px">Escolher da galeria<input type="file" id="q-gal" accept="image/*" multiple hidden></label>`
+        : `<label class="drop" id="q-drop" style="margin-top:12px"><b>4. Fotos (${Q.files.length})</b> · arraste aqui ou clique para escolher<input type="file" id="q-gal" accept="image/*" multiple hidden></label>`}
         <div class="photos" id="q-ph">${Q.files.map((f, i) => `<div class="ph ${i === 0 ? 'cover' : ''}"><img src="${f.preview}" alt="">${i === 0 ? '<span class="tag">CAPA</span>' : ''}<div class="tools"><span></span><button type="button" data-qr="${i}">Remover</button></div></div>`).join('')}</div>
         <div class="err" id="q-err" hidden></div>
         <button class="btn primary big" id="q-save" type="button" style="margin-top:12px">5. Salvar veículo</button>
@@ -1374,8 +1409,25 @@
       const keep = () => { ['marca', 'modelo', 'versao', 'ano_fab', 'ano_modelo', 'cor', 'combustivel', 'cambio', 'fipe'].forEach((k) => { Q[k] = $('#v-' + k).value; }); Q.placa = $('#q-placa').value.toUpperCase().replace(/[^A-Z0-9]/g, ''); Q.km = $('#q-km').value; Q.preco = $('#q-preco').value; };
       $('#q-go').onclick = async () => { keep(); $('#v-placa').value = Q.placa; const d = await plateSearch(Q.placa, $('#q-go')); if (d) keep(); };
       const add = (files) => { keep(); [...files].forEach((f) => Q.files.push({ file: f, preview: URL.createObjectURL(f) })); X.render(); };
-      $('#q-cam').onchange = () => add($('#q-cam').files);
+      if ($('#q-cam')) $('#q-cam').onchange = () => add($('#q-cam').files);
       $('#q-gal').onchange = () => add($('#q-gal').files);
+      const qd = $('#q-drop');
+      if (qd) {
+        qd.ondragover = (e) => { e.preventDefault(); qd.classList.add('over'); };
+        qd.ondragleave = () => qd.classList.remove('over');
+        qd.ondrop = (e) => { e.preventDefault(); qd.classList.remove('over'); add([...e.dataTransfer.files].filter((f) => f.type.startsWith('image/'))); };
+      }
+      $('#q-placa').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); $('#q-go').click(); } };
+      // leva o que já foi digitado (e as fotos escolhidas) para o formulário completo
+      $('#q-full').onclick = () => {
+        keep();
+        S.draft = { id: null, marca: Q.marca || '', modelo: Q.modelo || '', versao: Q.versao || '', ano_fab: Q.ano_fab || '', ano_modelo: Q.ano_modelo || '', km: Q.km || '', preco: Q.preco || '', fipe: Q.fipe || '',
+          placa: Q.placa || '', cor: Q.cor || '', cor_interna: 'Preto', cambio: Q.cambio || '', combustivel: Q.combustivel || 'Flex', carroceria: '', descricao: '', organico: true, catalogo: false,
+          photos: [], status: 'rascunho', destaques: [], preco_oferta: '' };
+        S.pendingFiles = [...Q.files];
+        Q = null;
+        location.hash = 'novo';
+      };
       $$('[data-qr]').forEach((b) => { b.onclick = () => { keep(); Q.files.splice(Number(b.dataset.qr), 1); X.render(); }; });
       $('#q-save').onclick = async () => {
         keep();

@@ -880,3 +880,9 @@ body:has(.form-foot) #vozFab{bottom:86px}
 }
 .table-wrap .tbl th:first-child,.table-wrap .tbl td:first-child{position:sticky;left:0;z-index:1;background:var(--surface)}
 .table-wrap .tbl thead th:first-child{z-index:2}
+/* v2.19: seções secundárias do cadastro recolhíveis */
+.panel.recolhe > h2{cursor:pointer;user-select:none;display:flex;align-items:center;gap:8px}
+.panel.recolhe > h2::after{content:"▾";margin-left:auto;font-size:14px;color:var(--muted);transition:transform .15s}
+.panel.recolhe.fechado > h2::after{transform:rotate(-90deg)}
+.panel.recolhe.fechado > :not(h2){display:none!important}
+.panel.recolhe.fechado{padding-bottom:12px}

@@ -68,7 +68,11 @@ app.get('/', (req, res) => {
     .replace(/(href|src)="\/(app\.css|app\.js|app2\.js|guia\.js)"/g, `$1="/$2?v=${VERSAO_APP}"`);
   res.set('Cache-Control', 'no-cache').type('html').send(shellHtml);
 });
-app.use(express.static(path.join(__dirname, '..', 'public'), { index: false }));
+app.use(express.static(path.join(__dirname, '..', 'public'), {
+  index: false,
+  // código do painel sempre revalidado (304 quando não mudou): o navegador nunca fica com versão antiga
+  setHeaders: (res, p) => { if (/\.(js|css|html|webmanifest)$/.test(p)) res.setHeader('Cache-Control', 'no-cache'); },
+}));
 
 const VERSION = require('../package.json').version;
 const EXT_DIR = path.join(__dirname, '..', 'extension');

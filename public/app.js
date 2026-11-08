@@ -298,12 +298,12 @@
     let list = V.filter((v) => S.filtro === 'todos' ? true : S.filtro === 'republicar' ? v.pode_republicar : v.status === S.filtro);
     if (S.busca) { const q = S.busca.toLowerCase(); list = list.filter((v) => `${v.marca} ${v.modelo} ${v.versao} ${v.placa}`.toLowerCase().includes(q)); }
     const empty = !V.length
-      ? `<div class="empty"><p style="margin:0 0 12px">Nenhum veículo cadastrado ainda.</p><button class="btn primary" data-go="novo" type="button">Cadastrar o primeiro veículo</button></div>`
+      ? `<div class="empty"><p style="margin:0 0 12px">Nenhum veículo cadastrado ainda.</p><button class="btn primary" data-go="rapido" type="button">Cadastrar o primeiro veículo</button></div>`
       : '<div class="empty">Nenhum veículo neste filtro.</div>';
     return `
     <div class="head">
       <div><h1>Estoque</h1><p>Cada veículo é cadastrado uma vez e publicado no Marketplace pela extensão ou enviado ao catálogo de campanhas.</p></div>
-      <button class="btn primary" data-go="novo" type="button">+ Novo veículo</button>
+      <button class="btn primary" data-go="rapido" type="button">+ Novo veículo</button>
     </div>
     ${manualMode() && S.extInfo ? `<div class="infobox conn-row"><span>A extensão GiroAuto está instalada neste Chrome. Quer publicar e republicar com um clique?</span><button class="btn primary" id="enableAuto" type="button">Ativar publicação automática</button></div>` : ''}
     <div class="strip">
