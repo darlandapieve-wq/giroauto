@@ -912,3 +912,9 @@ body:has(.form-foot) #vozFab{bottom:86px}
   #vozFab{bottom:calc(70px + env(safe-area-inset-bottom,0px))!important}
   body.menu-aberto #vozFab{display:none}
 }
+/* v2.19: busca rápida */
+.busca-btn{all:unset;box-sizing:border-box;cursor:pointer;display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;color:var(--muted);font-size:13px;background:var(--bg)}
+.busca-btn:hover{border-color:var(--accent);color:var(--ink)}
+.busca-btn svg{width:16px;height:16px;flex:none}
+.busca-btn kbd{margin-left:auto;font-family:var(--f-mono);font-size:10.5px;border:1px solid var(--line);border-radius:4px;padding:0 4px}
+@media (max-width:760px){.busca-btn{padding:7px 10px}.busca-btn kbd{display:none}body.menu-aberto .busca-btn{display:none}}

@@ -3336,6 +3336,48 @@
     $('.side')?.addEventListener('click', (e) => { if (e.target.closest('.nav button, .nav a')) document.body.classList.remove('menu-aberto'); });
   }
 
+  /* ======================= Busca rápida: Ctrl+K (ou /) e lupa no celular (v2.19) ======================= */
+  const semAcento = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  async function buscaRapida() {
+    modal(`<h3>Buscar</h3><input id="bq" placeholder="Placa, modelo ou nome do cliente" autocomplete="off" style="font-size:17px">
+      <div id="bqr" class="stack" style="gap:4px;margin-top:10px;max-height:60vh;overflow:auto"><p class="sub">Digite ao menos 2 letras. Enter abre o primeiro resultado.</p></div>`);
+    const inp = $('#bq'); inp.focus();
+    if (!S.vehicles?.length) await X.loadVehicles?.().catch(() => {});
+    let leads = null;
+    const carregarLeads = async () => { if (leads === null && podeCrm()) leads = await api('GET', '/api/leads').catch(() => []); return leads || []; };
+    let primeiro = null;
+    const pintar = async () => {
+      const t = semAcento(inp.value.trim()); const tp = t.replace(/[^a-z0-9]/g, '');
+      if (t.length < 2) { $('#bqr').innerHTML = '<p class="sub">Digite ao menos 2 letras. Enter abre o primeiro resultado.</p>'; primeiro = null; return; }
+      const vs = (S.vehicles || []).filter((v) => semAcento(`${v.marca} ${v.modelo} ${v.versao} ${v.ano_modelo}`).includes(t) || (tp.length >= 3 && semAcento(v.placa).replace(/[^a-z0-9]/g, '').includes(tp))).slice(0, 8);
+      const ls = (await carregarLeads()).filter((l) => semAcento(`${l.nome} ${l.veiculo || ''} ${l.interesse || ''} ${l.email || ''}`).includes(t) || (tp.length >= 4 && String(l.telefone || '').replace(/\D/g, '').includes(tp))).slice(0, 6);
+      if (inp.value.trim() && semAcento(inp.value.trim()) !== t) return;
+      const linhas = [
+        ...vs.map((v) => ({ html: `<b>${esc(v.marca)} ${esc(v.modelo)}</b> ${esc(v.versao || '')} <span class="sub">${esc(v.placa || '')} · ${esc(v.status)}</span>`, ir: () => { location.hash = 'editar-' + v.id; } })),
+        ...ls.map((l) => ({ html: `👤 <b>${esc(l.nome || l.telefone || 'Lead')}</b> <span class="sub">${esc(l.telefone || '')}${l.veiculo ? ' · ' + esc(l.veiculo) : ''}</span>`, ir: () => leadModal(l.id) })),
+      ];
+      primeiro = linhas[0] || null;
+      $('#bqr').innerHTML = linhas.length ? linhas.map((x, i) => `<button class="rgrow" type="button" data-bqi="${i}" style="text-align:left;cursor:pointer;grid-template-columns:1fr">${x.html}</button>`).join('') : '<p class="sub">Nada encontrado.</p>';
+      $$('[data-bqi]').forEach((b) => { b.onclick = () => { closeModal(); linhas[Number(b.dataset.bqi)].ir(); }; });
+    };
+    let tm; inp.oninput = () => { clearTimeout(tm); tm = setTimeout(pintar, 120); };
+    inp.onkeydown = (e) => { if (e.key === 'Enter' && primeiro) { e.preventDefault(); closeModal(); primeiro.ir(); } };
+  }
+  X.buscaRapida = buscaRapida;
+  if (!X._buscaBind) {
+    X._buscaBind = true;
+    document.addEventListener('keydown', (e) => {
+      if (!S.me) return;
+      const digitando = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
+      if (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') || (e.key === '/' && !digitando)) { e.preventDefault(); buscaRapida(); }
+    });
+  }
+  function botaoBusca() {
+    if ($('#buscaBtn')) return;
+    $('.side .brand')?.insertAdjacentHTML('afterend', '<button class="busca-btn" id="buscaBtn" type="button" title="Buscar carro ou cliente (Ctrl+K)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><span>Buscar</span><kbd>Ctrl K</kbd></button>');
+    $('#buscaBtn').onclick = () => buscaRapida();
+  }
+
   /* ======================= Navegação e app instalável ======================= */
   function navSetup() {
     const nav = $('.nav'); if (!nav || $('[data-view="gestao"]')) return;
@@ -3362,6 +3404,7 @@
   X.after = (view) => {
     navSetup();
     barraInferior();
+    botaoBusca();
     setTimeout(agruparMenu, 0); // depois dos itens que outros módulos acrescentam (ex.: Primeiros passos)
     crBadge();
     vozFab();
