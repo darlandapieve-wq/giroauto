@@ -136,6 +136,12 @@ O schema "public" dos dois projetos está vazio. Supabase Auth não é usado (0 
 - Etapa 0 (backup) concluída em 08/11/2026: C:\Backups\giroauto\2026-11-08 (repasse.dump, SQLite da Loja + 12 cópias diárias, 367 fotos, variaveis.txt, relatorio-etapa0.txt). Todas as cópias passaram no PRAGMA integrity_check; a queda de tamanho das cópias depois de 28/10 foi só a compressão (o banco cresceu).
 - Cliente PostgreSQL 17.11 em C:\Ferramentas\pgsql.
 - Repasse v0.8.0 (08/11/2026, repo giroauto-repasse, commits 23d8d29 e d00f505): trava de conexão única do WhatsApp, end() sem logout() no SIGTERM, logs da libsignal sem chaves da sessão (corrigido; os logs antigos do Render ainda contêm chaves), mitigação de memória e interruptor WHATSAPP_DESLIGADO=1.
+- Loja v2.17.0 (08/11/2026): item "Repasse" no menu (só administrador) → /repasse/, proxy em streaming para o serviço do Repasse (src/repasse-proxy.js). O Repasse v0.8.1 usa caminhos relativos e atende em / e em /repasse/.
+- Loja v2.18.0 + Repasse v0.9.0 (08/11/2026): integração (src/repasse-integracao.js).
+  - "Do Repasse" no Estoque traz o carro com fotos, dados, FIPE e compra = preço de repasse (vehicles.repasse_origem_id evita duplicar).
+  - "Enviar para a Fila do Repasse" manda o carro para a Fila, sempre pendente e com o preço de repasse da loja (Repasse: POST /api/da-loja/anuncio; só baixa fotos /media/ de LOJA_URL).
+  - Usa a sessão do Repasse de quem entrou por /repasse (cookie "sessao") ou a conexão do Fotos.
+  - Testado localmente de ponta a ponta. Em produção, só conferido sem login (o fluxo logado cria dados reais).
 - Pendente: proteção contra sobrescrita no deploy (Loja/Fotos).
 - Pendente: medir a memória do Repasse com a v0.8.0 antes de pensar em unificar os serviços.
 
