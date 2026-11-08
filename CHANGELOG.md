@@ -2,6 +2,11 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.19.2 — 08/11/2026
+
+- **Campanhas:** o quadro "Conta de anúncios" mostra o saldo da conta direto da Meta: saldo disponível (conta pré-paga, com o mesmo texto do Gerenciador de Anúncios) ou o valor a pagar (cartão), o limite de gastos restante e um atalho para adicionar saldo.
+- **Repasse (v0.9.2):** carro enviado pela Loja sai no grupo com o preço de repasse exato definido na Loja; o acréscimo configurado no grupo destino vale só para carros de terceiros.
+
 ## v2.19.1 — 08/11/2026
 
 - **Repasse sem segundo login:** o administrador logado no GiroAuto abre o Repasse pelo menu direto, sem a tela de login do Repasse, e a integração (Do Repasse, Enviar para a Fila) também dispensa o login. Usa um segredo compartilhado entre os dois serviços (GIRO_SSO_SEGREDO); o endereço próprio do Repasse continua com o login de sempre.

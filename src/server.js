@@ -841,6 +841,8 @@ app.use('/api/ext', express.json(), extRouter);
 /* Meta: conexão, catálogo e campanhas                                */
 /* ------------------------------------------------------------------ */
 
+app.get('/api/meta/saldo', team.can('campanhas'), wrap(async (req, res) => res.json(await meta.accountBalance(req.user.storeId))));
+
 app.get('/api/meta/status', auth.requireUser, (req, res) => {
   const st = meta.publicStatus(req.user.storeId);
   const store = get('SELECT * FROM stores WHERE id = ?', req.user.storeId);

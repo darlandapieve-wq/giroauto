@@ -958,3 +958,8 @@ body:has(.form-foot) #vozFab{bottom:86px}
   .side-foot #fbLink{padding:2px 6px}
   .side #appVersion{display:none}
 }
+/* v2.19.2: saldo da conta de anúncios */
+.saldo-box{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:flex-end;margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+.saldo-v{display:flex;flex-direction:column;gap:1px}
+.saldo-v b{font-family:var(--f-display);font-size:22px;line-height:1.1}
+.saldo-box .linkbtn{margin-left:auto}

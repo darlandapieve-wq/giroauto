@@ -818,6 +818,7 @@
           <div><span class="k">Gasto total</span><span class="v num">${brl2(spend)}</span></div>
           <div><span class="k">Conversas iniciadas</span><span class="v num">${intl(conv)}</span></div>
         </div>
+        <div class="saldo-box" id="saldoMeta"><span class="sub">Consultando o saldo na Meta…</span></div>
       </div>
       <div class="panel">
         <h2>Catálogo de veículos</h2>
@@ -1492,6 +1493,17 @@
       $$('[data-cancel]').forEach((x) => { x.onclick = async () => { await api('POST', `/api/jobs/${x.dataset.cancel}/cancel`); await loadJobs(); render(); }; });
     }
     if (S.view === 'campanhas') {
+      // v2.19.2: saldo da conta de anúncios (carrega depois, sem atrasar a tela)
+      if ($('#saldoMeta')) api('GET', '/api/meta/saldo').then((s) => {
+        const box = $('#saldoMeta'); if (!box) return;
+        const linhas = [];
+        if (s.prepago) linhas.push(`<div class="saldo-v"><span class="k">Saldo disponível</span><b>${esc((s.saldo_texto || '').replace(/^[^(]*\(|\)\s*$/g, '') || '—')}</b><span class="sub">conta pré-paga · como a Meta informa</span></div>`);
+        else if (s.a_pagar !== null) linhas.push(`<div class="saldo-v"><span class="k">A pagar (fatura atual)</span><b>${brl2(s.a_pagar)}</b></div>`);
+        if (s.limite) linhas.push(`<div class="saldo-v"><span class="k">Limite de gastos</span><b>${brl2(s.restante_limite)}</b><span class="sub">restam de ${brl2(s.limite)}</span></div>`);
+        box.innerHTML = `${linhas.join('') || '<span class="sub">A Meta não informou saldo para esta conta.</span>'}
+          ${s.saldo_texto && !s.prepago ? `<span class="sub">Forma de pagamento: ${esc(s.saldo_texto)}</span>` : ''}${!s.ativa ? '<span class="pill p-bad">conta inativa na Meta</span>' : ''}
+          <a class="linkbtn" href="https://business.facebook.com/billing_hub/payment_settings" target="_blank" rel="noopener">Adicionar saldo / pagamentos ›</a>`;
+      }).catch((e) => { const box = $('#saldoMeta'); if (box) box.innerHTML = `<span class="sub">Saldo indisponível: ${esc(e.message)}</span>`; });
       const n = $('#novaCamp'); if (n) n.onclick = () => { S.camp = blankCamp(); if (S.me.store.city) S.camp.city_name = ''; $('#campForm').innerHTML = campFormHtml(); bindCamp(); $('#c-name').focus(); };
       const r = $('#refreshStats'); if (r) r.onclick = async () => { r.disabled = true; r.textContent = 'Atualizando…'; try { await loadCampaigns(true); } catch (e) { toast(e.message); } render(); };
       const cp = $('#copyFeed');

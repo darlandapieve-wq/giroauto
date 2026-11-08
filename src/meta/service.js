@@ -529,7 +529,36 @@ async function refreshStats(storeId, campaignId) {
   return stats;
 }
 
+// v2.19.2: saldo da conta de anúncios (quadro "Conta de anúncios" em Campanhas).
+// Pré-paga: a Meta devolve o texto do saldo disponível em funding_source_details.display_string
+// (o mesmo que aparece no Gerenciador de Anúncios). Cartão/boleto pós-pago: "balance" é o valor a pagar.
+// Valores numéricos da Meta vêm em centavos da moeda da conta.
+async function accountBalance(storeId) {
+  const { conn, token } = tokenFor(storeId);
+  if (!conn.ad_account_id) throw httpError(400, 'Escolha a conta de anúncios em Configurações.');
+  const a = await graph.get(`/${conn.ad_account_id}`, token, { fields: 'currency,account_status,balance,amount_spent,spend_cap,is_prepay_account,funding_source_details' });
+  const c = (x) => (x === undefined || x === null || x === '' ? null : Number(x) / 100);
+  const limite = c(a.spend_cap) || null; // 0 = sem limite
+  const gasto = c(a.amount_spent) || 0;
+  const fonte = a.funding_source_details || {};
+  // "Saldo disponível (R$ 123,45 BRL)" → 123.45 quando dá para ler o número
+  const m = String(fonte.display_string || '').match(/(\d{1,3}(?:[.\s]\d{3})*(?:,\d{2})|\d+(?:\.\d{2})?)/);
+  const numero = m ? Number(m[1].includes(',') ? m[1].replace(/[.\s]/g, '').replace(',', '.') : m[1]) : null;
+  return {
+    moeda: a.currency || conn.currency || 'BRL',
+    prepago: !!a.is_prepay_account,
+    saldo_texto: fonte.display_string || '',
+    saldo: a.is_prepay_account ? numero : null,
+    a_pagar: a.is_prepay_account ? null : c(a.balance),
+    gasto_total: gasto,
+    limite,
+    restante_limite: limite ? Math.max(0, limite - gasto) : null,
+    ativa: a.account_status === 1,
+  };
+}
+
 module.exports = {
+  accountBalance,
   MODES, isConfigured, tokenFor, refreshInstagram, connectUrl, exchangeCode, saveConnection, publicStatus, listAssets, saveSettings,
   searchCities, searchInterests, reachEstimate, POSITIONS, DEFAULT_POSITIONS, setupCatalog, syncCatalog, launchCampaign, setCampaignStatus, refreshStats, httpError, buildTargeting,
 };
