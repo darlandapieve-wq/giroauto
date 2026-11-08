@@ -783,7 +783,7 @@
       name: `Estoque · ${mes}`, mode: 'whatsapp', daily_budget: 20, days: 7, radius_km: 40, age_min: 21, age_max: 65,
       city_key: '', city_name: '', message: '', vehicle_ids: [], activate: true,
       audience_mode: 'advantage', genders: '', interests: [], placements: 'auto',
-      positions: ['fb_feed', 'fb_marketplace', 'fb_story', 'ig_feed', 'ig_story', 'ig_explore'], start_date: '', reach: null,
+      positions: ['fb_feed', 'fb_marketplace', 'fb_story', 'ig_feed', 'ig_story'], start_date: '', reach: null,
     };
   }
   function viewCampanhas() {
@@ -864,7 +864,7 @@
     return S.vehicles.filter((v) => ['pronto', 'publicado'].includes(v.status) && (c.mode !== 'catalogo' || v.catalogo));
   }
   const PLC = { fb_feed: 'Feed do Facebook', fb_marketplace: 'Marketplace', fb_story: 'Stories do Facebook', fb_reels: 'Reels do Facebook',
-    ig_feed: 'Feed do Instagram', ig_story: 'Stories do Instagram', ig_explore: 'Explorar do Instagram', ig_reels: 'Reels do Instagram' };
+    ig_feed: 'Feed do Instagram', ig_story: 'Stories do Instagram', ig_reels: 'Reels do Instagram' };
   const fmtN = (n) => Number(n).toLocaleString('pt-BR', { maximumFractionDigits: 0 });
   function reachHtml(r) {
     if (!r) return '<span class="sub">Escolha a cidade para ver o alcance estimado.</span>';

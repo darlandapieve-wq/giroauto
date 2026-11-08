@@ -235,10 +235,10 @@ const POSITIONS = {
   fb_reels: ['facebook', 'facebook_positions', 'facebook_reels'],
   ig_feed: ['instagram', 'instagram_positions', 'stream'],
   ig_story: ['instagram', 'instagram_positions', 'story'],
-  ig_explore: ['instagram', 'instagram_positions', 'explore'],
+  // ig_explore saiu (v2.19.3): a Meta descontinuou o Explorar do Instagram na API v25 e recusa a campanha
   ig_reels: ['instagram', 'instagram_positions', 'reels'],
 };
-const DEFAULT_POSITIONS = ['fb_feed', 'fb_marketplace', 'fb_story', 'ig_feed', 'ig_story', 'ig_explore'];
+const DEFAULT_POSITIONS = ['fb_feed', 'fb_marketplace', 'fb_story', 'ig_feed', 'ig_story'];
 
 function parseList(v, fallback) {
   if (Array.isArray(v)) return v;

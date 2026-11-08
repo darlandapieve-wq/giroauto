@@ -2,6 +2,10 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.19.3 — 08/11/2026
+
+- **Campanhas:** saiu o posicionamento "Explorar do Instagram", que a Meta descontinuou na API v25 (ela recusava a campanha com "O posicionamento Explorar do Instagram está obsoleto"). Campanhas salvas antes com ele marcado são criadas normalmente, sem esse posicionamento.
+
 ## v2.19.2 — 08/11/2026
 
 - **Campanhas:** o quadro "Conta de anúncios" mostra o saldo da conta direto da Meta: saldo disponível (conta pré-paga, com o mesmo texto do Gerenciador de Anúncios) ou o valor a pagar (cartão), o limite de gastos restante e um atalho para adicionar saldo.
