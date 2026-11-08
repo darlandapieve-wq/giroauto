@@ -9,7 +9,7 @@ const { get, all, run } = require('../db');
 
 const PAGE_FIELDS = 'messages,messaging_postbacks,messaging_referrals,feed';
 const IG_FIELDS = 'messages,comments';
-const PERMISSOES = ['pages_messaging', 'pages_manage_metadata', 'instagram_basic', 'instagram_manage_messages', 'instagram_manage_comments'];
+const PERMISSOES = ['pages_messaging', 'pages_manage_metadata', 'pages_read_user_content', 'instagram_basic', 'instagram_manage_messages'];
 const CANAL = { messenger: 'Messenger', fb_comentario: 'comentário no Facebook', instagram: 'Direct do Instagram', ig_comentario: 'comentário no Instagram' };
 
 const str = (x, max = 500) => String(x ?? '').trim().slice(0, max);

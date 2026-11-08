@@ -32,7 +32,7 @@ const config = {
     optionalScopes: {
       catalogo: { label: 'Catálogo de veículos (caso de uso "Gerenciar catálogos" no app da Meta)', scopes: ['catalog_management'] },
       instagram: { label: 'Publicar no Instagram (caso de uso "Gerenciar mensagens e conteúdo no Instagram" no app da Meta)', scopes: ['instagram_basic', 'instagram_content_publish'] },
-      mensagens: { label: 'Mensagens e comentários no CRM: Messenger, Direct e comentários (casos de uso "Messenger" e "Gerenciar mensagens e conteúdo no Instagram" no app da Meta)', scopes: ['pages_messaging', 'pages_manage_metadata', 'instagram_basic', 'instagram_manage_messages', 'instagram_manage_comments'] },
+      mensagens: { label: 'Mensagens e comentários no CRM: Messenger, Direct e comentários (casos de uso "Messenger" e "Gerenciar mensagens e conteúdo no Instagram" no app da Meta)', scopes: ['pages_messaging', 'pages_manage_metadata', 'pages_read_user_content', 'instagram_basic', 'instagram_manage_messages'] },
     },
     extraScopes: [],
   },
