@@ -80,10 +80,10 @@ async function anuncio(s, id) {
   const a = (Array.isArray(data) ? data : []).find((x) => x.id === id);
   if (!a) return null;
   const fotos = [...(a.fotos || [])].sort((x, y) => (y.capa ? 1 : 0) - (x.capa ? 1 : 0) || x.ordem - y.ordem);
-  return { id: a.id, veiculo: doAnuncio(a), fotos: fotos.map((f) => f.id) };
+  return { id: a.id, veiculo: doAnuncio(a), fotos: fotos.map((f) => f.id), origem: a.origem || {}, codigo: a.codigo || '', preco_repasse: a.precoRepasse || 0, dados: a.dados || {} };
 }
 
 // Foto original (o painel do Repasse guarda a original; a versão com a placa borrada é só para fora).
 const foto = (s, id) => (/^[0-9a-f-]{36}$/.test(String(id)) ? chamar(`/fotos/${id}`, { sessao: s.sessao, binario: true }) : null);
 
-module.exports = { entrar, gravar, ler, anuncios, anuncio, foto, URL_REPASSE, RepasseErro };
+module.exports = { entrar, gravar, ler, anuncios, anuncio, foto, chamar, URL_REPASSE, RepasseErro };

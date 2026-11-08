@@ -33,6 +33,7 @@ require('./routes2').register(app);
 require('./routes3').register(app);
 require('./routes4').register(app);
 require('./fotos/rotas').register(app); // v2.16: GiroAuto Fotos em /fotos
+require('./repasse-integracao').register(app); // v2.18: Loja ↔ GiroAuto Repasse
 
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const fail = (status, message) => Object.assign(new Error(message), { status });

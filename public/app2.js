@@ -421,11 +421,13 @@
       head.querySelector('.btn.primary')?.insertAdjacentHTML('beforebegin', `<div class="btnrow" id="stockTools" style="gap:6px;flex-wrap:wrap">
         ${can('cadastrar') ? '<button class="btn" type="button" id="goAval" title="Cadastrar um carro que ainda está em avaliação (compra ou troca)">+ Avaliação</button><button class="btn" type="button" id="goImport">Importar planilha</button>' : ''}
         ${can('cadastrar') && isMobile() ? '<button class="btn" type="button" id="goQuick">Cadastro rápido</button>' : ''}
+        ${can('cadastrar') && S.me.user.is_admin ? '<button class="btn" type="button" id="goDoRepasse" title="Trazer para o estoque um carro da Fila ou em circulação no GiroAuto Repasse">Do Repasse</button>' : ''}
         <a class="btn" href="/tv/${esc(S.me.store.slug)}" target="_blank" rel="noopener" title="Abra no computador ligado à TV ou monitor da loja">Painel TV</a>
         <a class="btn" id="goVitrine" href="${esc(S.me.vitrine_url || `/v/${S.me.store.slug}`)}" target="_blank" rel="noopener" title="Site público da loja com os carros disponíveis: é o link para mandar aos clientes">Vitrine da loja</a></div>`);
       $('#goImport') && ($('#goImport').onclick = () => X.go('importar'));
       $('#goAval') && ($('#goAval').onclick = () => { S.draft = null; X._novoAval = true; X.go('novo'); });
       $('#goQuick') && ($('#goQuick').onclick = () => X.go('rapido'));
+      $('#goDoRepasse') && ($('#goDoRepasse').onclick = () => X.doRepasseModal());
       if (head.querySelector('#stockTools')) head.style.flexWrap = 'wrap';
     }
     // Filtro por propriedade (loja, consignado…) e origem da compra.
@@ -1642,6 +1644,42 @@
   });
 
   /* ======================= Grupos de repasse (v2.2) ======================= */
+  /* ======================= Do GiroAuto Repasse para o estoque (v2.18) ======================= */
+  X.doRepasseModal = async (grupo = 'todos') => {
+    modal('<h3>Trazer do GiroAuto Repasse</h3><div class="loading">Buscando anúncios no Repasse…</div>', true);
+    let L;
+    try { L = await api('GET', `/api/repasse/anuncios?grupo=${grupo}`); }
+    catch (e) {
+      return modal(`<h3>Trazer do GiroAuto Repasse</h3><div class="warnbox">${esc(e.message)}</div>
+        <div class="modal-foot"><a class="btn primary" href="/repasse/" target="_blank" rel="noopener">Abrir o Repasse</a><button class="btn" type="button" id="dr-again">Tentar de novo</button><button class="btn" data-close type="button">Fechar</button></div>`, true),
+        ($('#dr-again').onclick = () => X.doRepasseModal(grupo));
+    }
+    const chip = (k, l) => `<button class="chip" type="button" data-drg="${k}" aria-pressed="${grupo === k}">${l}</button>`;
+    modal(`<h3>Trazer do GiroAuto Repasse</h3>
+      <p class="note">O carro entra no estoque com as fotos, os dados, a FIPE e o <b>valor de compra = preço de repasse</b>. Depois é só completar o preço de venda e publicar.</p>
+      <div class="chips">${chip('todos', 'Todos')}${chip('fila', 'Fila')}${chip('circulacao', 'Em circulação')}</div>
+      <div class="stack" style="gap:8px;margin-top:10px;max-height:60vh;overflow:auto">${L.length ? L.map((a) => `
+        <div class="rgrow" style="grid-template-columns:72px 1fr auto;align-items:center">
+          ${a.capa ? `<img src="${esc(a.capa)}" alt="" loading="lazy" style="width:72px;height:54px;object-fit:cover;border-radius:6px">` : '<span class="sub">sem foto</span>'}
+          <span><b>${esc(a.titulo || 'Sem título')}</b><br><span class="sub">${esc(a.codigo || '')} · ${esc(a.situacao)} · ${a.n_fotos} foto(s)${a.veiculo?.preco ? ' · repasse ' + brl(a.veiculo.preco) : ''}</span></span>
+          ${a.no_estoque ? `<a class="btn sm" href="#editar-${a.no_estoque}" data-close>Já no estoque</a>` : `<button class="btn sm primary" type="button" data-drimp="${esc(a.id)}">Trazer para o estoque</button>`}
+        </div>`).join('') : '<div class="sub">Nenhum anúncio na Fila ou em circulação.</div>'}</div>
+      <div class="err" id="dr-err" hidden></div>
+      <div class="modal-foot"><button class="btn" data-close type="button">Fechar</button></div>`, true);
+    $$('[data-drg]').forEach((b) => { b.onclick = () => X.doRepasseModal(b.dataset.drg); });
+    $$('[data-drimp]').forEach((b) => {
+      b.onclick = async () => {
+        b.disabled = true; b.textContent = 'Trazendo fotos…';
+        try {
+          const r = await api('POST', '/api/repasse/importar', { id: b.dataset.drimp });
+          toast(r.jaExistia ? 'Este carro já estava no estoque.' : `Carro trazido para o estoque com ${r.fotos} foto(s).${r.aviso ? ' ' + r.aviso : ''} Complete o preço de venda.`, 6000);
+          closeModal();
+          location.hash = 'editar-' + r.id;
+        } catch (e) { b.disabled = false; b.textContent = 'Trazer para o estoque'; $('#dr-err').textContent = e.message; $('#dr-err').hidden = false; }
+      };
+    });
+  };
+
   X.repasseModal = async (v, back) => {
     let R;
     try { R = await api('GET', `/api/vehicles/${v.id}/repasse`); } catch (e) { return toast(e.message, 6000); }
@@ -1657,6 +1695,7 @@
         <div class="f w3"><label for="rp-d">Detalhes (opcional)</label><input id="rp-d" maxlength="300" value="${esc(R.detalhes || '')}" placeholder="Ex.: pequeno amassado na porta traseira, 2 chaves"></div>
         <div class="f" style="align-self:center"><button class="btn" type="button" id="rp-ps">Salvar e atualizar texto</button></div>
       </div>
+      ${S.me.user.is_admin && can('publicar') ? `<div class="infobox" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:220px"><b>GiroAuto Repasse</b>: manda este carro, com fotos e o preço de repasse, para a <b>Fila</b> do Repasse. Lá você confere e aprova, e ele vai para o grupo.${R.posts.find((p) => p.grupo === 'GiroAuto Repasse (Fila)') ? ` <span class="pill p-ok">enviado ${fmtDate(R.posts.find((p) => p.grupo === 'GiroAuto Repasse (Fila)').created_at)}</span>` : ''}</span><button class="btn primary" type="button" id="rp-fila">Enviar para a Fila do Repasse</button></div>` : ''}
       <div class="f"><label for="rp-t">Texto para o grupo</label><textarea id="rp-t" rows="9">${esc(R.texto)}</textarea></div>
       <div class="btnrow">
         <button class="btn primary" type="button" id="rp-share">Enviar texto e fotos</button>
@@ -1680,6 +1719,18 @@
     $$('[data-rtab]').forEach((b) => { b.onclick = () => { if (b.dataset.rtab !== 'repasse') back(b.dataset.rtab); }; });
     $('#rp-t').oninput = () => { $('#rp-wa').href = waUrl($('#rp-t').value); };
     $('#rp-cp').onclick = (e) => X.copyText($('#rp-t').value, e.target);
+    if ($('#rp-fila')) $('#rp-fila').onclick = async () => {
+      const b = $('#rp-fila'); b.disabled = true; b.textContent = 'Enviando fotos…';
+      try {
+        const r = await api('POST', `/api/vehicles/${v.id}/repasse/fila`, {});
+        toast(r.jaExistia ? `Este carro já está no Repasse (${r.codigo || r.status}).` : `Enviado para a Fila do Repasse com ${r.fotos} foto(s). Aprove lá para ir ao grupo.`, 7000);
+        X.repasseModal(v, back);
+      } catch (e) {
+        b.disabled = false; b.textContent = 'Enviar para a Fila do Repasse';
+        err(e.message + (/Entre no GiroAuto Repasse/.test(e.message) ? ' ' : ''));
+        if (/Entre no GiroAuto Repasse/.test(e.message)) $('#rp-err').insertAdjacentHTML('beforeend', ' <a class="link" href="/repasse/" target="_blank" rel="noopener">Abrir o Repasse</a>');
+      }
+    };
     $('#rp-ps').onclick = async () => {
       const body = { detalhes: $('#rp-d').value };
       if (can('precos')) body.preco_repasse = $('#rp-p').value;
