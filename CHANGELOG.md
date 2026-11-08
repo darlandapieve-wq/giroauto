@@ -2,6 +2,13 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.18.0 — 08/11/2026
+
+- Integração com o GiroAuto Repasse (por ora só para o administrador do sistema):
+  - **Do Repasse** (no Estoque): lista a Fila e os anúncios em circulação do Repasse e traz o carro para o estoque com fotos, dados, FIPE e valor de compra = preço de repasse (origem "Outra loja / repasse"). Não duplica: o que já veio aparece como "Já no estoque", e os carros que a própria loja mandou aparecem como "Da sua loja".
+  - **Enviar para a Fila do Repasse** (em Divulgar > Grupo de repasse): manda o carro, com fotos e o preço de repasse definido na loja, para a Fila do Repasse, onde é conferido e aprovado antes de ir ao grupo. Fica registrado no histórico do carro.
+  - Usa a sessão de quem entrou no Repasse pelo menu (ou a conexão do GiroAuto Fotos); sem ela, aparece o aviso com o link para entrar.
+
 ## v2.17.0 — 08/11/2026
 
 - Repasse dentro do GiroAuto: novo item **Repasse** no menu lateral (por ora só para o administrador do sistema) abre o GiroAuto Repasse em `/repasse/`, com o mesmo login de sempre do Repasse e um botão "← GiroAuto" para voltar.

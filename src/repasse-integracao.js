@@ -59,7 +59,9 @@ function register(app) {
     let lista;
     try { lista = await RP.anuncios(s, ['fila', 'circulacao'].includes(req.query.grupo) ? req.query.grupo : 'todos'); } catch (e) { throw traduzir(e); }
     const ja = new Map(all(`SELECT id, repasse_origem_id FROM vehicles WHERE store_id = ? AND repasse_origem_id <> ''`, req.user.storeId).map((r) => [r.repasse_origem_id, r.id]));
-    res.json(lista.map((a) => ({ ...a, capa: a.capa ? a.capa.replace('/api/fotos/repasse/foto/', '/api/repasse/foto/') : '', no_estoque: ja.get(a.id) || null })));
+    // carro que a própria loja mandou para o Repasse: aponta para ele em vez de oferecer importar
+    const daLoja = (a) => (String(a.origem_loja?.chave || '').startsWith(`${req.user.storeId}:`) ? Number(a.origem_loja.veiculoId) || null : null);
+    res.json(lista.map((a) => ({ ...a, capa: a.capa ? a.capa.replace('/api/fotos/repasse/foto/', '/api/repasse/foto/') : '', no_estoque: ja.get(a.id) || daLoja(a), da_loja: !!daLoja(a) })));
   }));
 
   app.get('/api/repasse/foto/:id', team.can('cadastrar'), w(async (req, res) => {
@@ -77,6 +79,10 @@ function register(app) {
     let a;
     try { a = await RP.anuncio(s, id); } catch (e) { throw traduzir(e); }
     if (!a) throw falha(404, 'Anúncio não encontrado no Repasse (só a Fila e os em circulação).');
+    const propria = a.dados?.origemLoja;
+    if (String(propria?.chave || '').startsWith(`${req.user.storeId}:`) && V.findVehicle(req.user.storeId, propria.veiculoId)) {
+      return res.json({ id: Number(propria.veiculoId), jaExistia: true, da_loja: true });
+    }
     const v = a.veiculo || {};
     if (!v.marca || !v.modelo) throw falha(400, 'O anúncio do Repasse não tem marca e modelo reconhecidos.');
     const buffers = (await Promise.all(a.fotos.slice(0, 20).map((f) => RP.foto(s, f).catch(() => null)))).filter(Boolean);

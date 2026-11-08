@@ -1662,7 +1662,7 @@
         <div class="rgrow" style="grid-template-columns:72px 1fr auto;align-items:center">
           ${a.capa ? `<img src="${esc(a.capa)}" alt="" loading="lazy" style="width:72px;height:54px;object-fit:cover;border-radius:6px">` : '<span class="sub">sem foto</span>'}
           <span><b>${esc(a.titulo || 'Sem título')}</b><br><span class="sub">${esc(a.codigo || '')} · ${esc(a.situacao)} · ${a.n_fotos} foto(s)${a.veiculo?.preco ? ' · repasse ' + brl(a.veiculo.preco) : ''}</span></span>
-          ${a.no_estoque ? `<a class="btn sm" href="#editar-${a.no_estoque}" data-close>Já no estoque</a>` : `<button class="btn sm primary" type="button" data-drimp="${esc(a.id)}">Trazer para o estoque</button>`}
+          ${a.no_estoque ? `<a class="btn sm" href="#editar-${a.no_estoque}" data-close>${a.da_loja ? 'Da sua loja' : 'Já no estoque'}</a>` : `<button class="btn sm primary" type="button" data-drimp="${esc(a.id)}">Trazer para o estoque</button>`}
         </div>`).join('') : '<div class="sub">Nenhum anúncio na Fila ou em circulação.</div>'}</div>
       <div class="err" id="dr-err" hidden></div>
       <div class="modal-foot"><button class="btn" data-close type="button">Fechar</button></div>`, true);

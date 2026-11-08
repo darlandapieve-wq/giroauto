@@ -69,7 +69,7 @@ async function anuncios(s, grupo = 'todos') {
     return {
       id: a.id, codigo: a.codigo || (a.numeroFila ? `F-${String(a.numeroFila).padStart(4, '0')}` : ''),
       situacao: FILA.includes(a.status) ? 'Fila' : 'Em circulação', status: a.status,
-      titulo: V.titulo(v), n_fotos: (a.fotos || []).length, capa: capa ? `/api/fotos/repasse/foto/${capa.id}` : '', veiculo: v,
+      titulo: V.titulo(v), n_fotos: (a.fotos || []).length, origem_loja: a.dados?.origemLoja || null, capa: capa ? `/api/fotos/repasse/foto/${capa.id}` : '', veiculo: v,
     };
   });
 }
