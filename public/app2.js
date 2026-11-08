@@ -3296,6 +3296,46 @@
     $$('[data-vzdel]').forEach((b) => { b.onclick = () => confirmBox('Desativar esta chave?', 'O assistente configurado com ela para de funcionar.', 'Desativar', async () => { await api('DELETE', `/api/voz/chave?id=${b.dataset.vzdel}`); toast('Chave desativada'); $('#cfgVoz').remove(); vozConfigPanel(); }, true); });
   }
 
+  /* ======================= Menu em grupos e barra inferior no celular (v2.19) ======================= */
+  const GRUPOS = [
+    ['', ['guia']],
+    ['Vender', ['estoque', 'crm', 'republicacao', 'campanhas', 'a:/fotos', 'a:/repasse/']],
+    ['Acompanhar', ['painel', 'gestao', 'resultados']],
+    ['Documentos', ['contratos']],
+    ['Loja', ['equipe', 'config', 'dev']],
+  ];
+  function agruparMenu() {
+    const nav = $('.nav'); if (!nav) return;
+    const item = (k) => (k.startsWith('a:') ? nav.querySelector(`a[href="${k.slice(2)}"]`) : nav.querySelector(`:scope > [data-view="${k}"]`));
+    const itens = [...nav.querySelectorAll(':scope > button, :scope > a')];
+    const assin = itens.map((e) => e.dataset.view || e.getAttribute('href')).join('|');
+    if (nav.dataset.grp === assin) return;
+    nav.querySelectorAll(':scope > .nav-g').forEach((h) => h.remove());
+    const usados = new Set();
+    for (const [nome, chaves] of GRUPOS) {
+      const els = chaves.map(item).filter(Boolean);
+      if (!els.length) continue;
+      if (nome) { const h = document.createElement('div'); h.className = 'nav-g'; h.textContent = nome; nav.appendChild(h); }
+      els.forEach((e) => { nav.appendChild(e); usados.add(e); });
+    }
+    itens.filter((e) => !usados.has(e)).forEach((e) => nav.appendChild(e));
+    nav.dataset.grp = [...nav.querySelectorAll(':scope > button, :scope > a')].map((e) => e.dataset.view || e.getAttribute('href')).join('|');
+  }
+  function barraInferior() {
+    if ($('#bnav')) return;
+    const ic = (p) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">${p}</svg>`;
+    const b = [
+      ['estoque', 'Estoque', ic('<path d="M3 13l2-5a2 2 0 0 1 2-1.4h10A2 2 0 0 1 19 8l2 5v4h-2"/><path d="M5 17H3v-4h18"/><circle cx="7.5" cy="17" r="1.8"/><circle cx="16.5" cy="17" r="1.8"/>')],
+      podeCrm() ? ['crm', 'CRM', ic('<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/>')] : null,
+      can('gestao') ? ['painel', 'Painel', ic('<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>')] : null,
+    ].filter(Boolean);
+    document.body.insertAdjacentHTML('beforeend', `<nav class="bnav" id="bnav" aria-label="Atalhos">${b.map(([v, l, s]) => `<button type="button" data-bv="${v}">${s}<span>${l}</span></button>`).join('')}<button type="button" id="bnavMais">${ic('<path d="M4 6h16M4 12h16M4 18h16"/>')}<span>Mais</span></button></nav>`);
+    $$('[data-bv]').forEach((x) => { x.onclick = () => { document.body.classList.remove('menu-aberto'); if (location.hash === '#' + x.dataset.bv) X.route(); else location.hash = x.dataset.bv; }; });
+    $('#bnavMais').onclick = () => document.body.classList.toggle('menu-aberto');
+    // escolher qualquer item do menu fecha o menu do celular
+    $('.side')?.addEventListener('click', (e) => { if (e.target.closest('.nav button, .nav a')) document.body.classList.remove('menu-aberto'); });
+  }
+
   /* ======================= Navegação e app instalável ======================= */
   function navSetup() {
     const nav = $('.nav'); if (!nav || $('[data-view="gestao"]')) return;
@@ -3321,10 +3361,13 @@
 
   X.after = (view) => {
     navSetup();
+    barraInferior();
+    setTimeout(agruparMenu, 0); // depois dos itens que outros módulos acrescentam (ex.: Primeiros passos)
     crBadge();
     vozFab();
     const atual = view === 'novo' || view === 'importar' || view === 'rapido' ? 'estoque' : view;
     $$('.nav button').forEach((b) => { if (b.dataset.view === atual) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+    $$('[data-bv]').forEach((b) => { if (b.dataset.bv === atual) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
     if (view === 'novo') enhanceForm();
     if (view === 'estoque') enhanceStock();
     if (view === 'config') enhanceConfig();

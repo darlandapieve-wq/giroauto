@@ -316,6 +316,11 @@
     primeiro?.insertAdjacentHTML('beforebegin', '<button data-view="guia"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19.5V5a2 2 0 0 1 2-2h12v16H6.5A2.5 2.5 0 0 0 4 21.5"/><path d="M9 7h6M9 11h4"/><path d="M18 19H6.5"/></svg>Primeiros passos</button>');
     const b = $('.nav [data-view="guia"]');
     b.addEventListener('click', () => { if (location.hash === '#guia') X.route(); else location.hash = 'guia'; });
+    // v2.19: com tudo o que é principal concluído, sai do menu (continua no atalho de Configurações)
+    api('GET', '/api/guia').then((d) => {
+      const obrig = etapas(d).filter((x) => !x.opcional && !x.info && x.k !== 'plataforma');
+      if (obrig.length && obrig.every((x) => x.ok) && location.hash !== '#guia') b.hidden = true;
+    }).catch(() => {});
   }
   function cfgAtalho() {
     const head = $('#main .head'); if (!head || $('#cfgGuia')) return;

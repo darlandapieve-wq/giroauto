@@ -886,3 +886,29 @@ body:has(.form-foot) #vozFab{bottom:86px}
 .panel.recolhe.fechado > h2::after{transform:rotate(-90deg)}
 .panel.recolhe.fechado > :not(h2){display:none!important}
 .panel.recolhe.fechado{padding-bottom:12px}
+/* v2.19: menu em grupos */
+.nav-g{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding:12px 12px 3px;opacity:.85}
+.nav > .nav-g:first-child{padding-top:2px}
+.side .nav{overflow-y:auto;min-height:0}
+.bnav{display:none}
+/* v2.19: celular: barra inferior (Estoque, CRM, Painel, Mais) e menu completo em tela cheia no "Mais" */
+@media (max-width:760px){
+  .side .nav,.side .ext{display:none}
+  .side{justify-content:space-between}
+  body.menu-aberto .side{position:fixed;inset:0 0 calc(58px + env(safe-area-inset-bottom,0px)) 0;height:auto;flex-direction:column;align-items:stretch;overflow-y:auto;z-index:60;padding:16px;gap:12px;border-bottom:0}
+  body.menu-aberto .side .brand-name{display:block}
+  body.menu-aberto .side .nav{display:flex;flex-direction:column}
+  body.menu-aberto .side .nav button,body.menu-aberto .side .nav a{white-space:normal;padding:10px 12px}
+  body.menu-aberto .side .side-foot{display:flex}
+  .bnav{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:61;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
+  .bnav button{all:unset;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;height:58px;font-size:11px;color:var(--muted);cursor:pointer}
+  .bnav button svg{width:22px;height:22px}
+  .bnav button[aria-current="page"]{color:var(--accent-ink)}
+  #main{padding-bottom:80px}
+  #toast{bottom:74px}
+}
+@media (max-width:760px){
+  body.menu-aberto .side .nav{overflow:visible}
+  #vozFab{bottom:calc(70px + env(safe-area-inset-bottom,0px))!important}
+  body.menu-aberto #vozFab{display:none}
+}
