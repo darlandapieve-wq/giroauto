@@ -296,6 +296,35 @@ function followUpLink(store, v, partner) {
 
 /* ---------------- Documentação de transferência (v2.1) ---------------- */
 
+// Venda (v2.1; função própria desde a v2.21 para a rota e o comando de voz): valor, comprador, pagamento,
+// entrada/financeira/troca, vendedor, comissão e documento; tira das filas de publicação e avisa o CRM.
+function marcarVendido(user, vehicleId, b = {}) {
+  const v = V.findVehicle(user.storeId, vehicleId);
+  if (!v) throw httpError(404, 'Veículo não encontrado.');
+  if (v.status === 'vendido') return { ok: true };
+  const wasPublished = v.status === 'publicado';
+  const pubMode = get('SELECT pub_mode FROM stores WHERE id = ?', user.storeId).pub_mode;
+  const f = saleFields(user.storeId, v, b, false);
+  if (!f.venda_valor) f.venda_valor = V.precoAnuncio(v);
+  if (!f.venda_vendedor_id) f.venda_vendedor_id = user.id;
+  if (!user.perms.has('financeiro')) f.venda_comissao = 0;
+  f.doc_status = DOC_STATUS[b.doc_status] ? b.doc_status : 'pendente';
+  f.doc_obs = String(b.doc_obs || '').slice(0, 500);
+  if (f.doc_status === 'outro' && !f.doc_obs.trim()) throw httpError(400, 'Documentação em "Outro": escreva a observação.');
+  run(`UPDATE vehicles SET status='vendido', vendido_em=datetime('now'), updated_at=datetime('now') WHERE id=?`, v.id);
+  const cols = Object.keys(f);
+  run(`UPDATE vehicles SET ${cols.map((c) => `${c}=?`).join(',')}, doc_atualizado=datetime('now') WHERE id=?`, ...cols.map((c) => f[c]), v.id);
+  run('INSERT INTO doc_moves (vehicle_id, status, obs, user_id) VALUES (?, ?, ?, ?)', v.id, f.doc_status, f.doc_obs, user.id);
+  applyTrade(user.storeId, v.id, b, user.id);
+  run(`UPDATE ext_jobs SET status='cancelado', updated_at=datetime('now') WHERE vehicle_id=? AND status='pendente'`, v.id);
+  if (wasPublished && pubMode === 'extensao') run('INSERT INTO ext_jobs (store_id, vehicle_id, type) VALUES (?, ?, ?)', user.storeId, v.id, 'excluir');
+  logEvent(user.storeId, `${v.marca} ${v.modelo} ${v.versao} marcado como vendido`);
+  try { require('./crm').onSold(user.storeId, v.id, user.id); } catch (e) { console.error('crm onSold', e.message); }
+  const campanhas = all(`SELECT c.id, c.name FROM campaigns c JOIN campaign_vehicles cv ON cv.campaign_id = c.id
+    WHERE cv.vehicle_id = ? AND c.status IN ('ativa','analise')`, v.id);
+  return { ok: true, campanhas_ativas: campanhas, excluir_manual: wasPublished && pubMode !== 'extensao', listing_url: v.fb_listing_url || '', remover: require('./channels').manualRemovals(v.id) };
+}
+
 function setDocStatus(storeId, vehicleId, body, userId) {
   const v = V.findVehicle(storeId, vehicleId);
   if (!v) throw httpError(404, 'Veículo não encontrado.');
@@ -565,5 +594,5 @@ function resultsCsv(storeId, q) {
 module.exports = {
   TERCEIROS, COST_CATS, PARTNER_TYPES, LOCAL, DOC_STATUS, DOC_DONE, PAGAMENTOS, EXP_CATS,
   costsOf, finance, saveFinance, saleFields, addCost, updateCost, deleteCost, partners, savePartner, setLocation, moves, followUpLink,
-  applyTrade, realizadoEm, setDocStatus, docMoves, docList, expenses, addExpense, deleteExpense, payExpense, contasAbertas, results, resultsCsv, daysBetween, waNumber,
+  applyTrade, realizadoEm, marcarVendido, setDocStatus, docMoves, docList, expenses, addExpense, deleteExpense, payExpense, contasAbertas, results, resultsCsv, daysBetween, waNumber,
 };

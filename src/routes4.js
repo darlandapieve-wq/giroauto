@@ -56,7 +56,7 @@ function register(app) {
   app.post('/api/voz/interpretar', auth.requireUser, vozAudio, wrap(async (req, res) => {
     res.json(await VZ.interpretar(req.user, { texto: req.body?.texto, audio: req.file }));
   }));
-  app.post('/api/voz/executar', auth.requireUser, (req, res) => { const feitas = VZ.executar(req.user, req.body?.acoes || []); res.json({ feitas, fala: VZ.fala({}, feitas) }); });
+  app.post('/api/voz/executar', auth.requireUser, wrap(async (req, res) => { const feitas = await VZ.executar(req.user, req.body?.acoes || []); res.json({ feitas, fala: VZ.fala({}, feitas) }); }));
   const vozUrl = () => `${require('./config').publicUrl}/api/voz/comando`;
   app.get('/api/voz/chave', auth.requireUser, (req, res) => res.json({ ativa: VZ.temChave(req.user.id), chaves: VZ.chaves(req.user.id), url: vozUrl() }));
   app.post('/api/voz/chave', auth.requireUser, (req, res) => res.json({ chave: VZ.gerarChave(req.user.id, req.body?.nome || 'Siri'), url: vozUrl() }));
@@ -83,7 +83,7 @@ function register(app) {
     const prazoMs = /alexa/i.test(String(req.body?.origem || req.query.origem || '')) ? 5500 : 25000;
     let r;
     try { r = await VZ.interpretar(user, { texto }, { prazoMs }); } catch (e) { return responder(200, e.message); }
-    const feitas = r.duvida ? [] : VZ.executar(user, r.acoes.filter((a) => a.ok));
+    const feitas = r.duvida ? [] : await VZ.executar(user, r.acoes.filter((a) => a.ok && a.tipo !== 'abrir'));
     responder(200, VZ.fala(r, feitas), { transcricao: r.transcricao, feitas });
   });
   app.post('/api/voz/comando', require('express').text({ type: 'text/*', limit: '20kb' }), require('express').urlencoded({ extended: false, limit: '20kb' }), vozComando);

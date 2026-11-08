@@ -3160,7 +3160,14 @@
   function vozModal() {
     VZ.r = null;
     modal(`<div id="vozBox"><h3>🎤 Comando de voz</h3>
-      <p class="sub" style="margin:0 0 10px">Fale do jeito que contaria para alguém da loja. Ex.: <i>"o Jetta 2013 preto ficou pronto na oficina e está no pátio"</i>, <i>"inclua na Ecosport 2009 alinhamento e balanceamento"</i>, <i>"a conta de energia foi paga"</i>.</p>
+      <p class="sub" style="margin:0 0 10px">Fale do jeito que contaria para alguém da loja. Ex.: <i>"a Ecosport 2009 foi para o lavador do Alemão"</i>, <i>"divulgue o Jetta no Instagram"</i>, <i>"o ATPV da Biz foi emitido e entregue ao comprador"</i>, <i>"mova o lead da Maria para arquivados"</i>, <i>"agende test-drive do Onix com o João amanhã às 15h"</i>, <i>"a conta de energia foi paga"</i>.
+      <button class="linkbtn" type="button" id="vz-ajuda">o que dá para pedir?</button></p>
+      <div id="vz-lista" class="sub" hidden style="margin:0 0 10px;line-height:1.5">
+        <b>Carros:</b> onde está (pátio, oficina, lavador, cliente), preparação e serviços feitos, preço e oferta, km/cor/placa, custos, vendido, documentação (ATPV, comunicação de venda, transferência), pendências (multa, IPVA…).<br>
+        <b>Divulgação:</b> publicar no Instagram, publicar ou republicar no Marketplace, pausar/ativar/encerrar campanha.<br>
+        <b>CRM:</b> novo lead, mover de etapa (arquivar, perdido com o motivo), anotar ligação ou conversa, agendar visita/test-drive, resultado da visita, tarefas.<br>
+        <b>Loja:</b> conta paga, nova despesa, abrir uma tela ("abra o CRM", "abre o Jetta"), perguntas ("quantos carros estão na oficina?").
+      </div>
       <div class="vozmic"><button class="vozbtn" id="vz-mic" type="button" aria-label="Falar">🎤</button><span id="vz-st" class="sub">Toque no microfone e fale. Toque de novo para parar.</span></div>
       <textarea id="vz-t" rows="2" placeholder="…ou digite o comando aqui"></textarea>
       <div class="btnrow" style="margin-top:6px;align-items:center"><button class="btn primary" id="vz-go" type="button">Entender</button>
@@ -3169,6 +3176,7 @@
       <div id="vz-out"></div>
       <div class="modal-foot"><button class="btn" data-close type="button">Fechar</button></div></div>`, true);
     $('#vz-mic').onclick = () => (VZ.ativo ? vozParar() : vozOuvir());
+    $('#vz-ajuda').onclick = () => { $('#vz-lista').hidden = !$('#vz-lista').hidden; };
     $('#vz-auto').onchange = () => vozPref('auto', $('#vz-auto').checked);
     $('#vz-fala').onchange = () => { vozPref('fala', $('#vz-fala').checked); if (!$('#vz-fala').checked) try { speechSynthesis.cancel(); } catch { /* sem voz */ } };
     $('#vz-go').onclick = () => vozEnviar({ texto: $('#vz-t').value });
@@ -3235,9 +3243,18 @@
   }
   async function vozExecutar(acoes) {
     const x = await api('POST', '/api/voz/executar', { acoes });
-    falar(x.fala); toast(x.fala, 7000);
-    if ($('#vz-out')) { $('#vz-out').innerHTML = `<div class="okbox" style="margin-top:10px">${esc(x.fala)}</div>`; vzSt('Pronto. Toque no microfone para outro comando.'); }
-    await X.loadVehicles(); if (S.view !== 'novo') X.render();
+    // v2.21: "abra o CRM", "abre o Jetta", "abre o lead da Maria" levam direto para a tela
+    const abrir = x.feitas.find((a) => a.feito && a.tipo === 'abrir');
+    const resto = x.feitas.filter((a) => a.tipo !== 'abrir');
+    if (resto.length) { falar(x.fala); toast(x.fala, 7000); }
+    if ($('#vz-out')) { $('#vz-out').innerHTML = resto.length ? `<div class="okbox" style="margin-top:10px">${esc(x.fala)}</div>` : ''; vzSt('Pronto. Toque no microfone para outro comando.'); }
+    await X.loadVehicles();
+    if (abrir) {
+      closeModal();
+      if (abrir.lead_id) { if (S.view !== 'crm') X.go('crm'); setTimeout(() => leadModal(abrir.lead_id), S.view === 'crm' ? 0 : 600); return; }
+      if (abrir.ir) { X.go(abrir.ir); return; }
+    }
+    if (S.view !== 'novo') X.render();
   }
   // Configurações > Minha conta: chaves para a Siri (Atalhos do iPhone) e para a Alexa, uma por aparelho.
   async function vozConfigPanel() {

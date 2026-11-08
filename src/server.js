@@ -622,32 +622,7 @@ app.post('/api/vehicles/:id/republish', team.can('publicar'), (req, res) => {
 });
 
 app.post('/api/vehicles/:id/sold', team.can('vender'), (req, res) => {
-  const v = own(req);
-  if (v.status === 'vendido') return res.json({ ok: true });
-  const wasPublished = v.status === 'publicado';
-  const pubMode = get('SELECT pub_mode FROM stores WHERE id = ?', req.user.storeId).pub_mode;
-  run(`UPDATE vehicles SET status='vendido', vendido_em=datetime('now'), updated_at=datetime('now') WHERE id=?`, v.id);
-  // Dados da venda (v2.1): valor, data, comprador, pagamento, entrada/financeira/troca, vendedor, comissão e documento.
-  const G = require('./gestao');
-  const b = req.body || {};
-  const f = G.saleFields(req.user.storeId, v, b, false);
-  if (!f.venda_valor) f.venda_valor = V.precoAnuncio(v);
-  if (!f.venda_vendedor_id) f.venda_vendedor_id = req.user.id;
-  if (!req.user.perms.has('financeiro')) f.venda_comissao = 0;
-  f.doc_status = G.DOC_STATUS[b.doc_status] ? b.doc_status : 'pendente';
-  f.doc_obs = String(b.doc_obs || '').slice(0, 500);
-  if (f.doc_status === 'outro' && !f.doc_obs.trim()) throw fail(400, 'Documentação em "Outro": escreva a observação.');
-  const cols = Object.keys(f);
-  run(`UPDATE vehicles SET ${cols.map((c) => `${c}=?`).join(',')}, doc_atualizado=datetime('now') WHERE id=?`, ...cols.map((c) => f[c]), v.id);
-  run('INSERT INTO doc_moves (vehicle_id, status, obs, user_id) VALUES (?, ?, ?, ?)', v.id, f.doc_status, f.doc_obs, req.user.id);
-  G.applyTrade(req.user.storeId, v.id, b, req.user.id);
-  run(`UPDATE ext_jobs SET status='cancelado', updated_at=datetime('now') WHERE vehicle_id=? AND status='pendente'`, v.id);
-  if (wasPublished && pubMode === 'extensao') run('INSERT INTO ext_jobs (store_id, vehicle_id, type) VALUES (?, ?, ?)', req.user.storeId, v.id, 'excluir');
-  logEvent(req.user.storeId, `${v.marca} ${v.modelo} ${v.versao} marcado como vendido`);
-  try { require('./crm').onSold(req.user.storeId, v.id, req.user.id); } catch (e) { console.error('crm onSold', e.message); }
-  const campanhas = all(`SELECT c.id, c.name FROM campaigns c JOIN campaign_vehicles cv ON cv.campaign_id = c.id
-    WHERE cv.vehicle_id = ? AND c.status IN ('ativa','analise')`, v.id);
-  res.json({ ok: true, campanhas_ativas: campanhas, excluir_manual: wasPublished && pubMode !== 'extensao', listing_url: v.fb_listing_url || '', remover: channels.manualRemovals(v.id) });
+  res.json(require('./gestao').marcarVendido(req.user, own(req).id, req.body || {}));
 });
 
 /* ---- Imagens geradas (arte + estacionamento) ---- */

@@ -2,6 +2,16 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.21.0 — 08/11/2026
+
+- **Comando de voz em todo o sistema:** além de local, preparação, preço/oferta e contas, agora entende:
+  - carros: dados (km, cor, placa), custos, vendido e documentação da venda (ATPV preenchido/entregue, comunicação, transferência);
+  - pendências (multa, IPVA…), divulgar no Instagram, publicar/republicar no Marketplace, pausar/ativar/encerrar campanha;
+  - CRM: novo lead, mudar etapa (arquivar, perdido com motivo), anotação, visita/test-drive (cria o lead se for cliente novo), resultado da visita e tarefas;
+  - abrir telas, carros e leads ("abra o CRM"), e perguntas sobre os dados ("quantos carros estão na oficina?").
+- Lugar falado que não está nos parceiros ("lavador do Alemão") é cadastrado como parceiro junto.
+- "Marcar vendido" virou uma função só, usada pela tela e pelo comando de voz.
+
 ## v2.20.0 — 08/11/2026
 
 - **CRM:** conversas do Messenger e do Direct do Instagram, e comentários nas publicações e anúncios da Página e do Instagram, viram leads no CRM. Cada pessoa vira um lead só por canal, com a campanha de origem (quando veio de anúncio), o carro (campanha de um carro só) e o telefone, se a pessoa digitar na conversa. Nada é respondido automaticamente. Para ligar: App da Meta > "Mensagens e comentários no CRM", Reconectar o Facebook e "Ativar / conferir" em Configurações > Facebook e Instagram.
