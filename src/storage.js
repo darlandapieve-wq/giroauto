@@ -186,8 +186,8 @@ async function flush() {
 
 const mediaDir = () => path.join(config.dataDir, 'media');
 // Fotos públicas: <hex>.jpg|png|webp. Documentos privados (procuração, logo): doc-<hex>.pdf|jpg|png.
-const SAFE = /^(doc-)?[a-f0-9]{32}\.(jpg|png|webp|pdf)$/;
-const MIME = { '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.pdf': 'application/pdf' };
+const SAFE = /^(doc-)?[a-f0-9]{32}\.(jpg|png|webp|pdf|m4a)$/; // m4a: trechos de música da loja (v2.23)
+const MIME = { '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.pdf': 'application/pdf', '.m4a': 'audio/mp4' };
 
 async function saveMedia(filename) {
   if (!enabled()) return;

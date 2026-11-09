@@ -38,6 +38,7 @@ require('./push').register(app); // v2.19: aviso de lead novo no celular
 
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 require('./meta/inbox').register(app, { team, wrap }); // v2.20: Messenger, Direct e comentários no CRM
+require('./video').register(app, { team, wrap }); // v2.23: vídeo de divulgação do carro
 const fail = (status, message) => Object.assign(new Error(message), { status });
 
 /* ------------------------------------------------------------------ */

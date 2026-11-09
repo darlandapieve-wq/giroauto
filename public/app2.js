@@ -531,6 +531,7 @@
       (can('vender') || can('gestao')) && ['pend', 'Registrar pendência (multa, IPVA…)'],
       ['ficha', 'Ficha rápida do veículo'],
       (can('cadastrar') || can('publicar')) && v.status !== 'vendido' && ['fotos-ia', 'Ensaio de fotos com IA e arte'],
+      can('publicar') && v.status !== 'vendido' && ['video', '🎬 Gerar vídeo (Reels, Stories, Status)'],
     ].filter(Boolean);
     const r = anchor.getBoundingClientRect();
     document.body.insertAdjacentHTML('beforeend', `<div class="menu" id="moreMenu" style="top:${r.bottom + window.scrollY + 4}px;left:${Math.max(8, r.right + window.scrollX - 260)}px">${items.map(([k, l]) => `<button type="button" data-mi="${k}">${esc(l)}</button>`).join('')}</div>`);
@@ -552,8 +553,96 @@
         if (k === 'repasse') X.repasseModal(v, (t) => { S.chanTab = t; $$(`[data-act="divulgar"][data-id="${v.id}"]`)[0]?.click(); });
         if (k === 'ficha') vehiclePop(v.id);
         if (k === 'fotos-ia') location.href = `/fotos#/carro/${v.id}`;
+        if (k === 'video') videoModal(v);
       };
     });
+  }
+
+  /* ---------------- Gerar vídeo (v2.23) ---------------- */
+  // Fotos com legenda, cartão final com preço e WhatsApp, e música da biblioteca ou enviada (com o trecho escolhido).
+  async function videoModal(v) {
+    modal('<div class="loading">Preparando…</div>', true);
+    let d;
+    try { d = await api('GET', `/api/vehicles/${v.id}/video`); } catch (e) { closeModal(); return toast(e.message, 7000); }
+    const M = { tipo: 'padrao', id: d.padrao[0].id, file: '', inicio: 0, dur: 30, arquivo: null, url: d.padrao[0].url };
+    const ouvir = new Audio(); let parar = null;
+    const tocar = (url, ini = 0, seg = 15) => { clearTimeout(parar); try { ouvir.pause(); if (ouvir.src !== new URL(url, location.href).href) ouvir.src = url; ouvir.currentTime = ini; ouvir.play(); parar = setTimeout(() => ouvir.pause(), seg * 1000); } catch { /* sem áudio */ } };
+    const musicaItem = (m, tipo) => `<label class="vd-mus"><input type="radio" name="vd-m" value="${tipo}:${esc(tipo === 'padrao' ? m.id : m.file)}" data-url="${esc(m.url)}" ${tipo === 'padrao' && m.id === M.id ? 'checked' : ''}>
+      <span><b>${esc(m.nome)}</b>${m.desc ? ` <span class="sub">${esc(m.desc)}</span>` : ''}</span>
+      <button class="btn sm ghost" type="button" data-vdplay="${esc(m.url)}" title="Ouvir">▶</button>${tipo === 'loja' ? `<button class="btn sm ghost danger" type="button" data-vddel="${esc(m.file)}" title="Tirar da biblioteca">✕</button>` : ''}</label>`;
+    modal(`<div id="vdBox"><h3>🎬 Vídeo do ${esc([v.marca, v.modelo, v.ano_modelo].filter(Boolean).join(' '))}</h3>
+      <p class="sub" style="margin:0 0 10px">15 segundos, vertical (Reels, Stories e Status do WhatsApp). Marque as fotos (2 a 8, na ordem do anúncio) e ajuste as legendas.</p>
+      <div class="vd-fotos">${d.fotos.map((f, i) => `<label class="vd-foto"><input type="checkbox" data-vdf="${i}" ${i < 6 ? 'checked' : ''}><img src="${esc(f.url)}?w=200" alt=""><input type="text" data-vdl="${i}" value="${esc(f.legenda)}" maxlength="40" placeholder="Legenda (opcional)"></label>`).join('')}</div>
+      <div class="fields" style="margin-top:10px">
+        <div class="f w4"><label for="vd-t">Título</label><input id="vd-t" value="${esc(d.titulo)}" maxlength="40"></div>
+        <div class="f w2"><label for="vd-s">Subtítulo</label><input id="vd-s" value="${esc(d.sub)}" maxlength="50"></div>
+        <div class="f w3"><label for="vd-w">WhatsApp no final</label><input id="vd-w" value="${esc(d.whatsapp)}" inputmode="tel" placeholder="5544999990000"></div>
+      </div>
+      <h4 style="margin:12px 0 6px">Música</h4>
+      <div class="vd-musicas">${d.padrao.map((m) => musicaItem(m, 'padrao')).join('')}${d.loja.map((m) => musicaItem(m, 'loja')).join('')}
+        <label class="vd-mus"><input type="radio" name="vd-m" value="upload"><span><b>Enviar uma música</b> <span class="sub">MP3, M4A ou WAV, até 25 MB</span></span></label></div>
+      <div id="vd-up" hidden style="margin:8px 0">
+        <input type="file" id="vd-arq" accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg">
+        <div class="sub" style="margin-top:4px">Músicas comerciais podem ser silenciadas ou bloqueadas pelo Instagram e pelo Facebook (direitos autorais). As da biblioteca do GiroAuto são próprias e liberadas.</div>
+        <label class="chip" style="margin-top:6px"><input type="checkbox" id="vd-salvar" checked> Guardar o trecho na biblioteca da loja</label>
+        <input id="vd-nome" placeholder="Nome da música (para a biblioteca)" maxlength="60" style="margin-top:6px">
+      </div>
+      <div class="vd-trecho"><label for="vd-ini">Início do trecho: <b id="vd-ini-t">0:00</b></label>
+        <input type="range" id="vd-ini" min="0" max="15" step="0.5" value="0"><button class="btn sm" type="button" id="vd-ouvir">▶ Ouvir os 15 s</button></div>
+      <div class="err" id="vdErr" hidden></div>
+      <div id="vd-res"></div>
+      <div class="modal-foot"><button class="btn" data-close type="button">Fechar</button><button class="btn primary" id="vd-go" type="button">Gerar vídeo</button></div></div>`, true);
+    const fmtT = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+    const ajustaTrecho = (dur) => { M.dur = dur; const r = $('#vd-ini'); r.max = Math.max(0, Math.floor((dur - 15) * 2) / 2); if (Number(r.value) > Number(r.max)) r.value = r.max; $('#vd-ini-t').textContent = fmtT(Number(r.value)); };
+    $('#vd-ini').oninput = () => { $('#vd-ini-t').textContent = fmtT(Number($('#vd-ini').value)); };
+    $('#vd-ouvir').onclick = () => { if (M.url) tocar(M.url, Number($('#vd-ini').value)); else toast('Escolha a música.'); };
+    $$('[data-vdplay]').forEach((b) => { b.onclick = (e) => { e.preventDefault(); tocar(b.dataset.vdplay, 0, 30); }; });
+    $$('[data-vddel]').forEach((b) => { b.onclick = (e) => { e.preventDefault(); confirmBox('Tirar a música da biblioteca?', 'Os vídeos já gerados não mudam.', 'Tirar', async () => { await api('DELETE', `/api/videos/musicas/${b.dataset.vddel}`); b.closest('.vd-mus').remove(); }, true); }; });
+    $$('[name="vd-m"]').forEach((r) => { r.onchange = () => {
+      const [tipo, val] = r.value.split(':'); M.tipo = tipo; $('#vd-up').hidden = tipo !== 'upload';
+      if (tipo === 'padrao') { M.id = val; M.url = r.dataset.url; ajustaTrecho(30); }
+      if (tipo === 'loja') { M.file = val; M.url = r.dataset.url; ajustaTrecho(30); }
+      if (tipo === 'upload') { M.url = M.arquivo ? URL.createObjectURL(M.arquivo) : ''; }
+    }; });
+    $('#vd-arq').onchange = () => {
+      const f = $('#vd-arq').files[0]; if (!f) return;
+      if (f.size > 25 * 1024 * 1024) { $('#vd-arq').value = ''; return toast('Arquivo maior que 25 MB.'); }
+      M.arquivo = f; M.url = URL.createObjectURL(f); if (!$('#vd-nome').value) $('#vd-nome').value = f.name.replace(/\.\w+$/, '');
+      const a = new Audio(M.url); a.onloadedmetadata = () => ajustaTrecho(a.duration || 30);
+    };
+    $('#vd-go').onclick = async () => {
+      const fotos = $$('[data-vdf]').filter((c) => c.checked).map((c) => ({ file: d.fotos[Number(c.dataset.vdf)].file, legenda: $(`[data-vdl="${c.dataset.vdf}"]`).value }));
+      const err = $('#vdErr'); err.hidden = true;
+      if (fotos.length < 2 || fotos.length > 8) { err.textContent = 'Marque de 2 a 8 fotos.'; err.hidden = false; return; }
+      if (M.tipo === 'upload' && !M.arquivo) { err.textContent = 'Escolha o arquivo da música.'; err.hidden = false; return; }
+      const dados = { fotos, titulo: $('#vd-t').value, sub: $('#vd-s').value, whatsapp: $('#vd-w').value, salvar_musica: M.tipo === 'upload' && $('#vd-salvar').checked, nome_musica: $('#vd-nome').value,
+        musica: { tipo: M.tipo, id: M.id, file: M.file, inicio: Number($('#vd-ini').value) } };
+      ouvir.pause(); $('#vd-go').disabled = true;
+      let job;
+      try {
+        if (M.tipo === 'upload') { const fd = new FormData(); fd.append('dados', JSON.stringify(dados)); fd.append('musica', M.arquivo, M.arquivo.name); job = await api('POST', `/api/vehicles/${v.id}/video`, fd); }
+        else job = await api('POST', `/api/vehicles/${v.id}/video`, dados);
+      } catch (e) { err.textContent = e.message; err.hidden = false; $('#vd-go').disabled = false; return; }
+      const res = $('#vd-res');
+      const barra = (s) => `<div class="vd-prog"><div style="width:${s.progresso}%"></div></div><div class="sub">${esc(s.status === 'na_fila' ? `Na fila${s.posicao > 1 ? ` (${s.posicao}º)` : ''}…` : s.etapa)} · ${s.progresso}% — pode levar alguns minutos; dá para fechar e continuar usando o GiroAuto.</div>`;
+      res.innerHTML = barra(job);
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 2500));
+        if (!$('#vd-res')) { toast('O vídeo continua sendo gerado.'); return; }
+        let s; try { s = await api('GET', `/api/videos/${job.id}`); } catch (e) { res.innerHTML = `<div class="err">${esc(e.message)}</div>`; break; }
+        if (s.status === 'erro') { res.innerHTML = `<div class="err">${esc(s.erro)}</div>`; break; }
+        if (s.status !== 'pronto') { res.innerHTML = barra(s); continue; }
+        res.innerHTML = `<div class="okbox" style="margin-top:10px">Vídeo pronto.</div><video class="vd-video" src="${esc(s.url)}" controls playsinline></video>
+          <div class="btnrow" style="margin-top:8px"><a class="btn primary" href="${esc(s.url)}?baixar=1" download>Baixar vídeo</a>${navigator.canShare ? '<button class="btn" type="button" id="vd-share">Compartilhar</button>' : ''}</div>`;
+        const sh = $('#vd-share');
+        if (sh) sh.onclick = async () => {
+          try { const blob = await (await fetch(s.url)).blob(); const file = new File([blob], `${[v.marca, v.modelo, v.ano_modelo].filter(Boolean).join('-')}.mp4`, { type: 'video/mp4' });
+            if (navigator.canShare({ files: [file] })) await navigator.share({ files: [file] }); else toast('Este aparelho não compartilha vídeos daqui: use Baixar.'); } catch { /* cancelado */ }
+        };
+        break;
+      }
+      if ($('#vd-go')) $('#vd-go').disabled = false;
+    };
   }
 
   function qrModal(v) {

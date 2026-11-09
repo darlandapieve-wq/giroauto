@@ -2,6 +2,14 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.23.0 — 08/11/2026
+
+- **Gerar vídeo do carro** (menu ⋯ do carro > "🎬 Gerar vídeo"): vídeo de 15 s, vertical 720x1280 (Reels, Stories e Status), com as fotos escolhidas (2 a 8), legendas editáveis, título, cartão final com logo, preço (de/por na oferta), WhatsApp e cidade.
+  - Música: biblioteca própria do GiroAuto (Energia, Pop, Rock, Chill e Épico; trilhas originais, sem direitos de terceiros) ou música enviada pela loja, escolhendo o início do trecho e ouvindo antes. O trecho enviado pode ficar guardado na biblioteca da loja (30 s em M4A).
+  - O WhatsApp do cartão vem do número das campanhas (Configurações > Facebook e Instagram) e pode ser mudado na hora.
+  - Gerado no servidor com FFmpeg, um por vez, com barra de progresso; baixar ou compartilhar no celular. O vídeo fica no servidor por 6 h (não ocupa o Supabase).
+- Imagem Docker com FFmpeg.
+
 ## v2.22.1 — 08/11/2026
 
 - **Campanhas:** os anúncios novos já saem pedindo a música automática da Meta (atende à recomendação "Adicione música automaticamente ao anúncio"). Se a Meta não aceitar música no formato do anúncio, ele é criado sem música e o registro da loja diz isso.

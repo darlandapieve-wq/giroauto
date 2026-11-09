@@ -968,3 +968,18 @@ body:has(.form-foot) #vozFab{bottom:86px}
 .camp-arq { margin-top: 12px; }
 .camp-arq > summary { cursor: pointer; color: var(--muted, #6b7280); font-size: 13px; padding: 6px 0; }
 .camp-arq .tbl-wrap { opacity: .85; }
+
+/* v2.23: Gerar vídeo */
+.vd-fotos { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+.vd-foto { display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--line, #e5e7eb); border-radius: 10px; padding: 6px; position: relative; }
+.vd-foto img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px; }
+.vd-foto input[type=checkbox] { position: absolute; top: 10px; left: 10px; width: 20px; height: 20px; }
+.vd-foto input[type=text] { font-size: 12px; padding: 4px 6px; }
+.vd-musicas { display: flex; flex-direction: column; gap: 4px; }
+.vd-mus { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--line, #e5e7eb); border-radius: 8px; }
+.vd-mus span { flex: 1; }
+.vd-trecho { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+.vd-trecho input[type=range] { flex: 1; min-width: 160px; }
+.vd-prog { height: 10px; background: var(--line, #e5e7eb); border-radius: 5px; overflow: hidden; margin-top: 10px; }
+.vd-prog > div { height: 100%; background: #e3b341; transition: width .5s; }
+.vd-video { width: 100%; max-width: 320px; aspect-ratio: 9/16; display: block; margin: 10px auto 0; border-radius: 10px; background: #000; }
