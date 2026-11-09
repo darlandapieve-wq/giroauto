@@ -2,6 +2,10 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.22.1 — 08/11/2026
+
+- **Campanhas:** os anúncios novos já saem pedindo a música automática da Meta (atende à recomendação "Adicione música automaticamente ao anúncio"). Se a Meta não aceitar música no formato do anúncio, ele é criado sem música e o registro da loja diz isso.
+
 ## v2.22.0 — 08/11/2026
 
 - **Campanhas:** nova coluna "Veiculação" no quadro, com a situação do anúncio como a Meta informa (Veiculando, Preparando, Em análise, Reprovado, Com problemas, Aguardando pagamento, Programado, Concluído…) e o motivo quando houver. Atualiza sozinha ao abrir a tela (no máximo a cada 3 min) e em "Atualizar métricas".

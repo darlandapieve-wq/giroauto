@@ -193,6 +193,7 @@ test('conexão com a Meta e campanha no WhatsApp', async () => {
   const creative = mock.calls.find((c) => c.path === '/act_111/adcreatives');
   assert.equal(creative.params.object_story_spec.instagram_user_id, 'ig_1');
   assert.equal(creative.params.object_story_spec.link_data.call_to_action.type, 'WHATSAPP_MESSAGE');
+  assert.deepEqual(creative.params.asset_feed_spec, { audios: [{ type: 'random' }] }, 'v2.22: música automática');
   const activations = mock.calls.filter((c) => c.method === 'POST' && c.params.status === 'ACTIVE');
   assert.equal(activations.length, 3);
 

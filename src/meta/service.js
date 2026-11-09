@@ -372,10 +372,19 @@ async function buildCreative(ctx) {
     };
   }
   storySpec.link_data = linkData;
-  return graph.post(`/${conn.ad_account_id}/adcreatives`, token, {
-    name: `${campaign.name} · criativo`,
-    object_story_spec: storySpec,
-  });
+  const base = { name: `${campaign.name} · criativo`, object_story_spec: storySpec };
+  // v2.22: música automática da Meta (recomendação "Adicione música…"). A doc não garante que vale para
+  // carrossel/link_data: se a Meta recusar, cria o criativo sem música para não travar a campanha.
+  if (ctx.semMusica) { ctx.musica = false; return graph.post(`/${conn.ad_account_id}/adcreatives`, token, base); }
+  try {
+    const r = await graph.post(`/${conn.ad_account_id}/adcreatives`, token, { ...base, asset_feed_spec: { audios: [{ type: 'random' }] } });
+    ctx.musica = true;
+    return r;
+  } catch (e) {
+    console.warn('criativo com música recusado, seguindo sem música:', e.message);
+    ctx.musica = false;
+    return graph.post(`/${conn.ad_account_id}/adcreatives`, token, base);
+  }
 }
 
 /**
@@ -447,15 +456,26 @@ async function launchCampaign(storeId, campaignId, { activate }) {
     const adset = await graph.post(`/${conn.ad_account_id}/adsets`, token, adsetParams);
     created.adset = adset.id;
 
-    const creative = await buildCreative({ mode, conn, token, store, campaign: c, vehicles, productSetId: created.productSet });
+    const cctx = { mode, conn, token, store, campaign: c, vehicles, productSetId: created.productSet };
+    const creative = await buildCreative(cctx);
     created.creative = creative.id;
 
-    const ad = await graph.post(`/${conn.ad_account_id}/ads`, token, {
+    const novoAnuncio = () => graph.post(`/${conn.ad_account_id}/ads`, token, {
       name: `${c.name} · anúncio`,
       adset_id: created.adset,
       creative: { creative_id: created.creative },
       status: 'PAUSED',
     });
+    let ad;
+    try { ad = await novoAnuncio(); } catch (e) {
+      if (!cctx.musica) throw e;
+      // Criativo com música aceito, mas o anúncio não: refaz o criativo sem música e tenta de novo.
+      console.warn('anúncio com música recusado, seguindo sem música:', e.message);
+      await graph.del(`/${created.creative}`, token).catch(() => {});
+      cctx.semMusica = true;
+      created.creative = (await buildCreative(cctx)).id;
+      ad = await novoAnuncio();
+    }
     created.ad = ad.id;
 
     run(`UPDATE campaigns SET meta_campaign_id=?, meta_adset_id=?, meta_creative_id=?, meta_ad_id=?, meta_product_set_id=?,
@@ -463,7 +483,7 @@ async function launchCampaign(storeId, campaignId, { activate }) {
       created.campaign, created.adset, created.creative, created.ad, created.productSet || '', c.id);
 
     if (activate) await setCampaignStatus(storeId, c.id, 'ACTIVE');
-    logEvent(storeId, `Campanha "${c.name}" criada na Meta${activate ? ' e ativada' : ' (pausada para revisão)'}`);
+    logEvent(storeId, `Campanha "${c.name}" criada na Meta${activate ? ' e ativada' : ' (pausada para revisão)'}${mode === 'catalogo' ? '' : cctx.musica ? ', com música automática' : ', sem música (a Meta não aceitou neste formato)'}`);
     return get('SELECT * FROM campaigns WHERE id = ?', c.id);
   } catch (err) {
     // Desfaz o que foi criado (apagar a campanha remove conjunto e anúncio).
