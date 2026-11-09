@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "GiroAuto — Marketplace assistido",
   "short_name": "GiroAuto",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "description": "Publica, exclui e republica com um clique os veículos do painel GiroAuto no Facebook Marketplace.",
   "permissions": [
     "storage",

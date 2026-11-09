@@ -2,6 +2,11 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.23.3 — 09/11/2026
+
+- **Republicação:** a extensão podia ficar "ocupada" para sempre quando a aba do Facebook era fechada no meio de uma tarefa ("A extensão está terminando outro anúncio"). O painel agora percebe a tarefa presa (mais de 15 min ou já fora da fila), libera e começa a nova; a tela Republicação mostra o que a extensão está fazendo e tem o botão "Destravar extensão".
+- **Extensão 1.7.1:** ao buscar a próxima tarefa, encerra sozinha a tarefa cuja aba sumiu ou que passou de 30 min.
+
 ## v2.23.2 — 08/11/2026
 
 - **Gerar vídeo:** biblioteca trocada pelas 9 trilhas escolhidas pela loja (Pixabay, uso livre): Hip Hop Rock Beats (padrão), Active Sport, Dirty Rock, Car Advertisement, Car Music, Car Insurance, Car Commercial, Cool Sport Rock Beat e Fast Lane. O trecho pode começar em qualquer ponto da faixa inteira.

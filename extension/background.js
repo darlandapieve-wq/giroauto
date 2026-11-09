@@ -42,7 +42,14 @@ function badge(text, color = '#efa91c') {
 async function poll({ manual = false, returnTabId = null } = {}) {
   const c = await cfg();
   if (!c.token) return { ok: false, reason: 'não pareada' };
-  if (c.current) return { ok: false, reason: 'ocupada' };
+  if (c.current) {
+    // v1.7.1: a aba da tarefa sumiu (fechada com o Chrome dormindo) ou a tarefa passou de 30 min: encerra e segue a fila.
+    const aba = c.current.tabId ? await chrome.tabs.get(c.current.tabId).catch(() => null) : null;
+    if (aba && Date.now() - (c.current.startedAt || 0) < 30 * 60e3) return { ok: false, reason: 'ocupada' };
+    // finish() já chama o próximo poll em 1 s (chamar aqui também poderia pegar duas tarefas ao mesmo tempo)
+    await finish('falhou', { error: aba ? 'A tarefa passou de 30 minutos sem terminar.' : 'A aba do Facebook foi fechada antes de concluir.' });
+    return { ok: false, reason: 'liberada' };
+  }
   if (!manual && c.auto === false) return { ok: false, reason: 'automático desligado' };
   if (c.nextAllowedAt && Date.now() < c.nextAllowedAt) {
     return { ok: false, reason: 'intervalo', wait_ms: c.nextAllowedAt - Date.now() };

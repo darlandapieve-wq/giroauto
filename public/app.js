@@ -152,13 +152,30 @@
   async function extGo(okMsg) {
     const h = await extConnect();
     if (!h) { installModal(); return; }
-    const r = await extSend({ cmd: 'pollNow' }, 8000);
+    let r = await extSend({ cmd: 'pollNow' }, 8000);
+    // v2.23.3: extensão "ocupada" com uma tarefa que já morreu (aba do Facebook fechada sem ela perceber): libera e tenta de novo.
+    if (r?.reason === 'ocupada' && await extDestravarSePreso()) r = await extSend({ cmd: 'pollNow' }, 8000);
     if (r?.ok && r.job) toast(okMsg, 5000);
     else if (r?.reason === 'ocupada') toast('A extensão está terminando outro anúncio. Este entra na fila.', 5000);
     else if (r?.reason === 'intervalo') toast(`Na fila. Para proteger a conta, o próximo anúncio sai em cerca de ${Math.ceil((r.wait_ms || 0) / 60000)} min.`, 6000);
     else if (r?.ok && !r.job) toast('Na fila. Limite diário atingido ou nada pendente.', 5000);
     else toast('Na fila. A extensão vai começar em até 1 minuto.', 5000);
     watchJobs();
+  }
+  // A tarefa que a extensão diz estar fazendo está presa? (mais de 15 min, ou o painel já não a tem em andamento)
+  async function extPresa() {
+    const st = await extSend({ cmd: 'status' }, 4000);
+    const cur = st?.current; if (!cur?.job) return null;
+    await loadJobs().catch(() => {});
+    const viva = S.jobs.some((j) => j.id === cur.job.id && ['pendente', 'em_andamento'].includes(j.status));
+    return { cur, presa: !viva || Date.now() - (cur.startedAt || 0) > 15 * 60e3 };
+  }
+  async function extDestravarSePreso() {
+    const x = await extPresa();
+    if (!x?.presa) return false;
+    await extSend({ cmd: 'cancel' }, 5000);
+    toast(`A extensão estava presa numa tarefa antiga (${x.cur.vehicle?.marca || ''} ${x.cur.vehicle?.modelo || ''}, aba do Facebook fechada). Liberei.`, 7000);
+    return true;
   }
   let jobTimer = null;
   function watchJobs() {
@@ -610,7 +627,7 @@
     </div>
     ${!manualMode() && !S.ext.length ? `<div class="infobox">A extensão ainda não foi pareada. Instale a extensão no Chrome e use o código gerado em <a class="link" href="#config">Configurações</a>.</div>` : ''}
     <div class="panel" style="padding:0;gap:0" ${manualMode() ? 'hidden' : ''}>
-      <div style="padding:16px 16px 6px"><h2>Fila da extensão</h2><p class="note" style="margin-top:4px">A extensão busca tarefas a cada minuto enquanto o Chrome estiver aberto. Ela espera de 3 a 5 minutos entre um anúncio e outro.</p></div>
+      <div style="padding:16px 16px 6px"><h2>Fila da extensão</h2><p class="note" style="margin-top:4px">A extensão busca tarefas a cada minuto enquanto o Chrome estiver aberto. Ela espera de 3 a 5 minutos entre um anúncio e outro.</p><div id="extOcupada"></div></div>
       ${fila.length ? fila.map((j) => `<div class="qrow">
         <div style="min-width:0"><div class="title">${esc(j.marca)} ${esc(j.modelo)}</div><div class="sub">${esc(j.versao)}</div></div>
         <div class="q-bar"><span class="pill ${j.status === 'em_andamento' ? 'p-info' : 'p-muted'}">${j.status === 'em_andamento' ? 'Em andamento' : 'Aguardando'}: ${JOBNAME[j.type]}</span></div>
@@ -1527,6 +1544,16 @@
     if (S.view === 'republicacao') {
       const b = $('#repTodos'); if (b) b.onclick = republicarTodos;
       $$('[data-cancel]').forEach((x) => { x.onclick = async () => { await api('POST', `/api/jobs/${x.dataset.cancel}/cancel`); await loadJobs(); render(); }; });
+      // v2.23.3: mostra o que a extensão está fazendo e deixa destravar (ex.: aba do Facebook fechada no meio)
+      if (!manualMode()) extPresa().then((x) => {
+        const box = $('#extOcupada'); if (!box || !x) return;
+        const desde = new Date(x.cur.startedAt || Date.now()).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        box.innerHTML = `<div class="${x.presa ? 'warnbox' : 'infobox'} conn-row" style="margin-top:8px"><span>A extensão está ${x.presa ? '<b>presa</b> em' : 'fazendo'}: ${esc(JOBNAME[x.cur.job.type] || x.cur.job.type)} do ${esc(`${x.cur.vehicle?.marca || ''} ${x.cur.vehicle?.modelo || ''}`)} desde ${desde}.${x.presa ? ' Provavelmente a aba do Facebook foi fechada.' : ''}</span>
+          <button class="btn sm ${x.presa ? 'primary' : 'ghost'}" type="button" id="extDestravar">Destravar extensão</button></div>`;
+        $('#extDestravar').onclick = () => confirmBox('Destravar a extensão?', 'A tarefa atual é encerrada como cancelada. Depois é só pedir a publicação de novo.', 'Destravar', async () => {
+          await extSend({ cmd: 'cancel' }, 5000); await loadJobs(); toast('Extensão liberada.'); render();
+        });
+      }).catch(() => {});
     }
     if (S.view === 'campanhas') {
       // v2.19.2: saldo da conta de anúncios (carrega depois, sem atrasar a tela)
