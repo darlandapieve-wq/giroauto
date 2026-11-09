@@ -380,7 +380,7 @@ function stats(user, q = {}) {
   const sid = user.storeId;
   const from = /^\d{4}-\d{2}-\d{2}$/.test(q.from || '') ? q.from : new Date(Date.now() - 30 * 864e5 - 3 * 3600e3).toISOString().slice(0, 10);
   const to = /^\d{4}-\d{2}-\d{2}$/.test(q.to || '') ? q.to : new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
-  const leads = all(`SELECT * FROM leads WHERE store_id = ? AND substr(created_at,1,10) BETWEEN ? AND ?`, sid, from, to);
+  const leads = all(`SELECT * FROM leads WHERE store_id = ? AND substr(datetime(created_at, '-3 hours'),1,10) BETWEEN ? AND ?`, sid, from, to);
   const vis = all(`SELECT * FROM lead_visits WHERE store_id = ? AND substr(data_hora,1,10) BETWEEN ? AND ?`, sid, from, to);
   const resp = (ls) => {
     const t = ls.filter((l) => l.primeira_resposta_em).map((l) => (Date.parse(l.primeira_resposta_em.replace(' ', 'T') + 'Z') - Date.parse(l.created_at.replace(' ', 'T') + 'Z')) / 60000).filter((n) => n >= 0);

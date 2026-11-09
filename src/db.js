@@ -179,6 +179,7 @@ addColumn('campaigns', 'genders', "TEXT NOT NULL DEFAULT ''");
 addColumn('campaigns', 'interests_json', "TEXT NOT NULL DEFAULT '[]'");
 addColumn('campaigns', 'placements', "TEXT NOT NULL DEFAULT 'manual'");
 addColumn('campaigns', 'positions_json', "TEXT NOT NULL DEFAULT ''");
+addColumn('campaigns', 'arquivada', 'INTEGER NOT NULL DEFAULT 0'); // v2.22: some do quadro (fica em "Arquivadas")
 addColumn('users', 'is_admin', 'INTEGER NOT NULL DEFAULT 0');
 // Imagens geradas para cada veículo (v1.7): 1 = arte com preço e dados, 2 a 5 = estacionamento (IA).
 db.exec(`CREATE TABLE IF NOT EXISTS arts (

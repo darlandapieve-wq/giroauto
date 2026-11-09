@@ -835,10 +835,16 @@
     <div id="campForm">${S.camp ? campFormHtml() : ''}</div>
     <div class="panel">
       <h2>Campanhas</h2>
-      ${S.campaigns.length ? `<div class="tbl-wrap"><table>
-        <thead><tr><th>Campanha</th><th>Status</th><th class="r">Diário</th><th class="r">Período</th><th class="r">Impressões</th><th class="r">Cliques</th><th class="r">Conversas</th><th class="r">Gasto</th><th></th></tr></thead>
-        <tbody>${S.campaigns.map(campRow).join('')}</tbody></table></div>` : '<div class="empty">Nenhuma campanha criada ainda.</div>'}
+      ${campTable(S.campaigns.filter((c) => !c.arquivada), 'Nenhuma campanha no quadro.')}
+      ${S.campaigns.some((c) => c.arquivada) ? `<details class="camp-arq" ${S.campArqOpen ? 'open' : ''}><summary>Arquivadas (${S.campaigns.filter((c) => c.arquivada).length})</summary>
+        ${campTable(S.campaigns.filter((c) => c.arquivada), '')}</details>` : ''}
     </div>`;
+  }
+  function campTable(list, vazio) {
+    if (!list.length) return vazio ? `<div class="empty">${vazio}</div>` : '';
+    return `<div class="tbl-wrap"><table>
+      <thead><tr><th>Campanha</th><th>Status</th><th>Veiculação</th><th class="r">Diário</th><th class="r">Período</th><th class="r">Impressões</th><th class="r">Cliques</th><th class="r">Conversas</th><th class="r">Gasto</th><th></th></tr></thead>
+      <tbody>${list.map(campRow).join('')}</tbody></table></div>`;
   }
   function campRow(c) {
     const [cls, label] = CSTATUS[c.status] || ['p-muted', c.status];
@@ -847,14 +853,20 @@
     if (c.status === 'pausada') btns.push(`<button class="btn sm" data-camp="activate" data-id="${c.id}" type="button">Ativar</button>`);
     if (['ativa', 'analise'].includes(c.status)) btns.push(`<button class="btn sm" data-camp="pause" data-id="${c.id}" type="button">Pausar</button>`);
     if (['ativa', 'pausada', 'analise', 'reprovada'].includes(c.status)) btns.push(`<button class="btn sm ghost" data-camp="end" data-id="${c.id}" type="button">Encerrar</button>`);
-    if (c.status === 'erro') btns.push(`<button class="btn sm" data-camp="retry" data-id="${c.id}" type="button">Tentar de novo</button><button class="btn sm ghost danger" data-camp="delete" data-id="${c.id}" type="button">Excluir</button>`);
+    if (c.status === 'erro' && !c.arquivada) btns.push(`<button class="btn sm" data-camp="retry" data-id="${c.id}" type="button">Tentar de novo</button>`);
     if (c.ads_manager_url) btns.push(`<a class="link sub" href="${esc(c.ads_manager_url)}" target="_blank" rel="noopener">Gerenciador</a>`);
+    // v2.22: arquivar (sai do quadro) e excluir (apaga o registro e, se existir, a campanha na Meta)
+    btns.push(`<button class="btn sm ghost" data-camp="${c.arquivada ? 'desarquivar' : 'arquivar'}" data-id="${c.id}" type="button">${c.arquivada ? 'Desarquivar' : 'Arquivar'}</button>`);
+    btns.push(`<button class="btn sm ghost danger" data-camp="delete" data-id="${c.id}" type="button">Excluir</button>`);
+    const vc = s.veiculacao || (c.status === 'encerrada' ? { tom: 'muted', label: 'Encerrado' } : c.status === 'erro' ? { tom: 'bad', label: 'Não criada' } : null);
+    const veic = vc ? `<span class="pill p-${vc.tom === 'ok' ? 'ok' : vc.tom === 'bad' ? 'bad' : vc.tom === 'info' ? 'info' : 'muted'}">${esc(vc.label)}</span>${vc.motivo ? `<div class="sub" style="color:var(--bad);max-width:260px">${esc(vc.motivo)}</div>` : ''}${vc.em ? `<div class="sub">${when(vc.em)}</div>` : ''}` : '<span class="sub">—</span>';
     const start = new Date(c.start_time); const end = new Date(c.end_time);
     const fmt = (d) => d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
     return `<tr>
       <td><b>${esc(c.name)}</b><div class="sub">${esc(MODES[c.mode]?.t || c.mode)} · ${esc(c.city_name)} + ${c.radius_km} km · ${c.vehicle_ids.length} veículo${c.vehicle_ids.length === 1 ? '' : 's'}</div>
         ${c.error ? `<div class="sub" style="color:var(--bad)">${esc(c.error)}</div>` : ''}</td>
       <td><span class="pill ${cls}">${label}</span></td>
+      <td>${veic}</td>
       <td class="r">${brl2(c.daily_budget)}</td><td class="r">${fmt(start)}–${fmt(end)}</td>
       <td class="r">${s.impressions != null ? intl(s.impressions) : '—'}</td><td class="r">${s.clicks != null ? intl(s.clicks) : '—'}</td>
       <td class="r">${s.conversations != null ? intl(s.conversations) : '—'}</td><td class="r">${s.spend != null ? brl2(s.spend) : '—'}</td>
@@ -1054,9 +1066,14 @@
     const c = S.campaigns.find((x) => x.id === id);
     const run = async () => {
       if (action === 'delete') await api('DELETE', `/api/campaigns/${id}`);
+      else if (action === 'arquivar' || action === 'desarquivar') { await api('POST', `/api/campaigns/${id}/arquivar`, { arquivar: action === 'arquivar' }); }
       else await api('POST', `/api/campaigns/${id}/${action}`, action === 'retry' ? { activate: true } : undefined);
       await loadCampaigns(); render();
     };
+    const naMeta = !!c.meta_campaign_id;
+    const valendo = naMeta && ['ativa', 'pausada', 'analise', 'reprovada', 'criando'].includes(c.status);
+    if (action === 'delete') return confirmBox('Excluir campanha?', `<b>${esc(c.name)}</b> sai do GiroAuto${naMeta ? ' e é <b>excluída também na Meta</b> (o que já foi gasto continua nos relatórios do Gerenciador de Anúncios)' : ''}. Não dá para desfazer.${valendo ? '<br><br>Ela ainda está valendo na Meta: excluir para a veiculação na hora.' : ''}`, 'Excluir', async () => { await run(); toast('Campanha excluída'); }, true);
+    if (action === 'arquivar') return confirmBox('Arquivar campanha?', `<b>${esc(c.name)}</b> sai do quadro e fica em "Arquivadas", com os números guardados.${valendo ? '<br><br>Ela ainda está valendo: ao arquivar, a campanha é <b>encerrada na Meta</b> e para de veicular.' : ''}`, 'Arquivar', async () => { await run(); toast('Campanha arquivada'); }, valendo);
     if (action === 'end') return confirmBox('Encerrar campanha?', `${esc(c.name)} para de veicular e é arquivada na Meta. Não dá para reativar depois.`, 'Encerrar', run, true);
     if (action === 'activate') return confirmBox('Ativar campanha?', `${esc(c.name)} volta a veicular com ${brl2(c.daily_budget)} por dia.`, 'Ativar', run);
     try { await run(); toast(action === 'pause' ? 'Campanha pausada' : 'Feito'); } catch (e) { toast(e.message, 7000); await loadCampaigns(); render(); }
@@ -1530,6 +1547,14 @@
       const sc = $('#setupCat'); if (sc) sc.onclick = async () => { sc.disabled = true; try { await api('POST', '/api/meta/catalog/setup'); toast('Catálogo criado e sincronizado'); } catch (e) { toast(e.message, 7000); } render(); };
       const sy = $('#syncCat'); if (sy) sy.onclick = async () => { sy.disabled = true; try { await api('POST', '/api/meta/catalog/sync'); toast('Sincronização solicitada à Meta'); } catch (e) { toast(e.message, 7000); } render(); };
       $$('[data-camp]').forEach((b) => { b.onclick = () => campAction(b.dataset.camp, Number(b.dataset.id)); });
+      const arq = $('.camp-arq'); if (arq) arq.ontoggle = () => { S.campArqOpen = arq.open; };
+      // v2.22: veiculação atualizada da Meta em segundo plano (no máximo a cada 3 min), sem atrasar a tela
+      if (!S.campRef || Date.now() - S.campRef > 180e3) {
+        S.campRef = Date.now();
+        if (S.campaigns.some((c) => c.meta_campaign_id && !c.arquivada && !['encerrada', 'erro'].includes(c.status))) {
+          loadCampaigns(true).then(() => { if (S.view === 'campanhas' && !S.camp && !$('#modalRoot').innerHTML) render(); }).catch(() => {});
+        }
+      }
       bindCamp();
     }
     if (S.view === 'config' && $('#sSave')) {

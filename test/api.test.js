@@ -200,8 +200,23 @@ test('conexão com a Meta e campanha no WhatsApp', async () => {
   assert.equal(r.body[0].stats.conversations, 7);
   assert.equal(r.body[0].stats.spend, 31.5);
 
+  assert.match(r.body[0].stats.veiculacao.label, /Programado|Veiculando/, 'v2.22: veiculação do anúncio (começa daqui a 5 min)');
+
   r = await api('POST', `/api/campaigns/${r.body[0].id}/pause`);
   assert.equal(r.body.status, 'pausada');
+
+  // v2.22: arquivar encerra na Meta e tira do quadro; desarquivar volta; excluir apaga aqui e na Meta
+  const cid = r.body.id;
+  mock.calls.length = 0;
+  r = await api('POST', `/api/campaigns/${cid}/arquivar`, { arquivar: true });
+  assert.equal(r.body.arquivada, 1); assert.equal(r.body.status, 'encerrada');
+  assert.ok(mock.calls.some((c) => c.method === 'POST' && c.params.status === 'ARCHIVED'));
+  r = await api('POST', `/api/campaigns/${cid}/arquivar`, { arquivar: false });
+  assert.equal(r.body.arquivada, 0);
+  r = await api('DELETE', `/api/campaigns/${cid}`);
+  assert.equal(r.status, 200);
+  assert.ok(mock.calls.some((c) => c.method === 'DELETE'));
+  assert.ok(!(await api('GET', '/api/campaigns')).body.some((c) => c.id === cid));
 });
 
 test('falha na Meta desfaz o que foi criado', async () => {

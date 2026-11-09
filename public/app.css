@@ -963,3 +963,8 @@ body:has(.form-foot) #vozFab{bottom:86px}
 .saldo-v{display:flex;flex-direction:column;gap:1px}
 .saldo-v b{font-family:var(--f-display);font-size:22px;line-height:1.1}
 .saldo-box .linkbtn{margin-left:auto}
+
+/* v2.22: campanhas arquivadas */
+.camp-arq { margin-top: 12px; }
+.camp-arq > summary { cursor: pointer; color: var(--muted, #6b7280); font-size: 13px; padding: 6px 0; }
+.camp-arq .tbl-wrap { opacity: .85; }

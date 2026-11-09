@@ -506,6 +506,25 @@ const CONVERSATION_ACTIONS = [
   'onsite_conversion.total_messaging_connection',
 ];
 
+// Situação de entrega em português, a partir do effective_status do anúncio (ou da campanha) e dos avisos da Meta.
+const VEIC = {
+  ACTIVE: ['ok', 'Veiculando'], PAUSED: ['muted', 'Desativado'], CAMPAIGN_PAUSED: ['muted', 'Campanha desativada'], ADSET_PAUSED: ['muted', 'Conjunto desativado'],
+  IN_PROCESS: ['info', 'Preparando'], PENDING_REVIEW: ['info', 'Em análise'], PREAPPROVED: ['info', 'Pré-aprovado'], DISAPPROVED: ['bad', 'Reprovado'],
+  WITH_ISSUES: ['bad', 'Com problemas'], PENDING_BILLING_INFO: ['bad', 'Aguardando pagamento'], ARCHIVED: ['muted', 'Encerrado'], DELETED: ['muted', 'Excluído'],
+};
+function veiculacao(campStatus, ad, stats, c) {
+  const st = ad?.effective_status || campStatus || '';
+  let [tom, label] = VEIC[st] || ['muted', st ? st.toLowerCase().replace(/_/g, ' ') : 'Sem informação'];
+  if (st === 'ACTIVE' && c.start_time && Date.parse(c.start_time) > Date.now()) [tom, label] = ['info', 'Programado'];
+  else if (st === 'ACTIVE' && !stats.impressions) [tom, label] = ['info', 'Ativo, ainda sem entrega'];
+  if (c.end_time && Date.parse(c.end_time) < Date.now() && !['ARCHIVED', 'DELETED'].includes(st)) [tom, label] = ['muted', 'Concluído'];
+  const motivos = [
+    ...(ad?.issues_info || []).map((i) => i.error_summary || i.error_message),
+    ...Object.values(ad?.ad_review_feedback?.global || {}),
+  ].filter(Boolean);
+  return { status: st, label, tom, motivo: [...new Set(motivos)].join(' · ').slice(0, 300), em: new Date().toISOString() };
+}
+
 async function refreshStats(storeId, campaignId) {
   const { token } = tokenFor(storeId);
   const c = get('SELECT * FROM campaigns WHERE id = ? AND store_id = ?', campaignId, storeId);
@@ -524,6 +543,9 @@ async function refreshStats(storeId, campaignId) {
     conversations: Number(conv?.value || 0),
   };
   const meta = await graph.get(`/${c.meta_campaign_id}`, token, { fields: 'effective_status' }).catch(() => null);
+  // v2.22: veiculação como o Gerenciador mostra (situação do anúncio + motivo, quando a Meta informa)
+  const ad = c.meta_ad_id ? await graph.get(`/${c.meta_ad_id}`, token, { fields: 'effective_status,issues_info,ad_review_feedback' }).catch(() => null) : null;
+  stats.veiculacao = veiculacao(meta?.effective_status, ad, stats, c);
   let status = c.status;
   if (meta?.effective_status === 'ACTIVE') status = 'ativa';
   else if (meta?.effective_status === 'PAUSED' || meta?.effective_status === 'CAMPAIGN_PAUSED') status = 'pausada';

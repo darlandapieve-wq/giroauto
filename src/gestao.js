@@ -406,7 +406,7 @@ const faixaDe = (d) => FAIXAS.findIndex(([a, b]) => d >= a && d <= b);
 
 function results(storeId, q = {}) {
   const store = get('SELECT * FROM stores WHERE id = ?', storeId);
-  const from = date(q.from) || new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)).toISOString().slice(0, 10);
+  const from = date(q.from) || `${new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 7)}-01`;
   const to = date(q.to) || new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
   const tipo = V.PROPRIEDADE.some((p) => p.key === q.tipo) ? q.tipo : '';
   const origem = ORIGEM_LABEL[q.origem] ? q.origem : '';
@@ -415,7 +415,9 @@ function results(storeId, q = {}) {
   const users = Object.fromEntries(all('SELECT id, name FROM users WHERE store_id = ?', storeId).map((u) => [u.id, u.name]));
   const all_ = all('SELECT * FROM vehicles WHERE store_id = ?', storeId);
   const estoque = all_.filter((v) => v.status !== 'vendido' && v.status !== 'avaliacao' && filtro(v));
-  const soldIn = (v, a, b) => v.status === 'vendido' && v.vendido_em && v.vendido_em.slice(0, 10) >= a && v.vendido_em.slice(0, 10) <= b;
+  // vendido_em é gravado em UTC; o período é em datas de Brasília (venda às 22h ficava no dia seguinte)
+  const diaBr = (s) => new Date(Date.parse(String(s).replace(' ', 'T') + (String(s).endsWith('Z') ? '' : 'Z')) - 3 * 3600e3).toISOString().slice(0, 10);
+  const soldIn = (v, a, b) => v.status === 'vendido' && v.vendido_em && diaBr(v.vendido_em) >= a && diaBr(v.vendido_em) <= b;
   const vendidos = all_.filter((v) => soldIn(v, from, to) && filtro(v) && (!vendedor || v.venda_vendedor_id === vendedor));
   const byId = new Map(all_.map((v) => [v.id, v]));
 
@@ -499,11 +501,11 @@ function results(storeId, q = {}) {
 
   // Últimos 12 meses (gráficos).
   const meses = [];
-  const now = new Date();
+  const now = new Date(Date.now() - 3 * 3600e3);
   for (let i = 11; i >= 0; i--) {
     const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
     const key = d.toISOString().slice(0, 7);
-    const ls = all_.filter((v) => v.status === 'vendido' && filtro(v) && String(v.vendido_em || '').startsWith(key)).map(linha);
+    const ls = all_.filter((v) => v.status === 'vendido' && filtro(v) && v.vendido_em && diaBr(v.vendido_em).startsWith(key)).map(linha);
     const lr = all_.filter((v) => v.status === 'vendido' && filtro(v) && String(realizadoEm(v, byId) || '').startsWith(key)).map(linha);
     const dsp = get('SELECT COALESCE(SUM(valor),0) s FROM store_expenses WHERE store_id = ? AND substr(data,1,7) = ?', storeId, key).s;
     meses.push({ mes: key, vendidos: ls.length, faturamento: sum(ls, 'venda'), lucro: sum(lr, 'liquido'), despesas: dsp, dias_medio: avg(ls, 'dias') });

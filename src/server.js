@@ -921,7 +921,7 @@ function campaignOut(c) {
 app.get('/api/campaigns', auth.requireUser, wrap(async (req, res) => {
   const list = all('SELECT * FROM campaigns WHERE store_id = ? ORDER BY id DESC', req.user.storeId);
   if (req.query.refresh) {
-    for (const c of list.filter((x) => x.meta_campaign_id && !['encerrada', 'erro'].includes(x.status))) {
+    for (const c of list.filter((x) => x.meta_campaign_id && !x.arquivada && !['encerrada', 'erro'].includes(x.status))) {
       await meta.refreshStats(req.user.storeId, c.id).catch((e) => console.warn('insights', c.id, e.message));
     }
   }
@@ -1022,13 +1022,34 @@ for (const [action, status] of [['activate', 'ACTIVE'], ['pause', 'PAUSED'], ['e
   }));
 }
 
-app.delete('/api/campaigns/:id', team.can('campanhas'), (req, res) => {
+// v2.22: arquivar tira a campanha do quadro (e encerra na Meta se ainda estiver valendo); dá para desarquivar.
+app.post('/api/campaigns/:id/arquivar', team.can('campanhas'), wrap(async (req, res) => {
   const c = get('SELECT * FROM campaigns WHERE id = ? AND store_id = ?', Number(req.params.id), req.user.storeId);
   if (!c) throw fail(404, 'Campanha não encontrada.');
-  if (c.meta_campaign_id) throw fail(409, 'Esta campanha existe na Meta. Use Encerrar.');
+  const arquivar = req.body?.arquivar !== false;
+  if (arquivar && c.meta_campaign_id && ['ativa', 'pausada', 'analise', 'reprovada', 'criando'].includes(c.status)) {
+    await meta.setCampaignStatus(req.user.storeId, c.id, 'ARCHIVED');
+  }
+  run('UPDATE campaigns SET arquivada = ? WHERE id = ?', arquivar ? 1 : 0, c.id);
+  logEvent(req.user.storeId, `Campanha "${c.name}" ${arquivar ? 'arquivada' : 'voltou para o quadro'}`);
+  res.json(campaignOut(get('SELECT * FROM campaigns WHERE id = ?', c.id)));
+}));
+
+// Excluir: apaga o registro no GiroAuto e, se a campanha existe na Meta, exclui lá também (os gastos continuam nos relatórios da Meta).
+app.delete('/api/campaigns/:id', team.can('campanhas'), wrap(async (req, res) => {
+  const c = get('SELECT * FROM campaigns WHERE id = ? AND store_id = ?', Number(req.params.id), req.user.storeId);
+  if (!c) throw fail(404, 'Campanha não encontrada.');
+  if (c.meta_campaign_id) {
+    const { token } = meta.tokenFor(req.user.storeId);
+    await require('./meta/graph').del(`/${c.meta_campaign_id}`, token).catch((e) => {
+      // Já apagada na Meta (ou de outra conta): segue apagando só aqui.
+      if (!/does not exist|não existe|cannot be loaded|Unsupported delete request/i.test(e.message) && e.code !== 100) throw e;
+    });
+  }
   run('DELETE FROM campaigns WHERE id = ?', c.id);
+  logEvent(req.user.storeId, `Campanha "${c.name}" excluída${c.meta_campaign_id ? ' (também na Meta)' : ''}`);
   res.json({ ok: true });
-});
+}));
 
 /* ------------------------------------------------------------------ */
 /* Erros                                                              */

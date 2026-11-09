@@ -2,6 +2,12 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.22.0 — 08/11/2026
+
+- **Campanhas:** nova coluna "Veiculação" no quadro, com a situação do anúncio como a Meta informa (Veiculando, Preparando, Em análise, Reprovado, Com problemas, Aguardando pagamento, Programado, Concluído…) e o motivo quando houver. Atualiza sozinha ao abrir a tela (no máximo a cada 3 min) e em "Atualizar métricas".
+- **Arquivar** tira a campanha do quadro (fica em "Arquivadas", com os números) e, se ainda estiver valendo, encerra na Meta. **Excluir** apaga o registro no GiroAuto e a campanha na Meta.
+- **Resultados e relatório do CRM:** vendas e leads registrados entre 21h e meia-noite apareciam no dia (e, no fim do mês, no mês) seguinte, porque a data era comparada em UTC. Agora tudo usa a data de Brasília.
+
 ## v2.21.0 — 08/11/2026
 
 - **Comando de voz em todo o sistema:** além de local, preparação, preço/oferta e contas, agora entende:
