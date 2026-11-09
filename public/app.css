@@ -983,3 +983,6 @@ body:has(.form-foot) #vozFab{bottom:86px}
 .vd-prog { height: 10px; background: var(--line, #e5e7eb); border-radius: 5px; overflow: hidden; margin-top: 10px; }
 .vd-prog > div { height: 100%; background: #e3b341; transition: width .5s; }
 .vd-video { width: 100%; max-width: 320px; aspect-ratio: 9/16; display: block; margin: 10px auto 0; border-radius: 10px; background: #000; }
+.vd-rec { border: 1px solid var(--line, #e5e7eb); border-radius: 10px; padding: 8px 10px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 6px; }
+.vd-rec-i { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.vd-rec-i .sub { flex: 1; }

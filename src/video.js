@@ -13,12 +13,17 @@ const storage = require('./storage');
 const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg';
 const W = 1080, H = 1920;            // telas montadas em alta e o vídeo sai em 720x1280 (leve para o Render e bom para Reels/Status)
 const OUT_W = 720, OUT_H = 1280, FPS = 30, DUR = 15, X = 0.35;
+// v2.23.2: trilhas escolhidas pela loja (Pixabay, licença de uso livre). A primeira é a padrão.
 const MUSICAS = [
-  { id: 'energia', nome: 'Energia', desc: 'Eletrônica animada' },
-  { id: 'pop', nome: 'Pop', desc: 'Leve e alegre' },
-  { id: 'rock', nome: 'Rock', desc: 'Guitarra e bateria' },
-  { id: 'chill', nome: 'Chill', desc: 'Calma, para carros premium' },
-  { id: 'epico', nome: 'Épico', desc: 'Cinematográfica' },
+  { id: 'hiphop-rock', nome: 'Hip Hop Rock Beats', desc: 'Chime (QubeSounds)', dur: 79.9 },
+  { id: 'active-sport', nome: 'Active Sport', desc: 'TimCat', dur: 160 },
+  { id: 'dirty-rock', nome: 'Dirty Rock', desc: 'Kulakovka', dur: 81.2 },
+  { id: 'car-advertisement', nome: 'Car Advertisement', desc: 'Tunetank', dur: 82.1 },
+  { id: 'car-music', nome: 'Car Music', desc: 'Jonas Blakewood', dur: 202.9 },
+  { id: 'car-insurance', nome: 'Car Insurance', desc: 'Jonas Blakewood', dur: 111.1 },
+  { id: 'car-commercial', nome: 'Car Commercial', desc: 'AtlasAudio', dur: 168 },
+  { id: 'cool-sport-rock', nome: 'Cool Sport Rock Beat', desc: 'Wavelength (QubeSounds)', dur: 109.3 },
+  { id: 'fast-lane', nome: 'Fast Lane', desc: 'RenilsonB', dur: 146.6 },
 ];
 const musicaPadrao = (id) => path.join(__dirname, '..', 'assets', 'musicas', `${id}.m4a`);
 const httpError = (status, message) => Object.assign(new Error(message), { status });
@@ -35,7 +40,7 @@ function gravarMusicas(storeId, lista) {
   run(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`, `video_musicas_${storeId}`, JSON.stringify(lista.slice(0, 30)));
 }
 function biblioteca(storeId) {
-  return { padrao: MUSICAS.map((m) => ({ ...m, url: `/musicas/${m.id}.m4a` })), loja: musicasDaLoja(storeId).map((m) => ({ ...m, url: `/media/${m.file}` })) };
+  return { padrao: MUSICAS.map((m) => ({ ...m, url: `/musicas/${m.id}.m4a` })), loja: musicasDaLoja(storeId).map((m) => ({ dur: 30, ...m, url: `/media/${m.file}` })) };
 }
 async function removerMusica(storeId, file) {
   const lista = musicasDaLoja(storeId);
@@ -175,7 +180,7 @@ function gerar(user, vehicleId, b = {}, upload = null) {
   let audio;
   if (m.tipo === 'upload') { if (!upload?.path) throw httpError(400, 'Envie o arquivo da música.'); audio = { arquivo: upload.path, inicio: Math.max(0, Number(m.inicio) || 0) }; }
   else if (m.tipo === 'loja') { const x = musicasDaLoja(user.storeId).find((y) => y.file === m.file); if (!x) throw httpError(404, 'Música da loja não encontrada.'); audio = { media: x.file, inicio: Math.max(0, Number(m.inicio) || 0) }; }
-  else { const x = MUSICAS.find((y) => y.id === m.id) || MUSICAS[0]; audio = { arquivo: musicaPadrao(x.id), inicio: Math.max(0, Math.min(15, Number(m.inicio) || 0)) }; }
+  else { const x = MUSICAS.find((y) => y.id === m.id) || MUSICAS[0]; audio = { arquivo: musicaPadrao(x.id), inicio: Math.max(0, Math.min(x.dur - DUR, Number(m.inicio) || 0)) }; }
   limparAntigos();
   const id = crypto.randomBytes(8).toString('hex');
   const job = { id, storeId: user.storeId, vehicleId: v.id, status: 'na_fila', progresso: 0, etapa: 'Na fila', erro: '', criado: Date.now(), arquivo: null, nome: `${[v.marca, v.modelo, v.ano_modelo].filter(Boolean).join('-')}`.toLowerCase().normalize('NFD').replace(/[^a-z0-9-]+/g, '-') };
@@ -257,6 +262,12 @@ function situacao(user, id) {
   if (!j || j.storeId !== user.storeId) throw httpError(404, 'Vídeo não encontrado (o servidor pode ter reiniciado). Gere de novo.');
   return { ...publico(j), posicao: j.status === 'na_fila' ? [...jobs.values()].filter((x) => x.status === 'na_fila' && x.criado < j.criado).length + 1 : 0 };
 }
+// Vídeos do carro gerados nas últimas horas (os que estão na fila, gerando, prontos ou com erro).
+function doCarro(user, vehicleId) {
+  return [...jobs.values()].filter((j) => j.storeId === user.storeId && j.vehicleId === Number(vehicleId))
+    .filter((j) => j.status !== 'pronto' || (j.arquivo && fs.existsSync(j.arquivo)))
+    .sort((a, b) => b.criado - a.criado).slice(0, 6).map((j) => ({ ...publico(j), criado: new Date(j.criado).toISOString() }));
+}
 function arquivo(user, id) {
   const j = jobs.get(String(id));
   if (!j || j.storeId !== user.storeId || !j.arquivo || !fs.existsSync(j.arquivo)) throw httpError(404, 'Vídeo não encontrado. Gere de novo.');
@@ -282,6 +293,7 @@ function register(app, { team, wrap }) {
     if (req.file && !/^audio\/|video\/mp4|application\/octet-stream/.test(req.file.mimetype)) { fs.rm(req.file.path, () => {}); throw httpError(400, 'Envie um arquivo de áudio (MP3, M4A, WAV…).'); }
     res.status(202).json(gerar(req.user, req.params.id, b, req.file ? { path: req.file.path, originalname: req.file.originalname } : null));
   });
+  app.get('/api/vehicles/:id/videos', team.can('publicar'), (req, res) => res.json(doCarro(req.user, req.params.id)));
   app.get('/api/videos/:job', team.can('publicar'), (req, res) => res.json(situacao(req.user, req.params.job)));
   app.get('/api/videos/:job/arquivo', team.can('publicar'), (req, res) => {
     const a = arquivo(req.user, req.params.job);
@@ -291,4 +303,4 @@ function register(app, { team, wrap }) {
   app.delete('/api/videos/musicas/:file', team.can('publicar'), wrap(async (req, res) => { await removerMusica(req.user.storeId, req.params.file); res.json(biblioteca(req.user.storeId)); }));
 }
 
-module.exports = { register, gerar, situacao, arquivo, padrao, biblioteca, MUSICAS };
+module.exports = { register, gerar, situacao, arquivo, doCarro, padrao, biblioteca, MUSICAS };

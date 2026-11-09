@@ -567,10 +567,11 @@
     const M = { tipo: 'padrao', id: d.padrao[0].id, file: '', inicio: 0, dur: 30, arquivo: null, url: d.padrao[0].url };
     const ouvir = new Audio(); let parar = null;
     const tocar = (url, ini = 0, seg = 15) => { clearTimeout(parar); try { ouvir.pause(); if (ouvir.src !== new URL(url, location.href).href) ouvir.src = url; ouvir.currentTime = ini; ouvir.play(); parar = setTimeout(() => ouvir.pause(), seg * 1000); } catch { /* sem áudio */ } };
-    const musicaItem = (m, tipo) => `<label class="vd-mus"><input type="radio" name="vd-m" value="${tipo}:${esc(tipo === 'padrao' ? m.id : m.file)}" data-url="${esc(m.url)}" ${tipo === 'padrao' && m.id === M.id ? 'checked' : ''}>
+    const musicaItem = (m, tipo) => `<label class="vd-mus"><input type="radio" name="vd-m" value="${tipo}:${esc(tipo === 'padrao' ? m.id : m.file)}" data-url="${esc(m.url)}" data-dur="${m.dur || 30}" ${tipo === 'padrao' && m.id === M.id ? 'checked' : ''}>
       <span><b>${esc(m.nome)}</b>${m.desc ? ` <span class="sub">${esc(m.desc)}</span>` : ''}</span>
       <button class="btn sm ghost" type="button" data-vdplay="${esc(m.url)}" title="Ouvir">▶</button>${tipo === 'loja' ? `<button class="btn sm ghost danger" type="button" data-vddel="${esc(m.file)}" title="Tirar da biblioteca">✕</button>` : ''}</label>`;
     modal(`<div id="vdBox"><h3>🎬 Vídeo do ${esc([v.marca, v.modelo, v.ano_modelo].filter(Boolean).join(' '))}</h3>
+      <div id="vd-recentes"></div>
       <p class="sub" style="margin:0 0 10px">15 segundos, vertical (Reels, Stories e Status do WhatsApp). Marque as fotos (2 a 8, na ordem do anúncio) e ajuste as legendas.</p>
       <div class="vd-fotos">${d.fotos.map((f, i) => `<label class="vd-foto"><input type="checkbox" data-vdf="${i}" ${i < 6 ? 'checked' : ''}><img src="${esc(f.url)}?w=200" alt=""><input type="text" data-vdl="${i}" value="${esc(f.legenda)}" maxlength="40" placeholder="Legenda (opcional)"></label>`).join('')}</div>
       <div class="fields" style="margin-top:10px">
@@ -583,7 +584,7 @@
         <label class="vd-mus"><input type="radio" name="vd-m" value="upload"><span><b>Enviar uma música</b> <span class="sub">MP3, M4A ou WAV, até 25 MB</span></span></label></div>
       <div id="vd-up" hidden style="margin:8px 0">
         <input type="file" id="vd-arq" accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg">
-        <div class="sub" style="margin-top:4px">Músicas comerciais podem ser silenciadas ou bloqueadas pelo Instagram e pelo Facebook (direitos autorais). As da biblioteca do GiroAuto são próprias e liberadas.</div>
+        <div class="sub" style="margin-top:4px">Músicas comerciais podem ser silenciadas ou bloqueadas pelo Instagram e pelo Facebook (direitos autorais). As da biblioteca do GiroAuto são de uso livre.</div>
         <label class="chip" style="margin-top:6px"><input type="checkbox" id="vd-salvar" checked> Guardar o trecho na biblioteca da loja</label>
         <input id="vd-nome" placeholder="Nome da música (para a biblioteca)" maxlength="60" style="margin-top:6px">
       </div>
@@ -600,8 +601,8 @@
     $$('[data-vddel]').forEach((b) => { b.onclick = (e) => { e.preventDefault(); confirmBox('Tirar a música da biblioteca?', 'Os vídeos já gerados não mudam.', 'Tirar', async () => { await api('DELETE', `/api/videos/musicas/${b.dataset.vddel}`); b.closest('.vd-mus').remove(); }, true); }; });
     $$('[name="vd-m"]').forEach((r) => { r.onchange = () => {
       const [tipo, val] = r.value.split(':'); M.tipo = tipo; $('#vd-up').hidden = tipo !== 'upload';
-      if (tipo === 'padrao') { M.id = val; M.url = r.dataset.url; ajustaTrecho(30); }
-      if (tipo === 'loja') { M.file = val; M.url = r.dataset.url; ajustaTrecho(30); }
+      if (tipo === 'padrao') { M.id = val; M.url = r.dataset.url; ajustaTrecho(Number(r.dataset.dur) || 30); }
+      if (tipo === 'loja') { M.file = val; M.url = r.dataset.url; ajustaTrecho(Number(r.dataset.dur) || 30); }
       if (tipo === 'upload') { M.url = M.arquivo ? URL.createObjectURL(M.arquivo) : ''; }
     }; });
     $('#vd-arq').onchange = () => {
@@ -628,7 +629,7 @@
       res.innerHTML = barra(job);
       for (;;) {
         await new Promise((r) => setTimeout(r, 2500));
-        if (!$('#vd-res')) { toast('O vídeo continua sendo gerado.'); return; }
+        if (!$('#vd-res')) { toast('O vídeo continua sendo gerado. Aviso quando ficar pronto.'); videoVigiar(job.id, v); return; }
         let s; try { s = await api('GET', `/api/videos/${job.id}`); } catch (e) { res.innerHTML = `<div class="err">${esc(e.message)}</div>`; break; }
         if (s.status === 'erro') { res.innerHTML = `<div class="err">${esc(s.erro)}</div>`; break; }
         if (s.status !== 'pronto') { res.innerHTML = barra(s); continue; }
@@ -643,6 +644,24 @@
       }
       if ($('#vd-go')) $('#vd-go').disabled = false;
     };
+    ajustaTrecho(d.padrao[0].dur || 30);
+    // v2.23.2: vídeos deste carro gerados nas últimas horas (para achar depois de fechar a janela)
+    api('GET', `/api/vehicles/${v.id}/videos`).then((lista) => {
+      if (!lista.length || !$('#vd-recentes')) return;
+      $('#vd-recentes').innerHTML = `<div class="vd-rec"><b>Vídeos deste carro</b>${lista.map((x) => `<div class="vd-rec-i"><span>${new Date(x.criado).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+        <span class="sub">${x.status === 'pronto' ? 'Pronto' : x.status === 'erro' ? `Erro: ${esc(x.erro)}` : `${esc(x.etapa)} · ${x.progresso}%`}</span>
+        ${x.url ? `<a class="btn sm" href="${esc(x.url)}" target="_blank" rel="noopener">Ver</a><a class="btn sm primary" href="${esc(x.url)}?baixar=1" download>Baixar</a>` : ''}</div>`).join('')}
+        <div class="sub">Os vídeos ficam disponíveis por 6 horas (ou até o servidor reiniciar).</div></div>`;
+    }).catch(() => {});
+  }
+  // Janela fechada com o vídeo em andamento: acompanha em segundo plano e avisa quando ficar pronto.
+  async function videoVigiar(id, v) {
+    for (let i = 0; i < 240; i++) {
+      await new Promise((r) => setTimeout(r, 5000));
+      let s; try { s = await api('GET', `/api/videos/${id}`); } catch { return; }
+      if (s.status === 'erro') return toast(`Vídeo do ${v.modelo}: ${s.erro}`, 9000);
+      if (s.status === 'pronto') return toast(`🎬 Vídeo do ${v.marca} ${v.modelo} pronto: menu ⋯ do carro > Gerar vídeo > Vídeos deste carro.`, 12000);
+    }
   }
 
   function qrModal(v) {

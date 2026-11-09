@@ -34,13 +34,13 @@ test('padrão: WhatsApp das campanhas, fotos e músicas da biblioteca', async ()
   assert.equal(p.whatsapp, '5544920058494', 'usa o WhatsApp das campanhas (oficial), não o da loja');
   assert.equal(p.fotos.length, 3);
   assert.equal(p.fotos[0].legenda, 'Preto · Automático');
-  assert.equal(p.padrao.length, 5);
+  assert.equal(p.padrao.length, 9); assert.equal(p.padrao[0].id, 'hiphop-rock', 'Hip Hop Rock Beats é a padrão');
   assert.ok(p.padrao.every((m) => fs.existsSync(path.join(__dirname, '..', 'assets', 'musicas', `${m.id}.m4a`))));
 });
 
 test('gera o vídeo de 15 s, vertical, com áudio', { skip: !temFF && 'FFmpeg não instalado' }, async () => {
   const fotos = [0, 1, 2].map((i) => ({ file: `${String(i).repeat(32)}.jpg`, legenda: ['Preto · Automático', 'Teto solar', ''][i] }));
-  const j = VID.gerar(user, 6, { fotos, whatsapp: '5544920058494', titulo: 'VW JETTA HIGHLINE', sub: '2012/2013', musica: { tipo: 'padrao', id: 'rock', inicio: 5 } });
+  const j = VID.gerar(user, 6, { fotos, whatsapp: '5544920058494', titulo: 'VW JETTA HIGHLINE', sub: '2012/2013', musica: { tipo: 'padrao', id: 'car-music', inicio: 40 } });
   let s;
   for (let i = 0; i < 240; i++) { s = VID.situacao(user, j.id); if (['pronto', 'erro'].includes(s.status)) break; await new Promise((r) => setTimeout(r, 500)); }
   assert.equal(s.status, 'pronto', s.erro);
@@ -52,6 +52,8 @@ test('gera o vídeo de 15 s, vertical, com áudio', { skip: !temFF && 'FFmpeg n�
   assert.deepEqual([vid.width, vid.height], [720, 1280]);
   assert.ok(info.streams.some((x) => x.codec_type === 'audio'));
   assert.throws(() => VID.situacao({ ...user, storeId: 2 }, j.id), /não encontrado/, 'outra loja não vê o vídeo');
+  assert.equal(VID.doCarro(user, 6)[0].status, 'pronto', 'aparece em Vídeos deste carro');
+  assert.equal(VID.doCarro({ ...user, storeId: 2 }, 6).length, 0);
 });
 
 test('menos de 2 fotos não gera', () => {

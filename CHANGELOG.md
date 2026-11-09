@@ -2,6 +2,11 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.23.2 — 08/11/2026
+
+- **Gerar vídeo:** biblioteca trocada pelas 9 trilhas escolhidas pela loja (Pixabay, uso livre): Hip Hop Rock Beats (padrão), Active Sport, Dirty Rock, Car Advertisement, Car Music, Car Insurance, Car Commercial, Cool Sport Rock Beat e Fast Lane. O trecho pode começar em qualquer ponto da faixa inteira.
+- "Vídeos deste carro" na janela do vídeo (os gerados nas últimas horas, para ver e baixar depois) e aviso quando um vídeo termina com a janela fechada.
+
 ## v2.23.0 — 08/11/2026
 
 - **Gerar vídeo do carro** (menu ⋯ do carro > "🎬 Gerar vídeo"): vídeo de 15 s, vertical 720x1280 (Reels, Stories e Status), com as fotos escolhidas (2 a 8), legendas editáveis, título, cartão final com logo, preço (de/por na oferta), WhatsApp e cidade.
