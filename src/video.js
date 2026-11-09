@@ -66,6 +66,12 @@ function pilula(ctx, texto, y, cor) {
   ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(texto, W / 2, y + 55);
 }
 
+// Monta em 1080x1920 e grava em 810x1440: o FFmpeg trabalha com quadros menores (memória do Render) e o vídeo sai em 720x1280.
+async function salvarTela(img, destino) {
+  const buf = await img.jpeg({ quality: 95 }).toBuffer();
+  await require('sharp')(buf).resize(810, 1440).jpeg({ quality: 90 }).toFile(destino);
+}
+
 async function telaFoto(arquivo, { titulo, sub, legenda }, destino) {
   const sharp = require('sharp');
   const fundo = await sharp(arquivo).rotate().resize(W, H, { fit: 'cover' }).blur(40).modulate({ brightness: 0.45 }).toBuffer();
@@ -79,7 +85,7 @@ async function telaFoto(arquivo, { titulo, sub, legenda }, destino) {
     if (sub) { ctx.fillStyle = '#f5b301'; ctx.font = caber(ctx, sub, 'GV Semi', 52, W - 120); ctx.fillText(sub, W / 2, 310); }
   }
   if (legenda) pilula(ctx, legenda, 1570, '#d71920');
-  await sharp(fundo).composite([{ input: foto, top: 340, left: 0 }, { input: await c.encode('png'), top: 0, left: 0 }]).jpeg({ quality: 90 }).toFile(destino);
+  await salvarTela(sharp(fundo).composite([{ input: foto, top: 340, left: 0 }, { input: await c.encode('png'), top: 0, left: 0 }]), destino);
 }
 
 async function telaFinal(store, v, { whatsapp, fundo: fotoFundo }, destino) {
@@ -110,7 +116,7 @@ async function telaFinal(store, v, { whatsapp, fundo: fotoFundo }, destino) {
   const cidade = [store.city, store.state].filter(Boolean).join(' · ');
   if (cidade) { ctx.fillStyle = '#fff'; ctx.font = '48px "GV Semi"'; ctx.fillText(cidade, W / 2, y + 340); }
   camadas.push({ input: await c.encode('png'), top: 0, left: 0 });
-  await sharp({ create: { width: W, height: H, channels: 3, background: '#000' } }).composite(camadas).jpeg({ quality: 90 }).toFile(destino);
+  await salvarTela(sharp({ create: { width: W, height: H, channels: 3, background: '#000' } }).composite(camadas), destino);
 }
 
 // Legendas sugeridas: cor e câmbio na primeira foto; destaques do carro nas seguintes.
@@ -231,7 +237,7 @@ async function montar(user, v, job, b, audio, upload) {
     f.push(`[${telas.length}:a]aformat=channel_layouts=stereo,apad,afade=t=in:d=0.3,afade=t=out:st=${DUR - 1.4}:d=1.4[a]`);
     const saida = path.join(dir, 'video.mp4');
     args.push('-filter_complex', f.join(';'), '-map', `[${prev}]`, '-map', '[a]', '-t', String(DUR),
-      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '22', '-pix_fmt', 'yuv420p', '-r', String(FPS), '-threads', '2',
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '22', '-pix_fmt', 'yuv420p', '-r', String(FPS), '-threads', '1', '-filter_complex_threads', '1',
       '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', saida);
     await ffmpeg(args, { duracao: DUR, aoProgresso: (p) => { job.progresso = 0.2 + p * 0.8; } });
     job.arquivo = saida; job.status = 'pronto'; job.progresso = 1; job.etapa = 'Pronto';
