@@ -24,5 +24,20 @@ services:
         sync: false
       - key: META_API_VERSION
         value: v25.0
+      # v2.24: Repasse no mesmo serviço (ver CLAUDE.md > "Serviço único")
+      - key: REPASSE_INTERNO
+        value: "1"
+      - key: KEEPALIVE_JANELA
+        value: "06:30-22:30"
+      - key: REPASSE_DATABASE_URL
+        sync: false
+      - key: REPASSE_ADMIN_SENHA
+        sync: false
+      - key: REPASSE_ANTHROPIC_API_KEY
+        sync: false
+      - key: REPASSE_TZ_LOCAL
+        sync: false
+      - key: GIRO_SSO_SEGREDO
+        sync: false
       # PUBLIC_URL é detectado automaticamente (RENDER_EXTERNAL_URL).
       # Ao usar domínio próprio, defina PUBLIC_URL=https://painel.seudominio.com.br

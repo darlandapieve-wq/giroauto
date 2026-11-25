@@ -1,0 +1,22 @@
+# Acorda o GiroAuto no começo do dia (v2.24).
+# Fora da janela de horário (src/acordado.js, padrão 06:30–22:30 de Brasília) o serviço dorme para economizar
+# as 750 h grátis do Render. Este agendamento faz o primeiro acesso do dia, e o próprio serviço se mantém
+# acordado dali em diante. O GitHub pode atrasar agendamentos em alguns minutos; por isso há dois horários.
+name: Acordar o GiroAuto
+on:
+  schedule:
+    - cron: '25 9 * * *'   # 06:25 em Brasília (UTC-3, sem horário de verão)
+    - cron: '45 9 * * *'   # 06:45, caso o primeiro atrase ou falhe
+  workflow_dispatch: {}
+jobs:
+  acordar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Acessa /health até responder
+        run: |
+          for i in 1 2 3 4 5 6; do
+            if curl -fsS --max-time 90 https://giroauto.onrender.com/health; then echo; echo "Acordado."; exit 0; fi
+            echo "Ainda ligando (tentativa $i)…"; sleep 30
+          done
+          echo "Não respondeu."; exit 1

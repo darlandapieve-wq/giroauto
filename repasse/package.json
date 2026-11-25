@@ -1,0 +1,27 @@
+{
+  "name": "giroauto-repasse",
+  "version": "0.9.3",
+  "description": "Retransmissor de anúncios de veículos entre grupos do WhatsApp",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/server.js",
+    "demo": "node src/server.js --demo",
+    "test": "node test/teste-parser.js && node test/teste-ia.js && node test/teste-envio.js && node test/teste-periodo.js && node test/teste-recorte.js && node test/teste-contas.js && node test/teste-assistente.js && node test/teste-atrasadas.js && node test/teste-placa.js && node test/teste-trava.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@electric-sql/pglite": "^0.5.11",
+    "baileys": "^7.0.0-rc14",
+    "express": "^5.3.0",
+    "pg": "^8.23.1",
+    "pino": "^10.4.0",
+    "qrcode": "^1.5.4",
+    "sharp": "^0.35.5"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  }
+}

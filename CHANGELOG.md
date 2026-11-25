@@ -2,6 +2,11 @@
 
 A versão em uso aparece no rodapé do menu lateral do painel e em `/health`.
 
+## v2.24.0 — 25/11/2026
+
+- **Repasse no mesmo serviço do Render.** Em 24/11 a cota grátis de 750 h acabou e os dois serviços foram suspensos: o Repasse ficava acordado 24 h (~744 h/mês sozinho) e a Loja gastava o resto. Agora o Repasse roda dentro do serviço "giroauto", como processo separado na porta interna 10001 (`src/repasse-processo.js`, código em `repasse/`), e a Loja fala com ele pelo mesmo proxy `/repasse`. Liga com `REPASSE_INTERNO=1`; as variáveis do Repasse entram com o prefixo `REPASSE_` (ex.: `REPASSE_DATABASE_URL`).
+- **Acordado só no horário útil.** O serviço se mantém acordado das 06:30 às 22:30 (Brasília) com um acesso a cada 10 min (`src/acordado.js`, `KEEPALIVE_JANELA`) e dorme de madrugada. Os envios do Repasse já eram só das 07:00 às 22:00, e as mensagens dos grupos que chegam de madrugada são processadas como "atrasadas" ao acordar. Às 06:25 e 06:45 o GitHub Actions acorda o serviço (`.github/workflows/acordar.yml`). Estimativa: ~500 h/mês no lugar de ~930 h.
+
 ## v2.23.3 — 09/11/2026
 
 - **Republicação:** a extensão podia ficar "ocupada" para sempre quando a aba do Facebook era fechada no meio de uma tarefa ("A extensão está terminando outro anúncio"). O painel agora percebe a tarefa presa (mais de 15 min ou já fora da fila), libera e começa a nova; a tela Republicação mostra o que a extensão está fazendo e tem o botão "Destravar extensão".

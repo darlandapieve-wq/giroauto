@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0f7a4a">
+<title>Entrar · GiroAuto Repasse</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="tela-login">
+<form id="f" class="card login">
+  <div class="marca">GiroAuto <b>Repasse</b></div>
+  <label class="campo">E-mail <input type="text" id="email" autocomplete="username" inputmode="email" autofocus placeholder="seu@email.com"></label>
+  <label class="campo">Senha <input type="password" id="senha" autocomplete="current-password" required></label>
+  <button>Entrar</button>
+  <p id="erro" class="motivo"></p>
+  <p class="dica">Acesso criado pelo administrador. Esqueceu a senha? Peça uma nova a ele.</p>
+</form>
+<script>
+document.getElementById('f').onsubmit = async (e) => {
+  e.preventDefault()
+  const r = await fetch('api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: document.getElementById('email').value, senha: document.getElementById('senha').value }) })
+  if (r.ok) location.href = (await r.json()).trocarSenha ? './#minhaconta' : './'
+  else document.getElementById('erro').textContent = (await r.json()).erro || 'Erro'
+}
+</script>
+</body>
+</html>

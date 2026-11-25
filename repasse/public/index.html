@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f7a4a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.json">
+<title>GiroAuto Repasse</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="marca">GiroAuto <b>Repasse</b></div>
+  <select id="selConta" class="mini" hidden title="Conta que você está operando"></select>
+  <span id="contaNome" class="dica" hidden></span>
+  <div id="conexao" class="pill">…</div>
+  <button id="btnMinhaConta" class="sec mini" title="Minha conta">Conta</button>
+  <button id="btnPausar" class="sec mini">Pausar</button>
+  <button id="btnSairLogin" class="sec mini" title="Sair do painel">Sair</button>
+</header>
+
+<nav id="abas">
+  <button data-aba="repassadores" id="abaRepassadores" hidden>Repassadores</button>
+  <button data-aba="painel" class="ativa">Painel</button>
+  <button data-aba="fila">Fila <span id="badgeFila" class="badge"></span></button>
+  <button data-aba="circulando">Em circulação</button>
+  <button data-aba="grupos">Grupos</button>
+  <button data-aba="clientes">Clientes <span id="badgeLeads" class="badge"></span></button>
+  <button data-aba="contatos">Anunciantes</button>
+  <button data-aba="relatorios">Relatórios</button>
+  <button data-aba="parametros">Parâmetros</button>
+  <button data-aba="modelo">Modelo</button>
+  <button data-aba="simulador">Simulador</button>
+</nav>
+
+<main>
+  <!-- REPASSADORES (só desenvolvedor) -->
+  <section id="repassadores" class="aba">
+    <div class="card">
+      <div class="linha-topo"><h2>Repassadores</h2><button id="btnNovaConta" class="mini">+ Novo repassador</button></div>
+      <div id="repResumo" class="kpis"></div>
+      <div class="rolagem"><table class="tabela" id="repTabela"></table></div>
+      <p class="dica">Cada repassador entra com o próprio e-mail e senha, conecta o próprio WhatsApp e só vê os próprios dados. Clique em "Operar" para entrar na conta dele. Bloquear desliga o acesso e o WhatsApp da conta.</p>
+    </div>
+  </section>
+
+  <!-- PAINEL -->
+  <section id="painel" class="aba ativa">
+    <div class="grade2">
+      <div class="card">
+        <h2>WhatsApp</h2>
+        <div id="qrBox"></div>
+        <p class="dica">Use um número dedicado. No celular da operação: WhatsApp → Aparelhos conectados → Conectar aparelho. (Para escanear, abra este painel em outro aparelho, ex.: computador.)</p>
+        <div class="acoes"><button id="btnConectar" class="mini">Conectar WhatsApp</button><button id="btnSair" class="perigo mini">Desconectar número</button></div>
+      </div>
+      <div class="card">
+        <h2>Resumo</h2>
+        <div id="kpis" class="kpis"></div>
+        <div id="recursos" class="chips"></div>
+        <p id="proximoEnvio" class="dica"></p>
+      </div>
+    </div>
+    <div class="card"><h2>Atividade</h2><ul id="log" class="log"></ul></div>
+  </section>
+
+  <!-- FILA -->
+  <section id="fila" class="aba">
+    <div class="lay-lista">
+      <aside class="filtros-lat" data-filtros="fila"></aside>
+      <div class="conteudo">
+        <div class="barra">
+          <div class="seg" data-lista="fila">
+            <button data-s="pendente" class="ativa">Pendentes</button>
+            <button data-s="aprovado">Aguardando envio</button>
+            <button data-s="filtrado">Filtrados</button>
+            <button data-s="descartado">Descartados</button>
+            <button data-s="erro">Erros</button>
+          </div>
+          <button id="btnDedup" class="sec mini" title="Remove anúncios repetidos do mesmo veículo, mantendo o de menor valor">Remover repetidos</button>
+          <button id="btnAprovarTodos" class="sec mini">Aprovar todos</button>
+        </div>
+        <div class="barra selecao" data-selecao="fila">
+          <label><input type="checkbox" data-sel-todos> Selecionar todos</label>
+          <span class="sub" data-nsel>0 selecionados</span>
+          <button class="sec mini" data-lote="aprovado">Aprovar</button>
+          <button class="perigo mini" data-lote="descartado">Remover da fila</button>
+          <button class="sec mini" data-lote="pendente">Recuperar</button>
+          <span class="sub" data-total style="margin-left:auto"></span>
+        </div>
+        <div id="listaFila" class="lista-cards compacto"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- EM CIRCULAÇÃO -->
+  <section id="circulando" class="aba">
+    <div class="lay-lista">
+      <aside class="filtros-lat" data-filtros="circulando"></aside>
+      <div class="conteudo">
+        <div class="barra">
+          <div class="seg" data-lista="circulando">
+            <button data-s="circulando,enviado" class="ativa">Em circulação</button>
+            <button data-s="circulando">Só repetindo</button>
+            <button data-s="encerrado">Encerrados</button>
+            <button data-s="vendido">✓ Vendidos</button>
+          </div>
+          <a class="btn-link" href="vitrine" target="_blank" rel="noopener">🛒 Abrir vitrine pública</a>
+        </div>
+        <div class="barra selecao" data-selecao="circulando">
+          <label><input type="checkbox" data-sel-todos> Selecionar todos</label>
+          <span class="sub" data-nsel>0 selecionados</span>
+          <button class="perigo mini" data-lote="encerrado">Encerrar</button>
+          <button class="sec mini" data-lote="pendente">Voltar à fila</button>
+          <span class="sub" data-total style="margin-left:auto"></span>
+        </div>
+        <div id="listaCirculando" class="lista-cards compacto"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CLIENTES -->
+  <section id="clientes" class="aba">
+    <div class="barra">
+      <div class="seg" id="segClientes">
+        <button data-v="compradores" class="ativa">Compradores</button>
+        <button data-v="leads">Interessados <span id="nLeads" class="sub"></span></button>
+        <button data-v="conversas">Conversas da assistente <span id="nConversas" class="sub"></span></button>
+      </div>
+      <input id="buscaClientes" placeholder="Buscar nome, WhatsApp, cidade…">
+      <button id="btnNovoComprador" class="sec mini">+ Comprador</button>
+    </div>
+    <p class="dica" id="dicaClientes">Cadastro formado pelas vendas: quem comprou, quanto pagou e quando. O assistente de WhatsApp vai usar esta base quando o número da operação for conectado.</p>
+    <div class="card"><div class="rolagem" id="listaClientes"></div></div>
+  </section>
+
+  <!-- GRUPOS -->
+  <section id="grupos" class="aba densa">
+    <div class="card">
+      <div class="barra">
+        <div class="seg" id="segGrupos">
+          <button data-v="ativos" class="ativa">Grupos <span id="nAtivos" class="sub"></span></button>
+          <button data-v="arquivados">🗄️ Arquivados <span id="nArquivados" class="sub"></span></button>
+        </div>
+        <input id="buscaGrupo" placeholder="Buscar grupo ou contato…">
+        <label><input type="checkbox" id="soReconhecidos"> com anúncios</label>
+        <label><input type="checkbox" id="soAdmin"> sou admin</label>
+        <button id="btnSincronizar" class="sec mini">Sincronizar</button>
+        <button id="btnGerarHoje" class="mini" title="Gera a fila com as postagens de hoje dos grupos marcados como Fonte">📥 Gerar fila de hoje</button>
+      </div>
+      <p class="dica" id="dicaGrupos"><b>Fonte</b>: de onde os anúncios são lidos · <b>Destino</b>: para onde vão (cada um com suas regras) · 🗄️ arquiva. <span id="loteStatus"></span></p>
+      <div id="listaGrupos" class="linhas-lista"></div>
+    </div>
+  </section>
+
+  <!-- CONTATOS -->
+  <section id="contatos" class="aba densa">
+    <div class="card">
+      <div class="barra"><h2>Anunciantes <span id="nContatos" class="sub"></span></h2><span class="dica" style="margin:0"><b>Confiável</b>: aceito em grupos “só confiáveis” · <b>Bloqueado</b>: nunca retransmite</span><input id="buscaContato" placeholder="Nome ou número…"></div>
+      <div id="listaContatos" class="linhas-lista"></div>
+    </div>
+  </section>
+
+  <!-- RELATÓRIOS -->
+  <section id="relatorios" class="aba densa">
+    <div class="barra">
+      <h2 style="margin:0;margin-right:auto">Relatórios</h2>
+      <select id="relDias"><option value="7">Últimos 7 dias</option><option value="30" selected>Últimos 30 dias</option><option value="90">Últimos 90 dias</option><option value="365">Último ano</option></select>
+    </div>
+    <div id="relConteudo"></div>
+  </section>
+
+  <!-- PARÂMETROS -->
+  <section id="parametros" class="aba densa">
+    <form id="formParam">
+      <div class="card">
+        <h2>Reconhecimento</h2>
+        <label class="campo">Pontuação mínima para ser anúncio <input type="number" name="pontuacaoMinima" min="0" max="20"></label>
+        <p class="dica">preço 3 · ano 3 · km 2 · modelo 2 · câmbio/comb. 1 · foto 1 · FIPE 1 · palavra de venda 1 · “procuro/compro” −6</p>
+        <label class="campo">Juntar fotos + texto do mesmo remetente (s) <input type="number" name="agruparSegundos" min="3" max="120"></label>
+        <div class="linha3">
+          <label class="campo">Grupo reconhecido com ≥ anúncios <input type="number" name="reconhecerGrupo.minAnuncios" min="1"></label>
+          <label class="campo">… e ≥ % das mensagens <input type="number" name="reconhecerGrupo.minPercentual" min="0" max="100"></label>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Inteligência artificial (Claude)</h2>
+        <p id="iaStatus" class="dica"></p>
+        <label class="campo">Quando usar
+          <select name="ia.modo"><option value="desligado">Desligada</option><option value="incerto">Só em anúncios bagunçados</option><option value="sempre">Em todos os anúncios</option></select></label>
+        <div class="checks">
+          <label><input type="checkbox" name="ia.reescreverDescricao"> Reescrever descrição (usa IA em todo anúncio)</label>
+          <label><input type="checkbox" name="ia.lerPlacaNaFoto"> Ler a placa na foto</label>
+        </div>
+        <label class="campo">Estilo da descrição <input name="ia.estilo"></label>
+        <label class="campo">Modelo de IA
+          <select name="ia.modelo"><option value="claude-haiku-5-5">Claude Haiku 5.5 (rápido e barato)</option><option value="claude-sonnet-5-5">Claude Sonnet 5.5 (mais preciso)</option></select></label>
+        <label class="campo">Achar a placa nas fotos
+          <select name="ia.modeloPlaca"><option value="claude-haiku-5-5">Haiku 5.5 (barato)</option><option value="claude-sonnet-5-5">Sonnet 5.5 (mais preciso)</option></select></label>
+        <label><input type="checkbox" name="edicao.borrarPlaca"> Borrar a placa nas fotos que saem (grupo, vitrine, assistente)</label>
+      </div>
+
+      <div class="card">
+        <h2>Filtros gerais</h2>
+        <div class="checks">
+          <label><input type="checkbox" name="filtros.exigirPreco"> Exigir preço</label>
+          <label><input type="checkbox" name="filtros.exigirFoto"> Exigir foto</label>
+          <label><input type="checkbox" name="filtros.exigirAno"> Exigir ano</label>
+          <label><input type="checkbox" name="filtros.ignorarProcura"> Ignorar “procuro/compro”</label>
+          <label><input type="checkbox" name="filtros.ignorarComAlertas"> Ignorar leilão/sinistro/débitos</label>
+          <label><input type="checkbox" name="filtros.somenteAbaixoFipe"> Só abaixo da FIPE</label>
+        </div>
+        <div class="linha3">
+          <label class="campo">Ano mín. <input type="number" name="filtros.anoMin" min="0"></label>
+          <label class="campo">Ano máx. <input type="number" name="filtros.anoMax" min="0"></label>
+          <label class="campo">KM máx. <input type="number" name="filtros.kmMax" min="0"></label>
+          <label class="campo">Preço mín. <input type="number" name="filtros.precoMin" min="0"></label>
+          <label class="campo">Preço máx. <input type="number" name="filtros.precoMax" min="0"></label>
+        </div>
+        <label class="campo">Marcas permitidas (vazio = todas) <input name="filtros.marcasPermitidas" data-lista></label>
+        <label class="campo">Palavras obrigatórias (ao menos uma) <input name="filtros.palavrasObrigatorias" data-lista></label>
+        <label class="campo">Palavras bloqueadas <input name="filtros.palavrasBloqueadas" data-lista></label>
+      </div>
+
+      <div class="card">
+        <h2>Valor de repasse e texto</h2>
+        <p class="dica">Valor sugerido para cada anúncio novo. Você pode mudar o valor de cada anúncio na fila e em circulação.</p>
+        <div class="linha3">
+          <label><input type="checkbox" name="edicao.ajustePreco.ativo"> Aplicar ajuste</label>
+          <label class="campo">Tipo <select name="edicao.ajustePreco.tipo"><option value="valor">+ R$ fixo</option><option value="percentual">+ %</option></select></label>
+          <label class="campo">Valor <input type="number" step="0.1" name="edicao.ajustePreco.valor"></label>
+          <label class="campo">Arredondar p/ cima (R$) <input type="number" name="edicao.ajustePreco.arredondar"></label>
+        </div>
+        <div class="checks">
+          <label><input type="checkbox" name="edicao.removerTelefones"> Remover telefones</label>
+          <label><input type="checkbox" name="edicao.removerLinks"> Remover links</label>
+          <label><input type="checkbox" name="edicao.removerMencoes"> Remover @menções</label>
+          <label><input type="checkbox" name="edicao.removerPlaca"> Remover placa</label>
+          <label><input type="checkbox" name="edicao.removerEmojis"> Remover emojis</label>
+          <label><input type="checkbox" name="edicao.enviarFoto"> Enviar 1 foto com o texto</label>
+        </div>
+        <label class="campo">Fotos guardadas por anúncio (banco de fotos) <input type="number" name="edicao.maxFotosBanco" min="1" max="30"></label>
+        <label class="campo">Termos a remover (lojas, assinaturas…) <input name="edicao.removerTermos" data-lista></label>
+      </div>
+
+      <div class="card">
+        <h2>FIPE e categorias</h2>
+        <p id="fipeStatus" class="dica"></p>
+        <div class="checks">
+          <label><input type="checkbox" name="fipe.consultar"> Consultar quando o anúncio não traz</label>
+          <label><input type="checkbox" name="fipe.sempreConsultar"> Consultar sempre</label>
+          <label><input type="checkbox" name="fipe.usarPlaca"> Usar placa quando houver</label>
+        </div>
+        <label class="campo">Marcas premium <input name="premium.marcas" data-lista></label>
+        <label class="campo">Também é premium acima de (R$) <input type="number" name="premium.precoAcima"></label>
+      </div>
+
+      <div class="card">
+        <h2>Envio e repetição</h2>
+        <label class="campo">Modo <select name="envio.modo"><option value="aprovacao">Fila de aprovação</option><option value="automatico">Automático</option></select></label>
+        <div class="linha3">
+          <label class="campo">Intervalo mín. (s) <input type="number" name="envio.intervaloMinSeg" min="10"></label>
+          <label class="campo">Intervalo máx. (s) <input type="number" name="envio.intervaloMaxSeg" min="10"></label>
+          <label class="campo">Anúncios por hora <input type="number" name="envio.limitePorHora" min="1"></label>
+          <label class="campo">Início <input type="time" name="envio.horarioInicio"></label>
+          <label class="campo">Fim <input type="time" name="envio.horarioFim"></label>
+          <label class="campo">Ignorar repetidos por (h) <input type="number" name="envio.dedupHoras" min="1"></label>
+          <label class="campo">Pendente sai da fila após (h) <input type="number" name="fila.expirarPendentesHoras" min="0"></label>
+        </div>
+        <h3>Redução automática do valor</h3>
+        <p class="dica">Quando ligada num anúncio, a cada reenvio o valor de repasse baixa o passo abaixo, até o piso. Desligada, reenvia sempre com o mesmo valor. Cada anúncio pode ter passo e piso próprios.</p>
+        <label><input type="checkbox" name="reducaoPreco.padraoAtivo"> Novos anúncios já entram com redução ligada</label>
+        <div class="linha3">
+          <label class="campo">Baixar a cada reenvio (R$) <input type="number" name="reducaoPreco.passo" min="0" step="100"></label>
+          <label class="campo">Piso padrão <select name="reducaoPreco.piso"><option value="pedido">Valor pedido pelo anunciante + margem</option><option value="nenhum">Sem piso</option></select></label>
+          <label class="campo">Margem sobre o pedido (R$) <input type="number" name="reducaoPreco.pisoMargem" min="0" step="100"></label>
+        </div>
+        <h3>Repetição periódica</h3>
+        <label><input type="checkbox" name="repeticao.padraoAtivo"> Novos anúncios já entram repetindo</label>
+        <div class="linha3">
+          <label class="campo">Repetir a cada (h) <input type="number" name="repeticao.intervaloHoras" min="1" step="0.5"></label>
+          <label class="campo">Máx. de vezes (0 = sem limite) <input type="number" name="repeticao.maxVezes" min="0"></label>
+          <label class="campo">Encerrar sozinho após (dias) <input type="number" name="repeticao.encerrarAposDias" min="0"></label>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Assistente de atendimento</h2>
+        <p class="dica">Responde na vitrine (ícone de atendimento) e, se ligado, nas conversas do WhatsApp. É objetiva para fechar a venda, manda mais fotos e informações quando pedem e chama você quando o cliente quer fechar ou fazer proposta. Não agenda visitas. <span id="assisIA"></span></p>
+        <div class="checks">
+          <label><input type="checkbox" name="assistente.ativo"> Atendimento na vitrine</label>
+          <label title="Só funciona quando o WhatsApp conectado for o número de atendimento cadastrado abaixo"><input type="checkbox" name="assistente.whatsapp"> Responder no WhatsApp</label>
+          <label><input type="checkbox" name="assistente.mostrarFipe"> Comparar com a FIPE</label>
+          <label><input type="checkbox" name="assistente.avisarAdmin"> Me avisar no WhatsApp</label>
+        </div>
+        <label class="campo">Número de atendimento (WhatsApp próprio) <input name="assistente.numeroAtendimento" placeholder="vazio = não responde no WhatsApp"></label>
+        <label class="campo">Nome da assistente <input name="assistente.nome"></label>
+        <label class="campo">Fotos enviadas por pedido <input type="number" name="assistente.fotosPorPedido" min="1" max="15"></label>
+        <label class="campo">Seus números (alimentam anúncios e recebem avisos) <input name="assistente.numerosAdmin" data-lista placeholder="45 99999-0000"></label>
+        <label class="campo">Nunca responder estes números <input name="assistente.ignorarNumeros" data-lista placeholder="família, sócios…"></label>
+        <label class="campo">Forma de pagamento <input name="assistente.pagamento" placeholder="somente à vista, via PIX"></label>
+        <label class="campo bloco">Saudação (vazio = automática) <input name="assistente.boasVindas"></label>
+        <label class="campo bloco">Regras do seu atendimento <textarea name="assistente.instrucoes" rows="3" placeholder="Ex.: veículos no estado; documentação em dia; retirada em Cascavel-PR; transferência por conta do comprador."></textarea></label>
+        <p class="dica"><b>Alimentar um anúncio:</b> mande para o WhatsApp conectado (conversa “você mesmo” ou de um dos seus números) o código, ex.: <b>GA-0003</b>, junto com informações e/ou fotos. Por 15 min, o que você mandar vai para esse anúncio. A assistente passa a usar na hora.<br><b>WhatsApp:</b> quando você responde à mão numa conversa, a assistente fica quieta nela por 12 h. Contatos que são fonte de anúncios não recebem resposta.</p>
+      </div>
+
+      <div class="card">
+        <h2>Vitrine pública</h2>
+        <p class="dica">Página aberta com os anúncios em circulação: <a id="linkVitrine" href="vitrine" target="_blank">/vitrine</a>. Atualiza sozinha quando um anúncio entra ou sai de circulação. Nunca mostra grupo, anunciante, telefone ou placa de origem.</p>
+        <div class="checks">
+          <label><input type="checkbox" name="vitrine.ativa"> Vitrine ativa</label>
+          <label><input type="checkbox" name="vitrine.mostrarFipe"> Mostrar FIPE e desconto</label>
+        </div>
+        <label class="campo">Título (vazio = nome do negócio)<input name="vitrine.titulo"></label>
+        <label class="campo">Subtítulo<input name="vitrine.subtitulo"></label>
+        <h2 style="margin-top:16px">Seu negócio</h2>
+        <label class="campo">Nome exibido <input name="negocio.nome"></label>
+        <label class="campo">Contato exibido <input name="negocio.contato"></label>
+        <label class="campo">Prefixo do código <input name="negocio.prefixoCodigo"></label>
+        <h3>Limpeza</h3>
+        <div class="linha3">
+          <label class="campo">Excluir arquivados após (horas) <input type="number" name="limpeza.excluirArquivadosHoras" min="0" title="Descartados, encerrados e barrados pelos filtros são excluídos com fotos depois deste prazo. Vendidos ficam até você excluir. 0 = nunca"></label>
+        </div>
+      </div>
+      <div class="rodape-form"><button type="submit">Salvar parâmetros</button> <span id="salvoParam" class="dica"></span></div>
+    </form>
+  </section>
+
+  <!-- MODELO -->
+  <section id="modelo" class="aba">
+    <div class="grade2">
+      <div class="card">
+        <div class="barra"><h2>Linhas da mensagem</h2>
+          <button id="btnAddLinha" class="sec mini">+ Linha</button>
+          <button id="btnRestaurar" class="sec mini">Padrão</button>
+        </div>
+        <p class="dica">Marque o que aparece. Toque num campo para inseri-lo na linha selecionada. Linhas com campo vazio somem. *texto* = negrito.</p>
+        <div id="camposLista" class="chips clicaveis"></div>
+        <ol id="linhasModelo" class="linhas"></ol>
+        <button id="btnSalvarModelo">Salvar modelo</button> <span id="salvoModelo" class="dica"></span>
+      </div>
+      <div class="card">
+        <div class="barra"><h2>Prévia</h2><select id="exemploPrevia"></select></div>
+        <div class="whats"><pre id="previa"></pre></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SIMULADOR -->
+  <section id="simulador" class="aba">
+    <div class="grade2">
+      <div class="card">
+        <h2>Cole um anúncio</h2>
+        <select id="exemploSim"></select>
+        <textarea id="simTexto" rows="10" placeholder="Cole o texto de um anúncio…"></textarea>
+        <div class="checks">
+          <label><input type="checkbox" id="simFoto" checked> veio com foto</label>
+          <label><input type="checkbox" id="simIA"> usar IA (consome créditos)</label>
+        </div>
+        <button id="btnSimular" class="sec">Analisar</button>
+        <button id="btnSimFila" class="sec">Colocar na fila</button>
+        <h3>Campos extraídos</h3>
+        <table class="tabela mini" id="simCampos"></table>
+      </div>
+      <div class="card">
+        <h2>Resultado</h2>
+        <div id="simMotivos"></div>
+        <div id="simDestinos" class="chips"></div>
+        <div class="whats"><pre id="simMsg"></pre></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- Editor de regras do destino -->
+<dialog id="dlgRegras">
+  <form method="dialog" id="formRegras">
+    <h2 id="regrasTitulo">Regras do destino</h2>
+    <p class="dica">Só chegam a este grupo os anúncios que cumprem tudo abaixo. Vazio = sem restrição.</p>
+    <h3>Categorias</h3>
+    <div id="regrasCategorias" class="checks"></div>
+    <label class="campo">Premium <select name="premium"><option value="qualquer">Qualquer</option><option value="so">Só premium</option><option value="nao">Sem premium</option></select></label>
+    <div class="linha3">
+      <label class="campo">Preço mín. <input type="number" name="precoMin" min="0"></label>
+      <label class="campo">Preço máx. <input type="number" name="precoMax" min="0"></label>
+      <label class="campo">Ano mín. <input type="number" name="anoMin" min="0"></label>
+      <label class="campo">Ano máx. <input type="number" name="anoMax" min="0"></label>
+      <label class="campo">KM máx. <input type="number" name="kmMax" min="0"></label>
+      <label class="campo">Câmbio <select name="cambio"><option value="">Qualquer</option><option>Manual</option><option>Automático</option><option>Automatizado</option></select></label>
+    </div>
+    <label class="campo">Marcas (vírgula) <input name="marcas" data-lista></label>
+    <label class="campo">Combustíveis (vírgula: Flex, Diesel…) <input name="combustiveis" data-lista></label>
+    <label class="campo">Acréscimo no valor para este grupo (R$) <input type="number" name="acrescimo"></label>
+    <div class="acoes"><button value="salvar">Salvar regras</button><button value="cancelar" class="sec" formnovalidate>Cancelar</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlgVenda">
+  <form method="dialog" id="formVenda" class="form-venda">
+    <h2 id="vendaTitulo">Venda</h2>
+    <h3>Venda</h3>
+    <div class="linha3">
+      <label class="campo">Valor da venda (R$) *<input name="valor" type="number" step="100" required></label>
+      <label class="campo">Data *<input name="data" type="date" required></label>
+      <label class="campo">Pagamento<select name="pagamento"><option value="">—</option><option>À vista / PIX</option><option>Transferência</option><option>Financiado</option><option>Troca + volta</option><option>Parcelado / outro</option></select></label>
+    </div>
+    <label class="campo">Observações da venda<input name="obs" placeholder="Prazo de pagamento, documento, entrega…"></label>
+    <h3>Comprador</h3>
+    <input type="hidden" name="cid">
+    <div class="linha3">
+      <label class="campo">WhatsApp *<input name="telefone" inputmode="tel" placeholder="(45) 9 9999-9999" required></label>
+      <label class="campo">Nome *<input name="nome" required></label>
+      <label class="campo">Tipo<select name="tipo"><option value="lojista">Lojista</option><option value="repassador">Repassador</option><option value="particular">Particular</option></select></label>
+      <label class="campo">CPF / CNPJ<input name="documento" inputmode="numeric"></label>
+      <label class="campo">Cidade<input name="cidade"></label>
+      <label class="campo">UF<input name="uf" maxlength="2" style="text-transform:uppercase"></label>
+      <label class="campo">E-mail<input name="email" type="email"></label>
+    </div>
+    <label class="campo">Observações sobre o comprador<input name="cobs" placeholder="Preferências, forma de contato…"></label>
+    <p id="vendaAviso" class="motivo"></p>
+    <div class="acoes"><button value="salvar">Registrar venda</button><button value="cancelar" class="sec" formnovalidate>Cancelar</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlgComprador">
+  <form method="dialog" id="formComprador">
+    <h2>Comprador</h2>
+    <input type="hidden" name="id">
+    <div class="linha3">
+      <label class="campo">Nome *<input name="nome" required></label>
+      <label class="campo">WhatsApp *<input name="telefone" inputmode="tel" required></label>
+      <label class="campo">Tipo<select name="tipo"><option value="lojista">Lojista</option><option value="repassador">Repassador</option><option value="particular">Particular</option></select></label>
+      <label class="campo">CPF / CNPJ<input name="documento"></label>
+      <label class="campo">Cidade<input name="cidade"></label>
+      <label class="campo">UF<input name="uf" maxlength="2"></label>
+      <label class="campo">E-mail<input name="email" type="email"></label>
+    </div>
+    <label class="campo">Observações<input name="obs"></label>
+    <p id="compAviso" class="motivo"></p>
+    <div class="acoes"><button value="salvar">Salvar</button><button value="cancelar" class="sec" formnovalidate>Cancelar</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlgConversa">
+  <form method="dialog">
+    <div class="linha-topo"><h2 id="convTitulo">Conversa</h2><button value="fechar" class="sec mini">Fechar</button></div>
+    <p id="convInfo" class="dica"></p>
+    <div id="convMsgs" class="conversa"></div>
+  </form>
+</dialog>
+
+<dialog id="dlgConta">
+  <form method="dialog" id="formConta">
+    <h2 id="dlgContaTitulo">Novo repassador</h2>
+    <input type="hidden" name="id">
+    <div class="linha3">
+      <label class="campo">Nome da operação *<input name="nome" required placeholder="Ex.: Silva Repasses"></label>
+      <label class="campo">Responsável<input name="responsavel"></label>
+      <label class="campo">E-mail (login) *<input name="email" type="email" required></label>
+      <label class="campo">WhatsApp de contato<input name="telefone" inputmode="tel"></label>
+      <label class="campo">Cidade<input name="cidade"></label>
+    </div>
+    <label class="campo">Observações<input name="obs"></label>
+    <p id="contaAviso" class="motivo"></p>
+    <div class="acoes"><button value="salvar">Salvar</button><button value="cancelar" class="sec" formnovalidate>Cancelar</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlgAcesso">
+  <form method="dialog">
+    <h2>Acesso do repassador</h2>
+    <p>Envie estes dados ao repassador. A senha aparece só agora; no primeiro acesso ele cria a dele.</p>
+    <pre id="acessoTexto" class="bloco-copia"></pre>
+    <div class="acoes"><button type="button" id="btnCopiarAcesso">Copiar</button><button value="ok" class="sec">Fechar</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlgMinhaConta">
+  <form method="dialog" id="formSenha">
+    <h2>Minha conta</h2>
+    <p id="minhaContaInfo" class="dica"></p>
+    <div id="trocaSenha">
+      <p id="avisoTrocar" class="motivo" hidden>Crie sua senha para continuar usando o painel.</p>
+      <label class="campo">Senha atual<input name="atual" type="password" autocomplete="current-password" required></label>
+      <label class="campo">Nova senha (mín. 6)<input name="nova" type="password" autocomplete="new-password" minlength="6" required></label>
+      <p id="senhaAviso" class="motivo"></p>
+    </div>
+    <div class="acoes"><button value="salvar" id="btnSalvarSenha">Trocar senha</button><button value="cancelar" class="sec" formnovalidate>Fechar</button></div>
+  </form>
+</dialog>
+
+<script src="app.js"></script>
+</body>
+</html>

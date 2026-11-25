@@ -7,10 +7,15 @@ ENV MALLOC_ARENA_MAX=2
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 COPY package*.json ./
 RUN npm ci --omit=dev --no-audit --no-fund || npm install --omit=dev --no-audit --no-fund
+# v2.24: o Repasse roda no mesmo serviço (src/repasse-processo.js), com as dependências dele
+COPY repasse/package*.json ./repasse/
+RUN cd repasse && npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 COPY src ./src
 COPY public ./public
 COPY assets ./assets
 COPY extension ./extension
+COPY repasse/src ./repasse/src
+COPY repasse/public ./repasse/public
 RUN mkdir -p /data
 VOLUME ["/data"]
 EXPOSE 3333
