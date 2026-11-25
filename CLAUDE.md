@@ -8,7 +8,7 @@ Um só repositório e um só serviço no Render para toda a família:
 
 ## Infraestrutura
 - GitHub: darlandapieve-wq/giroauto (branch main)
-- Render: UM serviço web "giroauto", Docker, plano free, Virginia, auto-deploy na main
+- Render: UM serviço web "giroauto", Docker, plano free, Virginia, auto-deploy na main (cota grátis: 750 h/mês para o workspace inteiro; ver "Serviço único e cota do Render")
 - O serviço antigo "giroauto-repasse" será desativado depois que o monorepo estiver validado
 - Supabase: desde 08/11/2026 (15:56 UTC) o Repasse também usa o projeto único "giroauto" (ver "Banco de dados único"). O projeto "giroauto-repasse" ficou congelado como referência e será pausado após a validação.
 - Variáveis de ambiente dos dois apps ficam no mesmo serviço, com prefixos (LOJA_*, REPASSE_*)
@@ -97,6 +97,25 @@ O schema "public" dos dois projetos está vazio. Supabase Auth não é usado (0 
 - Como fazer:
   - A atualização da Loja para o Express 5 é um passo separado, com os testes, e vai para produção sozinha, antes da unificação dos serviços.
   - A Loja (CommonJS) monta o Repasse (ESM) com import() dinâmico, como um Router em /repasse.
+
+## Serviço único e cota do Render (v2.24, 25/11/2026)
+- Causa da suspensão de 24/11/2026: a cota grátis é de 750 h/mês para o WORKSPACE (não por serviço). O giroauto-repasse ficava acordado 24 h com ping próprio (~720–744 h/mês sozinho) e a Loja gastou ~180 h; a cota acabou em 24/11 às 15:00 UTC e os dois ficaram suspensos até 01/12.
+- Solução (escolhida pelo Darlan): opções 1 + 3 juntas.
+  - Um serviço só: o Repasse roda dentro do "giroauto" como processo filho (src/repasse-processo.js, código em repasse/), em 127.0.0.1:10001. A Loja fala com ele pelo proxy /repasse e por REPASSE_URL (definida sozinha como a porta interna). Liga com REPASSE_INTERNO=1.
+  - Acordado só de 06:30 às 22:30 de Brasília (src/acordado.js, KEEPALIVE_JANELA). De madrugada dorme; o GitHub Actions acorda às 06:25/06:45 (.github/workflows/acordar.yml). Os envios do Repasse já são de 07:00 às 22:00 e as mensagens da madrugada entram como "atrasadas" ao reconectar.
+  - Estimativa: ~16 h × 31 = ~500 h/mês (folga de ~250 h).
+- O filho NÃO herda o ambiente da Loja: recebe PATH/HOME/LANG/NODE_ENV/MALLOC_ARENA_MAX/GIRO_SSO_SEGREDO/RENDER_INSTANCE_ID/MEMORIA_LOG_MIN e as REPASSE_* sem o prefixo. NUNCA criar REPASSE_SESSAO_SEGREDO (derruba os logins).
+- Memória medida de 18 a 24/11/2026: Repasse estável entre 192 e 227 MB (a v0.8.0 resolveu o crescimento), Loja entre 50 e 100 MB. Juntos ~330 MB, abaixo do critério de 450 MB.
+- Montar o Repasse como Router no mesmo processo (ver "Decisão: Express no monorepo") continua sendo o objetivo de longo prazo; o processo filho é a etapa intermediária.
+- O código do Repasse passa a ser mantido em repasse/ deste repositório. O repo giroauto-repasse fica só como histórico.
+
+### Troca (cutover) — fazer com o Darlan, depois de 01/12 (serviços precisam estar ativos)
+1. No serviço giroauto, criar: REPASSE_INTERNO=1, REPASSE_DATABASE_URL, REPASSE_ADMIN_SENHA, REPASSE_ANTHROPIC_API_KEY, REPASSE_TZ_LOCAL (valores do giroauto-repasse; cópia em C:\Backups\giroauto\2026-11-08\variaveis.txt) e conferir GIRO_SSO_SEGREDO. Mudar variável pela API não faz deploy.
+2. Suspender o serviço giroauto-repasse no painel do Render (SIGTERM: end() sem logout e trava liberada).
+3. Merge da branch unificar-repasse na main → deploy do giroauto. O Repasse interno pega a trava (mesmo banco, mesma kv) e conecta sem QR code.
+4. Conferir: /repasse abre, log "WhatsApp conectado", "grupos sincronizados", memória < 450 MB.
+5. Se der errado: remover REPASSE_INTERNO (ou reverter o merge) e fazer resume do giroauto-repasse.
+- Nunca reativar o giroauto-repasse com o Repasse interno ligado.
 
 ## Fotos
 - Geração 100% automática integrada à página

@@ -19,11 +19,17 @@ memoria.iniciarMonitor();
     console.log('Aviso: SUPABASE_URL/SUPABASE_SECRET_KEY não configurados. Os dados ficam só no disco deste servidor.');
   }
 
+  // v2.24: Repasse no mesmo serviço (REPASSE_INTERNO=1), antes do server para o REPASSE_URL já valer
+  const repasse = require('./repasse-processo');
+  repasse.iniciar();
+
   const app = require('./server');
   storage.markDirty(); // envia a primeira cópia (inclui migrações de versão)
   const server = app.listen(config.port, () => {
     console.log(`GiroAuto rodando em ${config.publicUrl} (porta ${config.port})`);
     // Gera as imagens que faltam para os veículos em estoque (arte e, com a chave da IA, estacionamento).
+    // só mantém acordado se o Repasse estiver aqui; a Loja sozinha pode dormir como sempre
+    if (repasse.ativo()) require('./acordado').iniciar(config.publicUrl);
     try { require('./arts').startTimer(); const n = require('./arts').backfill(); if (n) console.log(`Conferindo imagens de ${n} veículo(s).`); } catch (e) { console.error('Imagens:', e.message); }
   });
 
@@ -32,7 +38,11 @@ memoria.iniciarMonitor();
     if (closing) return; closing = true;
     console.log(`${sig} recebido: salvando os dados antes de desligar…`);
     server.close();
-    try { await storage.flush(); console.log('Dados salvos.'); } catch (e) { console.error('Falha ao salvar:', e.message); }
+    // os dois em paralelo: a Loja salva a cópia, o Repasse fecha o WhatsApp e libera a trava
+    await Promise.all([
+      storage.flush().then(() => console.log('Dados salvos.'), (e) => console.error('Falha ao salvar:', e.message)),
+      repasse.parar(),
+    ]);
     process.exit(0);
   };
   process.on('SIGTERM', () => shutdown('SIGTERM'));
